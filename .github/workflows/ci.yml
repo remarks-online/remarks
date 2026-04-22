@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm turbo run lint typecheck test
+
+      - run: pnpm turbo run test:integration
+        env:
+          DATABASE_URL: postgres://postgres:test@localhost:5432/test
+
+      - run: pnpm turbo run build
+        env:
+          # Placeholder Clerk keys so `next build` can prerender the dashboard's
+          # <ClerkProvider>-wrapped root layout. These are decoy values (base64
+          # decodes to "clerk.placeholder.dev$") and never touch a real Clerk
+          # instance; production builds on Vercel inject real secrets.
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsucGxhY2Vob2xkZXIuZGV2JA==
+          CLERK_SECRET_KEY: sk_test_ci_placeholder_not_for_prod
