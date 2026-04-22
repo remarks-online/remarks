@@ -7,6 +7,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   DATABASE_URL: z.string().url(),
   CLERK_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
+  CLERK_SECRET_KEY: z.string().startsWith("sk_"),
 });
 
 export const env = envSchema.parse(process.env);
