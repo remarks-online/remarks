@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "lint": "biome check src scripts",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "check-fly-secrets": "tsx scripts/check-fly-secrets.ts"
   },
   "dependencies": {

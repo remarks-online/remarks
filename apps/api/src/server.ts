@@ -6,6 +6,7 @@ import authPlugin from "./plugins/auth.js";
 import dbPlugin from "./plugins/db.js";
 import rawBodyPlugin from "./plugins/raw-body.js";
 import { healthRoutes } from "./routes/health.js";
+import { projectRoutes } from "./routes/projects/index.js";
 import { clerkWebhookRoutes } from "./routes/webhooks/clerk.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -59,7 +60,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await server.register(async (authenticated) => {
     await authenticated.register(authPlugin);
-    // Protected routes registered here in Tasks 1.4+
+    await authenticated.register(projectRoutes);
   });
 
   return server;

@@ -42,7 +42,7 @@ If a type is used in more than one app, it lives in a package. Never duplicate.
 ## 1.5 Testing rules
 
 - **Unit tests**: Vitest, colocated (`foo.ts` + `foo.test.ts`).
-- **Integration tests** (API endpoints hitting a real DB): Vitest + Testcontainers for ephemeral Postgres, colocated in `apps/api/src/**/*.integration.test.ts`.
+- **Integration tests** (API endpoints hitting a real DB): Vitest against a real Postgres 16 via `DATABASE_URL`, colocated in `apps/api/src/**/*.integration.test.ts`. Each app has its own `vitest.integration.config.ts` (`test:integration` script) and shared harness under `apps/api/test/integration/` that migrates once per run and `TRUNCATE ... RESTART IDENTITY CASCADE`s between tests. Runs with `fileParallelism: false` because all files share one DB. CI provides Postgres as a GitHub Actions service container (`.github/workflows/ci.yml`); locally, point `DATABASE_URL` at any Postgres 16 (a Neon dev branch, `docker run postgres:16`, or a local install). Testcontainers is not used — it was the original plan but was dropped when CI's service container made an external dep unnecessary. Default unit `test` script excludes `*.integration.test.ts`.
 - **E2E tests**: Playwright at `apps/*/e2e/*.spec.ts`.
 - **Extension tests**: Playwright with `@playwright/test` — launches Chromium with the extension loaded.
 - **Coverage target: 70% lines for `packages/*`, no target for `apps/*`.** Integration and E2E give better signal than unit coverage for app code.
