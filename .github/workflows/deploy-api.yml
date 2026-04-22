@@ -18,7 +18,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
       - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Preflight: fail fast if envSchema requires an env var that isn't
+      # provided by fly.toml [env] or fly secrets. Prevents the class of
+      # regression where a new required var ships to main but the
+      # corresponding Fly secret was never set, causing a crash loop at boot.
+      - run: pnpm --filter @remarks/api check-fly-secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - run: flyctl deploy --config apps/api/fly.toml --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

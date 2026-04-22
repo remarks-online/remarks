@@ -1644,31 +1644,31 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 
 | # | Task | Done when |
 |---|---|---|
-| 0.1 | Register all hosting accounts from §8.1 | You have dashboards open for each service |
-| 0.2 | Register `remarks.online`, configure Cloudflare DNS | `dig remarks.online` works |
-| 0.3 | Create GitHub monorepo, push empty scaffold with README | Repo visible on GitHub |
-| 0.4 | Add `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, `biome.json`, `.nvmrc`, `.gitignore` per §2 | `pnpm install` succeeds |
-| 0.5 | Write `CLAUDE.md` with content from §1 | Claude Code loads it in a fresh session |
-| 0.6 | Write ADR 0001–0013 (one paragraph each is fine for now) | Files exist in `docs/adr/` |
-| 0.7 | Scaffold `packages/shared` with error classes, constants | Package builds and lints clean |
-| 0.8 | Scaffold `packages/db` with Drizzle config pointing at Neon | `pnpm --filter @remarks/db db:push` connects |
-| 0.9 | Implement schemas from §3 in `packages/db` | `drizzle-kit generate` produces migration SQL |
-| 0.10 | Generate initial migration, apply to Neon dev branch | Tables exist in Neon console |
+| 0.1 ✓ | Register all hosting accounts from §8.1 | You have dashboards open for each service |
+| 0.2 ✓ | Register `remarks.online`, configure Cloudflare DNS | `dig remarks.online` works |
+| 0.3 ✓ | Create GitHub monorepo, push empty scaffold with README | Repo visible on GitHub |
+| 0.4 ✓ | Add `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, `biome.json`, `.nvmrc`, `.gitignore` per §2 | `pnpm install` succeeds |
+| 0.5 ✓ | Write `CLAUDE.md` with content from §1 | Claude Code loads it in a fresh session |
+| 0.6 ✓ | Write ADR 0001–0013 (one paragraph each is fine for now) | Files exist in `docs/adr/` |
+| 0.7 ✓ | Scaffold `packages/shared` with error classes, constants | Package builds and lints clean |
+| 0.8 ✓ | Scaffold `packages/db` with Drizzle config pointing at Neon | `pnpm --filter @remarks/db db:push` connects |
+| 0.9 ✓ | Implement schemas from §3 in `packages/db` | `drizzle-kit generate` produces migration SQL |
+| 0.10 ✓ | Generate initial migration, apply to Neon dev branch | Tables exist in Neon console |
 
 ### Week 2: first deploys
 
 | # | Task | Done when |
 |---|---|---|
-| 0.11 | Scaffold `apps/api` with Fastify, health endpoint, env validation | `pnpm --filter @remarks/api dev` serves `/health` |
-| 0.12 | Dockerfile for api; `fly launch` to create Fly app | `fly deploy` works, `curl https://api.remarks.online/health` returns 200 |
-| 0.13 | Scaffold `apps/dashboard` with Next.js 15, Clerk middleware, basic pages | `pnpm --filter @remarks/dashboard dev` loads `localhost:3000` with Clerk sign-in |
-| 0.14 | Deploy dashboard to Vercel, configure domain `app.remarks.online` | Dashboard loads at production URL |
-| 0.15 | Scaffold `apps/extension` with WXT, React, Clerk Chrome SDK, basic popup and sidebar | `pnpm --filter @remarks/extension dev` produces loadable extension |
-| 0.16 | Clerk webhook endpoint in API that syncs users/orgs to Postgres | Creating a user in Clerk results in a row in `users` table |
-| 0.17 | `.github/workflows/ci.yml` with lint + typecheck + test + build | Green CI on first PR |
-| 0.18 | `.github/workflows/deploy-api.yml` deploys to Fly on main | Push to main redeploys api |
-| 0.19 | Scaffold `apps/mcp` and `packages/mcp-schema` (empty, not functional) | Packages exist, build clean |
-| 0.20 | Write runbook: "How to set up your dev environment" in `docs/runbooks/setup.md` | Clone → follow doc → `pnpm dev` works |
+| 0.11 ✓ | Scaffold `apps/api` with Fastify, health endpoint, env validation | `pnpm --filter @remarks/api dev` serves `/health` |
+| 0.12 ✓ | Dockerfile for api; `fly launch` to create Fly app | `fly deploy` works, `curl https://api.remarks.online/health` returns 200 |
+| 0.13 ✓ | Scaffold `apps/dashboard` with Next.js 15, Clerk middleware, basic pages | `pnpm --filter @remarks/dashboard dev` loads `localhost:3000` with Clerk sign-in |
+| 0.14 ✓ | Deploy dashboard to Vercel, configure domain `app.remarks.online` | Dashboard loads at production URL |
+| 0.15 ✓ | Scaffold `apps/extension` with WXT, React, Clerk Chrome SDK, basic popup and sidebar | `pnpm --filter @remarks/extension dev` produces loadable extension |
+| 0.16 ✓ | Clerk webhook endpoint in API that syncs users/orgs to Postgres | Creating a user in Clerk results in a row in `users` table |
+| 0.17 ✓ | `.github/workflows/ci.yml` with lint + typecheck + test + build | Green CI on first PR |
+| 0.18 ✓ | `.github/workflows/deploy-api.yml` deploys to Fly on main | Push to main redeploys api |
+| 0.19 ✓ | Scaffold `apps/mcp` and `packages/mcp-schema` (empty, not functional) | Packages exist, build clean |
+| 0.20 ✓ | Write runbook: "How to set up your dev environment" in `docs/runbooks/setup.md` | Clone → follow doc → `pnpm dev` works |
 
 **Phase 0 exit:** You can sign up on `app.remarks.online`, your user appears in Neon, the extension loads in Chrome, and CI is green. Nothing is functional yet beyond auth, but the entire spine is running.
 
@@ -1683,8 +1683,8 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | # | Task | Done when |
 |---|---|---|
 | 1.1 ✓ | Zod schemas in `packages/shared/schemas/annotation.ts`, `project.ts`, `common.ts` from §4 | Types exported, tests pass |
-| 1.2 | API auth middleware: verify Clerk JWT, attach `user` + `orgMemberships` to request | Integration test passes |
-| 1.3 | API authorization helpers: `requireOrgMember`, `requireProjectMember(role)` | Tested with mocked contexts |
+| 1.2 ✓ | API auth middleware: verify Clerk JWT, attach `user` + `orgMemberships` to request | Integration test passes |
+| 1.3 ✓ | API authorization helpers: `requireOrgMember`, `requireProjectMember(role)` | Tested with mocked contexts |
 | 1.4 | `POST /orgs/:orgId/projects` endpoint + service | Integration test: create project as admin, 403 as non-member |
 | 1.5 | `GET /orgs/:orgId/projects` + `GET /projects/:id` | Integration tests pass |
 | 1.6 | `R2` client in `apps/api/src/lib/r2.ts` | Can PUT and GET an object in tests |
