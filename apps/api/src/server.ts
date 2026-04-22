@@ -2,7 +2,10 @@ import sensible from "@fastify/sensible";
 import { RemarksError, ValidationError } from "@remarks/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./env.js";
+import dbPlugin from "./plugins/db.js";
+import rawBodyPlugin from "./plugins/raw-body.js";
 import { healthRoutes } from "./routes/health.js";
+import { clerkWebhookRoutes } from "./routes/webhooks/clerk.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const server = Fastify({
@@ -48,7 +51,10 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await server.register(sensible);
+  await server.register(rawBodyPlugin);
+  await server.register(dbPlugin);
   await server.register(healthRoutes);
+  await server.register(clerkWebhookRoutes);
 
   return server;
 }

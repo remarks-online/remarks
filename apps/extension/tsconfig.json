@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [".wxt/wxt.d.ts", "src/**/*", "wxt.config.ts"],
+  "exclude": ["node_modules", ".output", ".wxt/types/**/*"]
+}

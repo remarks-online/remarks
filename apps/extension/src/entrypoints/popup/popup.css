@@ -1,0 +1,46 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.popup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.popup h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.popup p {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.popup button {
+  appearance: none;
+  border: 1px solid #0f172a;
+  background: #0f172a;
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.popup button:hover {
+  background: #1e293b;
+}

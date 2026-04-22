@@ -5,6 +5,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default("0.0.0.0"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  DATABASE_URL: z.string().url(),
+  CLERK_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
 });
 
 export const env = envSchema.parse(process.env);
