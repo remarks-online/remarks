@@ -1,0 +1,28 @@
+app = "remarks-api"
+primary_region = "iad"
+
+# Deploy from the monorepo root with:
+#   fly deploy . -c apps/api/fly.toml
+# The positional `.` sets the Docker build context to the monorepo root so the
+# Dockerfile can COPY pnpm-lock.yaml and packages/*. `dockerfile` below is
+# resolved relative to this file's directory (apps/api/).
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

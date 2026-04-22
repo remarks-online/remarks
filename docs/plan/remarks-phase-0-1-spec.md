@@ -496,7 +496,6 @@ export const projects = pgTable(
     slug: text("slug").notNull(),
     gitRepoUrl: text("git_repo_url"),            // null until GitHub integration (Phase 3)
     primaryBranch: text("primary_branch").notNull().default("main"),
-    apiToken: text("api_token").notNull().unique(),  // for MCP auth; rotatable
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -603,23 +602,44 @@ export type NewAnnotation = typeof annotations.$inferInsert;
 
 ```ts
 // packages/db/src/schema/annotation-events.ts
-import { pgTable, text, timestamp, uuid, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, jsonb, pgEnum, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { annotations } from "./annotations";
 import { users } from "./users";
+import { projectApiTokens } from "./project-api-tokens";
 
 export const annotationEventTypeEnum = pgEnum("annotation_event_type", [
   "created", "status_changed", "comment_added", "assigned",
   "pr_linked", "asset_attached", "resolved",
+  "agent_updated_status",   // emitted when an agent (not a human) calls update_status
+  "agent_commented",        // emitted when an agent calls add_task_comment
 ]);
 
-export const annotationEvents = pgTable("annotation_events", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  annotationId: uuid("annotation_id").notNull().references(() => annotations.id, { onDelete: "cascade" }),
-  actorId: uuid("actor_id").references(() => users.id),    // null if system actor
-  type: annotationEventTypeEnum("type").notNull(),
-  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const eventActorTypeEnum = pgEnum("event_actor_type", ["user", "agent", "system"]);
+
+export const annotationEvents = pgTable(
+  "annotation_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    annotationId: uuid("annotation_id").notNull().references(() => annotations.id, { onDelete: "cascade" }),
+    actorId: uuid("actor_id").references(() => users.id),    // null when actor_type is 'agent' or 'system'
+    actorType: eventActorTypeEnum("actor_type").notNull().default("user"),
+    actorTokenId: uuid("actor_token_id").references(() => projectApiTokens.id),  // non-null only when actor_type is 'agent'
+    type: annotationEventTypeEnum("type").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    actorConsistency: check(
+      "annotation_events_actor_consistency",
+      sql`
+        (${table.actorType} = 'user' AND ${table.actorId} IS NOT NULL AND ${table.actorTokenId} IS NULL) OR
+        (${table.actorType} = 'agent' AND ${table.actorId} IS NULL AND ${table.actorTokenId} IS NOT NULL) OR
+        (${table.actorType} = 'system' AND ${table.actorId} IS NULL AND ${table.actorTokenId} IS NULL)
+      `,
+    ),
+  }),
+);
 
 export type AnnotationEvent = typeof annotationEvents.$inferSelect;
 ```
@@ -720,6 +740,42 @@ export const annotationsRelations = relations(annotations, ({ one, many }) => ({
 ### 3.8 Row-level security (deferred)
 
 RLS is correct for enterprise and you want it eventually, but adding it now is a premature-optimization tax for a pre-revenue product. Phase 1: enforce authorization at the service layer only. Phase 4+ (when Business tier ships), layer on RLS as defense in depth.
+
+### 3.8 Project API tokens
+
+```ts
+// packages/db/src/schema/project-api-tokens.ts
+import { pgTable, text, timestamp, uuid, jsonb, index } from "drizzle-orm/pg-core";
+import { projects } from "./projects";
+import { users } from "./users";
+
+export const projectApiTokens = pgTable(
+  "project_api_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),                              // user-supplied, e.g., "Claude Code on my laptop"
+    tokenHash: text("token_hash").notNull().unique(),
+    tokenPrefix: text("token_prefix").notNull(),              // first 12 chars for display
+    tokenLast4: text("token_last_4").notNull(),               // last 4 for display
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    createdById: uuid("created_by_id").notNull().references(() => users.id),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    clientInfo: jsonb("client_info").$type<{
+      agent?: string;
+      version?: string;
+      os?: string;
+    } | null>(),                                               // populated from MCP init handshake
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    projectIdx: index("project_api_tokens_project_idx").on(table.projectId),
+    lastUsedIdx: index("project_api_tokens_last_used_idx").on(table.lastUsedAt),
+  }),
+);
+```
 
 ---
 
@@ -1091,14 +1147,57 @@ Response:
 }
 ```
 
-### 5.6 Rate limits
+## 5.6 Rate limits
 
-- 100 req/min per user for mutating endpoints
-- 600 req/min per user for read endpoints
-- 10 req/min per IP for unauthenticated endpoints
-- Enforced via Upstash Redis token bucket
+Enforced via Upstash Redis with a sliding-window counter. One middleware, applied to every route via a Fastify preHandler hook. Keys are namespaced ratelimit:{bucket}:{identifier} with a TTL equal to the window.
+BucketIdentifierLimitWindowmutation (POST/PATCH/PUT/DELETE)user ID10060sread (GET)user ID60060sanon (no auth)IP1060s
+Exceeded limit returns 429 with a Retry-After header. Every response (whether limited or not) carries X-RateLimit-Limit and X-RateLimit-Remaining.
+Implementation sketch:
+```ts
+// apps/api/src/lib/redis.ts
+import { Redis } from "@upstash/redis";
+import { env } from "../env";
+export const redis = new Redis({
+  url: env.UPSTASH_REDIS_URL,
+  token: env.UPSTASH_REDIS_TOKEN,
+});
+```
+```ts
+// apps/api/src/plugins/rate-limit.ts
+import type { FastifyPluginAsync } from "fastify";
+import { redis } from "../lib/redis";
+import { RateLimitError } from "@remarks/shared/errors";
 
-Returns 429 with `Retry-After` header.
+const LIMITS = {
+  mutation: { limit: 100, windowSec: 60 },
+  read:     { limit: 600, windowSec: 60 },
+  anon:     { limit: 10,  windowSec: 60 },
+} as const;
+
+export const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook("preHandler", async (req, reply) => {
+    const authed = req.user != null;
+    const mutating = ["POST", "PATCH", "PUT", "DELETE"].includes(req.method);
+    const bucket = !authed ? "anon" : mutating ? "mutation" : "read";
+    const identifier = authed ? req.user!.id : req.ip;
+
+    const { limit, windowSec } = LIMITS[bucket];
+    const key = `ratelimit:${bucket}:${identifier}`;
+
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, windowSec);
+
+    reply.header("X-RateLimit-Limit", limit);
+    reply.header("X-RateLimit-Remaining", Math.max(0, limit - count));
+
+    if (count > limit) {
+      reply.header("Retry-After", windowSec);
+      throw new RateLimitError();
+    }
+  });
+};
+```
+This is the total Redis footprint in Phase 1. No caching, no session store, no queue, no presence tracking. Those are Phase 2+ decisions and require their own ADRs before adding
 
 ---
 
@@ -1250,6 +1349,25 @@ These events feed dashboards in PostHog that tell you retention and activation. 
 
 ## 8. Infrastructure setup
 
+### 8.0 Service-usage phasing
+
+The list in §8.1 includes accounts to register in Phase 0 so they exist when needed. Not all of them are integrated into code in Phase 1. This table is the authoritative answer for Claude Code when deciding whether a new dependency or import is appropriate.
+
+| **Service** | **Registered** | **Wired into code** | **Purpose in Phase 1** |
+| :-------------: | :----------------: | :---------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------: |
+| Clerk | Phase 0 | Phase 1 | Auth for dashboard and extension; handles all auth-related email itself |
+| Neon Postgres | Phase 0 | Phase 1 | Primary data store via Drizzle (packages/db) |
+| Cloudflare R2 | Phase 0 | Phase 1 | Screenshot blob storage via presigned URLs |
+| Cloudflare DNS | Phase 0 | Phase 1 | Domain routing |
+| Upstash Redis | Phase 0 | Phase 1 | Rate limiting only (see §5.6). No caching, sessions, or queues in Phase 1. |
+| Sentry | Phase 0 | Phase 1 | Error tracking in all four apps |
+| PostHog | Phase 0 | Phase 1 | Product analytics + feature flags |
+| Fly.io | Phase 0 | Phase 1 | API hosting (and MCP in Phase 2) |
+| Vercel | Phase 0 | Phase 1 | Dashboard hosting |
+| **Inngest** | **Phase 0** | **Phase 2+** | Not used in Phase 1. First real use is async R2 cleanup on org deletion and MCP webhook fan-out. Do not import the SDK into any app before Phase 2. |
+| **Resend** | **Phase 0** | **Phase 2+** | Not used in Phase 1. Clerk sends all auth-related email. First real use is PR notifications (Phase 3). Do not import the SDK before Phase 2. |
+| Stripe | Phase 3 | Phase 3 | Billing. Not even registered until Phase 3. |
+
 ### 8.1 Accounts to create (Phase 0, week 1)
 
 - [X] GitHub org: `remarks.online`
@@ -1261,7 +1379,7 @@ These events feed dashboards in PostHog that tell you retention and activation. 
 - [X] Upstash account, Redis DBs: `remarks-prod`, `remarks-dev`
 - [ ] Inngest account, apps: `remarks-prod`, `remarks-dev`
 - [ ] Resend account with verified domain `remarks.online`
-- [ ] PostHog account, project: `remarks`
+- [X] PostHog account, project: `remarks`
 - [ ] Sentry account, projects: one per app (extension, dashboard, api, mcp)
 - [ ] Stripe account (Phase 3, not Phase 0)
 

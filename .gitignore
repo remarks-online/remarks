@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.output/
+.wxt/
+.turbo/
+
+# Test outputs
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Env files (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*

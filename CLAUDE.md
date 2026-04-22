@@ -12,7 +12,7 @@ These rules live in `CLAUDE.md` at the repo root and are loaded by Claude Code a
 ## 1.2 Style and quality
 
 - **Biome** for linting and formatting. Config is at repo root, inherited by all packages. Run on pre-commit via `simple-git-hooks`.
-- **Import order:** external packages → `@drawbridge/*` workspace packages → relative imports. Biome enforces.
+- **Import order:** external packages → `@remarks/*` workspace packages → relative imports. Biome enforces.
 - **File names:** `kebab-case.ts` for modules, `PascalCase.tsx` for React components, `use-camel-case.ts` for hooks.
 - **Folder names:** `kebab-case`.
 - **No default exports** except for Next.js pages/layouts/route handlers (which require them). Named exports everywhere else.
@@ -118,7 +118,7 @@ export type Env = z.infer<typeof envSchema>;
 ## 1.9 Error handling
 
 - **Never throw raw strings.** Always `throw new SomeError(message, { cause })`.
-- **App-specific error classes** extend a base `DrawbridgeError` in `packages/shared/src/errors.ts` with `code`, `statusCode`, and `exposed` (whether the message can be shown to the client).
+- **App-specific error classes** extend a base `RemarksError` in `packages/shared/src/errors.ts` with `code`, `statusCode`, and `exposed` (whether the message can be shown to the client).
 - **Server-side errors are logged with structured fields** (userId, orgId, requestId) and reported to Sentry.
 - **Client-side errors go to Sentry** with Clerk user context attached.
 

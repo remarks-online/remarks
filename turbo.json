@@ -1,0 +1,35 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env", "tsconfig.base.json"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", ".output/**", ".wxt/**"]
+    },
+    "lint": {},
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "env": ["DATABASE_URL"]
+    },
+    "test:e2e": {
+      "dependsOn": ["build"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "db:generate": {
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    }
+  }
+}
