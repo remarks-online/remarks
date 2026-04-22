@@ -3,5 +3,7 @@
 // throwaway value rather than free-form text.
 process.env.CLERK_WEBHOOK_SECRET =
   process.env.CLERK_WEBHOOK_SECRET ?? "whsec_dW5pdC10ZXN0LXNlY3JldC1ub3QtZm9yLXByb2Q=";
+process.env.CLERK_SECRET_KEY =
+  process.env.CLERK_SECRET_KEY ?? "sk_test_dW5pdC10ZXN0LXNlY3JldC1ub3QtZm9yLXByb2Q=";
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://fake:fake@localhost:5432/fake";

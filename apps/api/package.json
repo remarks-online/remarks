@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@clerk/backend": "^3.2.14",
     "@fastify/sensible": "^6.0.3",
     "@remarks/db": "workspace:*",
     "@remarks/shared": "workspace:*",
