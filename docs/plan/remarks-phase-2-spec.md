@@ -30,9 +30,8 @@ This document is the executable spec for Phase 2: the MCP server and the Remarks
 7. [Data model amendments](#7-data-model-amendments)
 8. [Transport and infrastructure](#8-transport-and-infrastructure)
 9. [Observability specific to agent traffic](#9-observability-specific-to-agent-traffic)
-10. [Markdown export: the deprecation plan](#10-markdown-export-the-deprecation-plan)
-11. [Phase 2 task breakdown](#11-phase-2-task-breakdown)
-12. [Exit criteria for Phase 2](#12-exit-criteria-for-phase-2)
+10. [Phase 2 task breakdown](#11-phase-2-task-breakdown)
+11. [Exit criteria for Phase 2](#12-exit-criteria-for-phase-2)
 
 ---
 
@@ -50,7 +49,6 @@ Explicit non-goals for Phase 2:
 - Slash commands
 - Per-agent config files
 - Local MCP server / stdio transport (hosted only)
-- Any markdown in the critical path
 
 ---
 
@@ -811,18 +809,7 @@ If any single token hits the rate limit more than 10 times in an hour, alert. Pr
 
 ---
 
-## 10. Markdown export: the deprecation plan
-
-Phase 1 shipped a markdown export endpoint as a migration path for existing Drawbridge users and as a general fallback. Remarks is a new product with no legacy users. The plan:
-
-- **Phase 2**: the markdown export endpoint (`/projects/:id/export/markdown`) stays available but is no longer featured in the UI. No "Export" button in the dashboard. It's accessible via API for users who know about it.
-- **Phase 3**: remove entirely unless we hear specific customer demand.
-
-This isn't worth an ADR; it's an obvious product call. But it's worth documenting here so the Phase 2 implementation doesn't accidentally strengthen the markdown path.
-
----
-
-## 11. Phase 2 task breakdown
+## 10. Phase 2 task breakdown
 
 Estimated ~6 weeks total for a solo developer with Claude Code.
 
@@ -886,7 +873,7 @@ Estimated ~6 weeks total for a solo developer with Claude Code.
 
 ---
 
-## 12. Exit criteria for Phase 2
+## 11. Exit criteria for Phase 2
 
 Phase 2 is done when all of these are true:
 

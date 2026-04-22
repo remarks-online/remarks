@@ -1029,7 +1029,6 @@ Base URL: `https://api.remarks.online/v1`
 | DELETE | `/annotations/:annotationId` | Delete | User (project admin or author) |
 | GET | `/annotations/:annotationId/events` | Event log | User (project member) |
 | POST | `/uploads/presign` | Get presigned R2 upload URL | User |
-| GET | `/projects/:projectId/export/markdown` | Markdown export (for file-drop users) | User or API token |
 
 ### 5.3 Request/response examples
 
@@ -1341,7 +1340,6 @@ Phase 2+: revisit if users complain. WebSocket adds operational complexity and i
 - `annotation_status_changed`
 - `extension_installed` (via extension pinging dashboard on install)
 - `extension_signed_in`
-- `markdown_export_downloaded`
 
 These events feed dashboards in PostHog that tell you retention and activation. Set them up week one.
 
@@ -1583,7 +1581,6 @@ A 10-minute smoke-test checklist, run by you, from the user's perspective:
 3. Draw rectangle, add comment, verify.
 4. Sign out and back in.
 5. Mark annotation done in dashboard, verify extension reflects.
-6. Export to markdown, verify file looks right.
 
 Automate when you're doing this manually more than once a week.
 
@@ -1685,7 +1682,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 
 | # | Task | Done when |
 |---|---|---|
-| 1.1 | Zod schemas in `packages/shared/schemas/annotation.ts`, `project.ts`, `common.ts` from §4 | Types exported, tests pass |
+| 1.1 ✓ | Zod schemas in `packages/shared/schemas/annotation.ts`, `project.ts`, `common.ts` from §4 | Types exported, tests pass |
 | 1.2 | API auth middleware: verify Clerk JWT, attach `user` + `orgMemberships` to request | Integration test passes |
 | 1.3 | API authorization helpers: `requireOrgMember`, `requireProjectMember(role)` | Tested with mocked contexts |
 | 1.4 | `POST /orgs/:orgId/projects` endpoint + service | Integration test: create project as admin, 403 as non-member |
@@ -1727,18 +1724,14 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.30 | Branch selector in sidebar (free text for Phase 1; GitHub-backed in Phase 3) | User can set branch name and it persists |
 | 1.31 | Extension Playwright tests for happy path | Green in CI |
 
-### Weeks 12–14: markdown export + polish
+### Weeks 12–14: onboarding + polish
 
 | # | Task | Done when |
 |---|---|---|
-| 1.32 | `GET /projects/:id/export/markdown` returns `moat-tasks.md`-compatible output | Content matches original Remarks format closely enough to migrate users |
-| 1.33 | `GET /projects/:id/export/detail-json` returns `moat-tasks-detail.json`-compatible output | Same |
-| 1.34 | Dashboard: "Export" button on project page downloads the pair | Verified manually |
-| 1.35 | Screenshot URLs in markdown export are long-lived presigned (24h) or public-with-random-path | Users can open links from their editor |
-| 1.36 | Settings page: rotate API token, delete project, rename project | All functional |
-| 1.37 | Email invitation flow (Clerk Orgs default UI is fine) | Teammate accepts invite and sees projects |
-| 1.38 | Onboarding: first-project wizard with "install extension" CTA | Walks new user through first annotation |
-| 1.39 | Marketing home page (static, one page, explains product, CTA to sign up) | Lives at `remarks.online` |
+| 1.32 | Settings page: delete project, rename project | All functional |
+| 1.33 | Email invitation flow (Clerk Orgs default UI is fine) | Teammate accepts invite and sees projects |
+| 1.34 | Onboarding: first-project wizard with "install extension" CTA | Walks new user through first annotation |
+| 1.35 | Marketing home page (static, one page, explains product, CTA to sign up) | Lives at `remarks.online` |
 
 ### Weeks 15–18: private beta + iteration
 
@@ -1760,7 +1753,6 @@ Phase 1 is done when all of these are true:
 - [ ] A new user can sign up on `app.remarks.online`, create an org, create a project, install the Chrome extension, sign in, annotate a page, and see the annotation in the dashboard. Entire flow under 3 minutes.
 - [ ] A teammate can be invited to the org and see the same annotations.
 - [ ] Element-picker, rectangle-picker, status update, and delete all work.
-- [ ] Markdown export produces a file compatible with the existing Remarks workflow (so agent rules still work for users who want the file-drop flow).
 - [ ] 5 design partners have used it for at least a week each. 3 of them say unprompted that they'd pay for it.
 - [ ] CI green, no known P0 or P1 bugs.
 - [ ] Extension submitted (but not necessarily approved) to Chrome Web Store and Edge Add-ons.
