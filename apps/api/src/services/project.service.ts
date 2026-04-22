@@ -22,6 +22,19 @@ function isUniqueViolation(err: unknown): boolean {
   return e?.code === PG_UNIQUE_VIOLATION || e?.cause?.code === PG_UNIQUE_VIOLATION;
 }
 
+function toProjectResponse(row: typeof schema.projects.$inferSelect): ProjectResponse {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    name: row.name,
+    slug: row.slug,
+    gitRepoUrl: row.gitRepoUrl,
+    primaryBranch: row.primaryBranch,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 export async function createProject(db: DB, args: CreateProjectArgs): Promise<ProjectResponse> {
   const { clerkOrgId, authorUserId, input } = args;
 
@@ -61,15 +74,32 @@ export async function createProject(db: DB, args: CreateProjectArgs): Promise<Pr
       role: "admin",
     });
 
-    return {
-      id: inserted.id,
-      orgId: inserted.orgId,
-      name: inserted.name,
-      slug: inserted.slug,
-      gitRepoUrl: inserted.gitRepoUrl,
-      primaryBranch: inserted.primaryBranch,
-      createdAt: inserted.createdAt.toISOString(),
-      updatedAt: inserted.updatedAt.toISOString(),
-    };
+    return toProjectResponse(inserted);
   });
+}
+
+export async function listProjectsByOrg(db: DB, clerkOrgId: string): Promise<ProjectResponse[]> {
+  const org = await db.query.organizations.findFirst({
+    where: eq(schema.organizations.clerkOrgId, clerkOrgId),
+    columns: { id: true },
+  });
+  if (!org) {
+    throw new NotFoundError("Organization");
+  }
+
+  const rows = await db.query.projects.findMany({
+    where: eq(schema.projects.orgId, org.id),
+    orderBy: (projects, { desc }) => [desc(projects.createdAt)],
+  });
+  return rows.map(toProjectResponse);
+}
+
+export async function getProjectById(db: DB, projectId: string): Promise<ProjectResponse> {
+  const row = await db.query.projects.findFirst({
+    where: eq(schema.projects.id, projectId),
+  });
+  if (!row) {
+    throw new NotFoundError("Project");
+  }
+  return toProjectResponse(row);
 }
