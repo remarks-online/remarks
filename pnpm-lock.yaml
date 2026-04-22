@@ -148,6 +148,31 @@ importers:
         specifier: ^0.20.0
         version: 0.20.25(@types/node@22.19.17)(jiti@2.6.1)(rollup@4.60.2)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3)
 
+  apps/mcp:
+    dependencies:
+      '@remarks/mcp-schema':
+        specifier: workspace:*
+        version: link:../../packages/mcp-schema
+      '@remarks/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^1.9.4
+        version: 1.9.4
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/db:
     dependencies:
       '@remarks/shared':
@@ -175,6 +200,19 @@ importers:
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
+  packages/mcp-schema:
+    dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^1.9.4
+        version: 1.9.4
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -8401,7 +8439,7 @@ snapshots:
 
   rpc-websockets@9.3.8:
     dependencies:
-      '@swc/helpers': 0.5.15
+      '@swc/helpers': 0.5.21
       '@types/uuid': 10.0.0
       '@types/ws': 8.18.1
       buffer: 6.0.3
