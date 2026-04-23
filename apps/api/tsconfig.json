@@ -2,7 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // The api is a private app whose runtime output (dist/) is consumed by
+    // `node dist/index.js`, never as a TypeScript package. The dashboard
+    // imports the AppRouter type directly from src/ via the package "exports"
+    // map, so dist/*.d.ts files are unused. Disabling declaration emission
+    // also avoids type-portability errors from tRPC's inferred Procedure
+    // type embedding Drizzle's deep generic schema reference.
+    "declaration": false,
+    "declarationMap": false
   },
   "include": ["src/**/*"],
   "exclude": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]

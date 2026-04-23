@@ -6,15 +6,11 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { env } from "../env.js";
 
+import type { AuthenticatedUser, OrgMembership } from "../trpc/trpc.js";
+
 export interface RequestAuth {
-  user: {
-    id: string;
-    clerkUserId: string;
-    email: string | null;
-    name: string | null;
-    avatarUrl: string | null;
-  };
-  orgMemberships: Array<{ clerkOrgId: string; role: string }>;
+  user: AuthenticatedUser;
+  orgMemberships: OrgMembership[];
 }
 
 declare module "fastify" {

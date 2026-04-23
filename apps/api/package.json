@@ -6,6 +6,9 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "exports": {
+    "./trpc/router": "./src/trpc/router.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
@@ -23,6 +26,7 @@
     "@fastify/sensible": "^6.0.3",
     "@remarks/db": "workspace:*",
     "@remarks/shared": "workspace:*",
+    "@trpc/server": "^11.0.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.2.0",
     "fastify-plugin": "^5.0.1",
