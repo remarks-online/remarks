@@ -68,6 +68,11 @@ function listUrl(orgId: string): string {
   return `/trpc/projects.list?input=${input}`;
 }
 
+function getBySlugUrl(orgId: string, slug: string): string {
+  const input = encodeURIComponent(JSON.stringify({ orgId, slug }));
+  return `/trpc/projects.getBySlug?input=${input}`;
+}
+
 interface CreateInput {
   orgId: string;
   input: {
@@ -215,6 +220,113 @@ describe("tRPC projects.list (integration)", () => {
 
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("UNAUTHORIZED");
+  });
+});
+
+describe("tRPC projects.getBySlug (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    await truncateAll();
+  });
+
+  test("member of org → 200, returns project by slug", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_slug_happy" });
+    const user = await seedUser(db, { clerkUserId: "user_slug_happy" });
+    const project = await insertProject(db, { orgId: org.id, name: "Demo", slug: "demo" });
+
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: getBySlugUrl(org.clerkOrgId, "demo"),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data).toMatchObject({
+      id: project.id,
+      orgId: org.id,
+      name: "Demo",
+      slug: "demo",
+      primaryBranch: "main",
+    });
+  });
+
+  test("unknown slug in member's org → NOT_FOUND", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_slug_missing" });
+    const user = await seedUser(db, { clerkUserId: "user_slug_missing" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: getBySlugUrl(org.clerkOrgId, "does-not-exist"),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.data.code).toBe("NOT_FOUND");
+  });
+
+  test("non-member of org → FORBIDDEN, doesn't leak project existence", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_slug_secret" });
+    await insertProject(db, { orgId: org.id, name: "Secret", slug: "secret" });
+
+    const user = await seedUser(db, { clerkUserId: "user_slug_outsider" });
+    mockAuth({ clerkUserId: user.clerkUserId, memberships: [] });
+
+    const res = await server.inject({
+      method: "GET",
+      url: getBySlugUrl(org.clerkOrgId, "secret"),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+  });
+
+  test("same slug across orgs resolves per-org (no cross-org leak)", async () => {
+    const db = await getIntegrationDb();
+    const myOrg = await seedOrg(db, { clerkOrgId: "org_slug_mine" });
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_slug_theirs" });
+    const mine = await insertProject(db, { orgId: myOrg.id, name: "Mine", slug: "shared" });
+    await insertProject(db, { orgId: otherOrg.id, name: "Theirs", slug: "shared" });
+
+    const user = await seedUser(db, { clerkUserId: "user_slug_cross" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: myOrg.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: getBySlugUrl(myOrg.clerkOrgId, "shared"),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data.id).toBe(mine.id);
   });
 });
 

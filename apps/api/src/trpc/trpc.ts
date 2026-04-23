@@ -1,6 +1,7 @@
 import type { DB } from "@remarks/db";
 import { RemarksError, UnauthorizedError, ValidationError } from "@remarks/shared";
 import { TRPCError, initTRPC } from "@trpc/server";
+import type { R2Client } from "../lib/r2.js";
 
 // User shape inlined (rather than imported from plugins/auth.ts) so the
 // dashboard's type-only import of AppRouter doesn't transitively pull in
@@ -23,6 +24,7 @@ export interface Context {
   user?: AuthenticatedUser;
   orgMemberships: OrgMembership[];
   db: DB;
+  r2: R2Client;
   requestId: string;
 }
 

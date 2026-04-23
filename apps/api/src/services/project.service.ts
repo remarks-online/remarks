@@ -5,7 +5,7 @@ import {
   NotFoundError,
   type ProjectResponse,
 } from "@remarks/shared";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { isUniqueViolation } from "../lib/db-errors.js";
 
 export interface CreateProjectArgs {
@@ -89,6 +89,29 @@ export async function listProjectsByOrg(db: DB, clerkOrgId: string): Promise<Pro
 export async function getProjectById(db: DB, projectId: string): Promise<ProjectResponse> {
   const row = await db.query.projects.findFirst({
     where: eq(schema.projects.id, projectId),
+  });
+  if (!row) {
+    throw new NotFoundError("Project");
+  }
+  return toProjectResponse(row);
+}
+
+export async function getProjectBySlug(
+  db: DB,
+  clerkOrgId: string,
+  slug: string
+): Promise<ProjectResponse> {
+  // Slugs are unique per-org (see projects_org_slug_idx). Resolving through the
+  // clerk org id keeps the lookup scoped so cross-org slug collisions never leak.
+  const org = await db.query.organizations.findFirst({
+    where: eq(schema.organizations.clerkOrgId, clerkOrgId),
+    columns: { id: true },
+  });
+  if (!org) {
+    throw new NotFoundError("Project");
+  }
+  const row = await db.query.projects.findFirst({
+    where: and(eq(schema.projects.orgId, org.id), eq(schema.projects.slug, slug)),
   });
   if (!row) {
     throw new NotFoundError("Project");

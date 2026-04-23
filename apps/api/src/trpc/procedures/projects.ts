@@ -7,7 +7,11 @@ import {
 } from "@remarks/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createProject, listProjectsByOrg } from "../../services/project.service.js";
+import {
+  createProject,
+  getProjectBySlug,
+  listProjectsByOrg,
+} from "../../services/project.service.js";
 import { protectedProcedure, router } from "../trpc.js";
 
 const listInputSchema = z.object({ orgId: z.string().min(1) });
@@ -16,6 +20,11 @@ const listOutputSchema = z.object({ items: z.array(projectResponseSchema) });
 const createInputSchema = z.object({
   orgId: z.string().min(1),
   input: createProjectRequestSchema,
+});
+
+const getBySlugInputSchema = z.object({
+  orgId: z.string().min(1),
+  slug: z.string().min(1),
 });
 
 export const projectsRouter = router({
@@ -30,6 +39,30 @@ export const projectsRouter = router({
     }
     const items = await listProjectsByOrg(ctx.db, input.orgId);
     return listOutputSchema.parse({ items });
+  }),
+
+  getBySlug: protectedProcedure.input(getBySlugInputSchema).query(async ({ ctx, input }) => {
+    const membership = ctx.orgMemberships.find((m) => m.clerkOrgId === input.orgId);
+    if (!membership) {
+      // Match `list`'s behavior: non-members get FORBIDDEN rather than NOT_FOUND
+      // on the org membership check. Project existence is leak-proofed separately
+      // inside getProjectBySlug, which also throws NotFoundError when the org
+      // is unknown to the DB.
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Not a member of this organization",
+        cause: new ForbiddenError("Not a member of this organization"),
+      });
+    }
+    try {
+      const result = await getProjectBySlug(ctx.db, input.orgId, input.slug);
+      return projectResponseSchema.parse(result);
+    } catch (err) {
+      if (err instanceof NotFoundError) {
+        throw new TRPCError({ code: "NOT_FOUND", message: err.message, cause: err });
+      }
+      throw err;
+    }
   }),
 
   create: protectedProcedure.input(createInputSchema).mutation(async ({ ctx, input }) => {

@@ -17,6 +17,7 @@
     "minio:up": "docker compose up -d minio && tools/scripts/wait-for-minio.sh",
     "minio:down": "docker compose down minio",
     "db:dev:reset": "tools/scripts/neon-dev-reset.sh",
+    "seed": "pnpm --filter @remarks/scripts seed",
     "format": "biome format --write .",
     "check": "biome check ."
   },

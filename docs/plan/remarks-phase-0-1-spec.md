@@ -1641,6 +1641,8 @@ Non-negotiable for Phase 1, even solo:
 
 Each task is sized to fit in a single Claude Code session. Order matters — later tasks depend on earlier ones.
 
+> Gaps and minor deviations surfaced while executing these tasks live in [`docs/plan/spec-gaps.md`](./spec-gaps.md) as amendments (`A1`, `A2`, …) that can be picked up between numbered tasks.
+
 ### Week 1: foundation
 
 | # | Task | Done when |
@@ -1700,8 +1702,8 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 |---|---|---|
 | 1.11 ✓ | tRPC setup in api and dashboard, first procedure: `me.getCurrentUser` | Dashboard server component calls it successfully |
 | 1.12 ✓ | Project list page: `app/(app)/projects/page.tsx` with RSC data fetch | Lists projects for current org |
-| 1.13 | Create project flow (modal or page) | Submitting form creates project |
-| 1.14 | Project detail page with annotation list grouped by branch | Shows seeded data with screenshots |
+| 1.13 ✓ | Create project flow (modal or page) | Submitting form creates project |
+| 1.14 ✓ | Project detail page with annotation list grouped by branch | Shows seeded data with screenshots |
 | 1.15 | Annotation detail view (right-side drawer or modal) | Shows comment, screenshot, events, status dropdown |
 | 1.16 | Status update UI (to_do / doing / done / rejected) | Updates via tRPC mutation with optimistic update |
 | 1.17 | Org switcher (Clerk component) | Switching orgs re-fetches projects |

@@ -1,15 +1,18 @@
-import { schema } from "@remarks/db";
-import { ForbiddenError, NotFoundError } from "@remarks/shared";
-import { and, eq } from "drizzle-orm";
+import { ForbiddenError } from "@remarks/shared";
 import type { FastifyRequest } from "fastify";
+import {
+  PROJECT_ROLE_RANK,
+  type ProjectRole,
+  assertProjectMember,
+} from "./project-authorization.js";
 
-export type ProjectRole = "viewer" | "editor" | "admin";
-
-export const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  viewer: 0,
-  editor: 1,
-  admin: 2,
-};
+// Re-exported for existing call sites that read the role rank or the pure
+// helper from this module. Splitting kept `project-authorization.ts` free of
+// Fastify types so the tRPC import graph doesn't drag in Fastify augmentations
+// (`request.auth`, `fastify.db`) that aren't visible outside the api's
+// compilation — e.g. from the dashboard's type-only import of AppRouter.
+export { PROJECT_ROLE_RANK, assertProjectMember };
+export type { ProjectRole };
 
 const CLERK_ADMIN_ROLE = "org:admin";
 
@@ -33,20 +36,5 @@ export async function requireProjectMember(
   projectId: string,
   opts: { minRole?: ProjectRole } = {}
 ): Promise<{ role: ProjectRole }> {
-  const minRole = opts.minRole ?? "viewer";
-  const row = await request.server.db.query.projectMembers.findFirst({
-    where: and(
-      eq(schema.projectMembers.projectId, projectId),
-      eq(schema.projectMembers.userId, request.auth.user.id)
-    ),
-    columns: { role: true },
-  });
-  // Return 404 on missing membership so project existence isn't leaked to non-members.
-  if (!row) {
-    throw new NotFoundError("Project");
-  }
-  if (PROJECT_ROLE_RANK[row.role] < PROJECT_ROLE_RANK[minRole]) {
-    throw new ForbiddenError(`Requires project ${minRole} role`);
-  }
-  return { role: row.role };
+  return assertProjectMember(request.server.db, request.auth.user.id, projectId, opts);
 }
