@@ -1,0 +1,197 @@
+import { schema } from "@remarks/db";
+import { eq } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  closeIntegrationDb,
+  getIntegrationDb,
+  seedOrg,
+  seedUser,
+  truncateAll,
+} from "../../test/integration/db.js";
+
+const mocks = vi.hoisted(() => ({
+  verifyToken: vi.fn(),
+  getOrganizationMembershipList: vi.fn(),
+}));
+
+vi.mock("@clerk/backend", () => ({
+  verifyToken: mocks.verifyToken,
+  createClerkClient: () => ({
+    users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
+  }),
+}));
+
+const { buildServer } = await import("../server.js");
+
+const BEARER = "Bearer test.token.value";
+
+function mockAuth(args: {
+  clerkUserId: string;
+  memberships: Array<{ clerkOrgId: string; role: "org:admin" | "org:member" }>;
+}): void {
+  mocks.verifyToken.mockResolvedValueOnce({ sub: args.clerkUserId });
+  mocks.getOrganizationMembershipList.mockResolvedValueOnce({
+    data: args.memberships.map((m) => ({
+      role: m.role,
+      organization: { id: m.clerkOrgId },
+    })),
+  });
+}
+
+async function insertProject(
+  db: Awaited<ReturnType<typeof getIntegrationDb>>,
+  values: {
+    orgId: string;
+    name: string;
+    slug: string;
+    gitRepoUrl?: string | null;
+    primaryBranch?: string;
+  }
+): Promise<typeof schema.projects.$inferSelect> {
+  const [row] = await db
+    .insert(schema.projects)
+    .values({
+      orgId: values.orgId,
+      name: values.name,
+      slug: values.slug,
+      gitRepoUrl: values.gitRepoUrl ?? null,
+      primaryBranch: values.primaryBranch ?? "main",
+    })
+    .returning();
+  if (!row) throw new Error("insertProject: no row returned");
+  return row;
+}
+
+function listUrl(orgId: string): string {
+  const input = encodeURIComponent(JSON.stringify({ orgId }));
+  return `/trpc/projects.list?input=${input}`;
+}
+
+describe("tRPC projects.list (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    await truncateAll();
+  });
+
+  test("member of org → 200, returns projects sorted newest first", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_list_happy" });
+    const user = await seedUser(db, { clerkUserId: "user_list_happy" });
+
+    const older = await insertProject(db, { orgId: org.id, name: "Older", slug: "older" });
+    // Force a distinguishable createdAt so ordering is deterministic across fast inserts.
+    await db
+      .update(schema.projects)
+      .set({ createdAt: new Date(older.createdAt.getTime() - 60_000) })
+      .where(eq(schema.projects.id, older.id));
+    const newer = await insertProject(db, { orgId: org.id, name: "Newer", slug: "newer" });
+
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: listUrl(org.clerkOrgId),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const { items } = res.json().result.data;
+    expect(items).toHaveLength(2);
+    expect(items[0].id).toBe(newer.id);
+    expect(items[1].id).toBe(older.id);
+    expect(items[0]).toMatchObject({
+      orgId: org.id,
+      name: "Newer",
+      slug: "newer",
+      primaryBranch: "main",
+      gitRepoUrl: null,
+    });
+  });
+
+  test("member of org with zero projects → 200, empty list", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_list_empty" });
+    const user = await seedUser(db, { clerkUserId: "user_list_empty" });
+
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: listUrl(org.clerkOrgId),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data.items).toEqual([]);
+  });
+
+  test("non-member of org → FORBIDDEN, not 200 with empty list", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_list_other" });
+    await insertProject(db, { orgId: org.id, name: "Secret", slug: "secret" });
+
+    const user = await seedUser(db, { clerkUserId: "user_list_outsider" });
+    mockAuth({ clerkUserId: user.clerkUserId, memberships: [] });
+
+    const res = await server.inject({
+      method: "GET",
+      url: listUrl(org.clerkOrgId),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+  });
+
+  test("member of one org cannot list another org's projects → FORBIDDEN", async () => {
+    const db = await getIntegrationDb();
+    const myOrg = await seedOrg(db, { clerkOrgId: "org_list_mine" });
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_list_theirs" });
+    await insertProject(db, { orgId: otherOrg.id, name: "Theirs", slug: "theirs" });
+
+    const user = await seedUser(db, { clerkUserId: "user_list_crossed" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: myOrg.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: listUrl(otherOrg.clerkOrgId),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+  });
+
+  test("missing Authorization → 401 UNAUTHORIZED", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: listUrl("org_anything"),
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("UNAUTHORIZED");
+  });
+});

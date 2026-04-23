@@ -1698,8 +1698,8 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 
 | # | Task | Done when |
 |---|---|---|
-| 1.11 | tRPC setup in api and dashboard, first procedure: `me.getCurrentUser` | Dashboard server component calls it successfully |
-| 1.12 | Project list page: `app/(app)/projects/page.tsx` with RSC data fetch | Lists projects for current org |
+| 1.11 ✓ | tRPC setup in api and dashboard, first procedure: `me.getCurrentUser` | Dashboard server component calls it successfully |
+| 1.12 ✓ | Project list page: `app/(app)/projects/page.tsx` with RSC data fetch | Lists projects for current org |
 | 1.13 | Create project flow (modal or page) | Submitting form creates project |
 | 1.14 | Project detail page with annotation list grouped by branch | Shows seeded data with screenshots |
 | 1.15 | Annotation detail view (right-side drawer or modal) | Shows comment, screenshot, events, status dropdown |
