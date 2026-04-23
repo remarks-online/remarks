@@ -81,7 +81,10 @@ export const annotationResponseSchema = z.object({
   author: z.object({
     id: z.string().uuid(),
     name: z.string().nullable(),
-    email: z.string().email(),
+    // Email is nullable because `user.deleted` scrubs it from the users table
+    // (see packages/db/src/schema/users.ts). Historical annotations retain a
+    // deleted author but expose null for their email.
+    email: z.string().email().nullable(),
     avatarUrl: z.string().url().nullable(),
   }),
   assets: z.array(
@@ -108,3 +111,20 @@ export const updateAnnotationRequestSchema = z
   });
 
 export type UpdateAnnotationRequest = z.infer<typeof updateAnnotationRequestSchema>;
+
+export const listAnnotationsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  // Fastify surfaces query params as strings; coerce before the int/range checks.
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  status: annotationStatusSchema.optional(),
+  branch: z.string().min(1).max(MAX_BRANCH_NAME_LENGTH).optional(),
+});
+
+export type ListAnnotationsQuery = z.infer<typeof listAnnotationsQuerySchema>;
+
+export const annotationListResponseSchema = z.object({
+  items: z.array(annotationResponseSchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type AnnotationListResponse = z.infer<typeof annotationListResponseSchema>;

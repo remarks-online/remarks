@@ -1,10 +1,17 @@
 import { type DB, schema } from "@remarks/db";
 import {
+  type AnnotationListResponse,
   type AnnotationResponse,
   type CreateAnnotationRequest,
+  type ListAnnotationsQuery,
   ValidationError,
 } from "@remarks/shared";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
+import {
+  type AnnotationListCursor,
+  decodeAnnotationListCursor,
+  encodeAnnotationListCursor,
+} from "../lib/cursor.js";
 import { isUniqueViolation } from "../lib/db-errors.js";
 import { type R2Client, getPresignedGetUrl, headObject } from "../lib/r2.js";
 import { buildAssetR2Key } from "./upload.service.js";
@@ -136,40 +143,130 @@ export async function createAnnotation(
     return { annotationRow: insertedAnnotation, assetRow: insertedAsset };
   });
 
+  const resolvedAssets: ResolvedAsset[] = assetRow
+    ? [
+        {
+          row: assetRow,
+          url: await getPresignedGetUrl(r2, {
+            key: assetRow.r2Key,
+            ttlSeconds: ANNOTATION_ASSET_GET_TTL_SECONDS,
+          }),
+        },
+      ]
+    : [];
+
   return toAnnotationResponse({
     annotationRow,
     branchName: input.branch,
     author,
-    assetRow,
-    assetUrl: assetRow
-      ? await getPresignedGetUrl(r2, {
-          key: assetRow.r2Key,
-          ttlSeconds: ANNOTATION_ASSET_GET_TTL_SECONDS,
-        })
-      : null,
+    assets: resolvedAssets,
   });
+}
+
+export interface ListAnnotationsArgs {
+  projectId: string;
+  query: ListAnnotationsQuery;
+  r2: R2Client;
+}
+
+export async function listAnnotations(
+  db: DB,
+  args: ListAnnotationsArgs
+): Promise<AnnotationListResponse> {
+  const { projectId, query, r2 } = args;
+
+  // Resolve `branch` (name) → branch id. A missing branch short-circuits to an
+  // empty page instead of flowing through to the annotations query.
+  let branchFilterId: string | null = null;
+  if (query.branch) {
+    const branchRow = await db.query.branches.findFirst({
+      where: and(eq(schema.branches.projectId, projectId), eq(schema.branches.name, query.branch)),
+      columns: { id: true },
+    });
+    if (!branchRow) return { items: [], nextCursor: null };
+    branchFilterId = branchRow.id;
+  }
+
+  const cursor: AnnotationListCursor | null = query.cursor
+    ? decodeAnnotationListCursor(query.cursor)
+    : null;
+
+  // Keyset predicate matches the (createdAt DESC, id DESC) order:
+  //   (createdAt, id) < (cursor.createdAt, cursor.id)
+  const cursorPredicate = cursor
+    ? or(
+        lt(schema.annotations.createdAt, new Date(cursor.createdAt)),
+        and(
+          eq(schema.annotations.createdAt, new Date(cursor.createdAt)),
+          lt(schema.annotations.id, cursor.id)
+        )
+      )
+    : undefined;
+
+  const where = and(
+    eq(schema.annotations.projectId, projectId),
+    query.status ? eq(schema.annotations.status, query.status) : undefined,
+    branchFilterId ? eq(schema.annotations.branchId, branchFilterId) : undefined,
+    cursorPredicate
+  );
+
+  const rows = await db.query.annotations.findMany({
+    where,
+    with: {
+      branch: { columns: { name: true } },
+      author: { columns: { id: true, name: true, email: true, avatarUrl: true } },
+      assets: true,
+    },
+    orderBy: [desc(schema.annotations.createdAt), desc(schema.annotations.id)],
+    limit: query.limit + 1,
+  });
+
+  const hasMore = rows.length > query.limit;
+  const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
+
+  const items = await Promise.all(
+    pageRows.map(async (row) => {
+      const resolvedAssets: ResolvedAsset[] = await Promise.all(
+        row.assets.map(async (asset) => ({
+          row: asset,
+          url: await getPresignedGetUrl(r2, {
+            key: asset.r2Key,
+            ttlSeconds: ANNOTATION_ASSET_GET_TTL_SECONDS,
+          }),
+        }))
+      );
+      return toAnnotationResponse({
+        annotationRow: row,
+        branchName: row.branch.name,
+        author: row.author,
+        assets: resolvedAssets,
+      });
+    })
+  );
+
+  const last = hasMore ? pageRows[pageRows.length - 1] : undefined;
+  const nextCursor = last
+    ? encodeAnnotationListCursor({
+        createdAt: last.createdAt.toISOString(),
+        id: last.id,
+      })
+    : null;
+
+  return { items, nextCursor };
+}
+
+interface ResolvedAsset {
+  row: AssetRow;
+  url: string;
 }
 
 function toAnnotationResponse(args: {
   annotationRow: AnnotationRow;
   branchName: string;
   author: AnnotationResponse["author"];
-  assetRow: AssetRow | null;
-  assetUrl: string | null;
+  assets: ResolvedAsset[];
 }): AnnotationResponse {
-  const { annotationRow: row, branchName, author, assetRow, assetUrl } = args;
-  const assets: AnnotationResponse["assets"] =
-    assetRow && assetUrl
-      ? [
-          {
-            id: assetRow.id,
-            kind: assetRow.kind,
-            url: assetUrl,
-            contentType: assetRow.contentType,
-          },
-        ]
-      : [];
-
+  const { annotationRow: row, branchName, author, assets } = args;
   return {
     id: row.id,
     projectId: row.projectId,
@@ -183,7 +280,12 @@ function toAnnotationResponse(args: {
     viewport: row.viewport,
     commentText: row.commentText,
     author,
-    assets,
+    assets: assets.map((a) => ({
+      id: a.row.id,
+      kind: a.row.kind,
+      url: a.url,
+      contentType: a.row.contentType,
+    })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
