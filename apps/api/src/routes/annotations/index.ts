@@ -1,14 +1,40 @@
-import { ValidationError, createAnnotationRequestSchema } from "@remarks/shared";
+import {
+  ValidationError,
+  createAnnotationRequestSchema,
+  listAnnotationsQuerySchema,
+} from "@remarks/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireProjectMember } from "../../lib/authorization.js";
-import { createAnnotation } from "../../services/annotation.service.js";
+import { createAnnotation, listAnnotations } from "../../services/annotation.service.js";
 
 const projectParamsSchema = z.object({
   projectId: z.string().uuid(),
 });
 
 export async function annotationRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.get("/projects/:projectId/annotations", async (request, reply) => {
+    const paramsResult = projectParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      throw new ValidationError("Invalid path params", paramsResult.error.issues);
+    }
+    const { projectId } = paramsResult.data;
+
+    await requireProjectMember(request, projectId);
+
+    const queryResult = listAnnotationsQuerySchema.safeParse(request.query);
+    if (!queryResult.success) {
+      throw new ValidationError("Invalid query params", queryResult.error.issues);
+    }
+
+    const result = await listAnnotations(request.server.db, {
+      projectId,
+      query: queryResult.data,
+      r2: request.server.r2,
+    });
+    return reply.send(result);
+  });
+
   fastify.post("/projects/:projectId/annotations", async (request, reply) => {
     const paramsResult = projectParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {
