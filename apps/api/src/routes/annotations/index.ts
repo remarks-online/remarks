@@ -105,11 +105,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
     const ownership = await getAnnotationOwnership(request.server.db, annotationId);
     await requireProjectMember(request, ownership.projectId);
 
-    const response = await getAnnotationById(
-      request.server.db,
-      annotationId,
-      request.server.r2
-    );
+    const response = await getAnnotationById(request.server.db, annotationId, request.server.r2);
     return reply.send(response);
   });
 
