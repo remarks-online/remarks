@@ -49,7 +49,28 @@ function DetailBody({ id }: { id: string }) {
   const eventsQuery = trpc.annotations.listEvents.useQuery({ id });
 
   const updateMutation = trpc.annotations.update.useMutation({
-    onSuccess: async () => {
+    onMutate: async ({ input }) => {
+      // Cancel in-flight get so our optimistic value isn't overwritten.
+      await utils.annotations.get.cancel({ id });
+      const previous = utils.annotations.get.getData({ id });
+      if (previous) {
+        utils.annotations.get.setData(
+          { id },
+          {
+            ...previous,
+            ...(input.status ? { status: input.status } : {}),
+            ...(input.commentText ? { commentText: input.commentText } : {}),
+          }
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        utils.annotations.get.setData({ id }, context.previous);
+      }
+    },
+    onSettled: async () => {
       await Promise.all([
         utils.annotations.get.invalidate({ id }),
         utils.annotations.listEvents.invalidate({ id }),
