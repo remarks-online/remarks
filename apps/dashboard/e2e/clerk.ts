@@ -13,6 +13,12 @@ export interface ClerkOrg {
   slug: string;
 }
 
+export interface ClerkOrgMembership {
+  id: string;
+  role: string;
+  public_user_data: { user_id: string };
+}
+
 interface ClerkSignInToken {
   token: string;
 }
@@ -78,6 +84,27 @@ export async function ensureClerkOrg(
   return clerkPost<ClerkOrg>(secretKey, "/v1/organizations", {
     name,
     created_by: creatorUserId,
+  });
+}
+
+// Idempotent: returns the existing membership if the user is already in the
+// org, otherwise POSTs to create it. `role` is the Clerk role string (e.g.
+// "org:admin", "org:member"), not the bare "admin"/"member" form.
+export async function ensureClerkOrgMembership(
+  secretKey: string,
+  orgId: string,
+  userId: string,
+  role: string
+): Promise<ClerkOrgMembership> {
+  const existing = await clerkList<ClerkOrgMembership>(
+    secretKey,
+    `/v1/organizations/${orgId}/memberships?limit=100`
+  );
+  const match = existing.find((m) => m.public_user_data.user_id === userId);
+  if (match) return match;
+  return clerkPost<ClerkOrgMembership>(secretKey, `/v1/organizations/${orgId}/memberships`, {
+    user_id: userId,
+    role,
   });
 }
 
