@@ -14,7 +14,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             Remarks
           </Link>
           <div className="flex items-center gap-4">
-            <OrganizationSwitcher hidePersonal />
+            <OrganizationSwitcher
+              hidePersonal
+              afterSelectOrganizationUrl="/app/projects"
+              afterCreateOrganizationUrl="/app/projects"
+              afterLeaveOrganizationUrl="/app/projects"
+            />
             <UserButton />
           </div>
         </header>
