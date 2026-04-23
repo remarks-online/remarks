@@ -22,6 +22,9 @@ coverage/
 .env.local
 .env.*.local
 
+# Vercel CLI link state (per-project .vercel/ dir, written by `vercel link`)
+.vercel/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -39,9 +39,33 @@ jobs:
 
       - run: pnpm turbo run lint typecheck test
 
+      # MinIO runs as a step (not a service) because GitHub Actions services
+      # can't override the image's CMD, and the official minio/minio image
+      # needs `server /data` to start. Creds/port match the R2 env below.
+      - name: Start MinIO for R2 integration tests
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            --health-cmd="curl -f http://localhost:9000/minio/health/live || exit 1" \
+            --health-interval=5s --health-timeout=5s --health-retries=20 \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live > /dev/null; then
+              echo "minio ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "minio failed to become ready"; docker logs minio; exit 1
+
       - run: pnpm turbo run test:integration
         env:
           DATABASE_URL: postgres://postgres:test@localhost:5432/test
+          R2_S3_ENDPOINT: http://localhost:9000
+          R2_ACCOUNT_ID: ci
+          R2_ACCESS_KEY_ID: minioadmin
+          R2_SECRET_ACCESS_KEY: minioadmin
+          R2_BUCKET_SCREENSHOTS: remarks-screenshots-test
 
       - run: pnpm turbo run build
         env:

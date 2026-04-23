@@ -8,7 +8,10 @@ Prerequisites (the "bring your own" list):
 
 - **Clerk `remarks-dev` instance** — used by dashboard, extension, and the api webhook. Created in Task 0.1 (spec §8.1).
 - **Neon project with a dev branch** — used by api and `packages/db` for migrations. Created in Task 0.1.
+- **Cloudflare R2 bucket `remarks-screenshots-dev`** with a dev-scoped API token (Object R/W). Created in Task 0.1.
 - **Chrome or Chromium** — needed to load the extension unpacked.
+
+For the full mapping of which secret goes where (dev vs prod, Fly vs Vercel vs local), see `docs/runbooks/environments.md`. This doc only covers getting a dev machine up.
 
 Account signup for Clerk, Neon, Cloudflare, etc. is explicitly covered by spec §8.1 and Task 0.1. Don't do it from this doc.
 
@@ -64,6 +67,10 @@ Then fill in the values that can't be checked in. The example files ship with se
 |---|---|---|
 | `apps/api/.env.local` | `DATABASE_URL` | Neon console → your dev branch → **direct** endpoint (not the `-pooler` host). Drizzle disables prepared statements, but `drizzle-kit` and migrations don't like pgbouncer. |
 | `apps/api/.env.local` | `CLERK_WEBHOOK_SECRET` | Clerk dashboard → Webhooks → your endpoint → Signing Secret (starts `whsec_`). For boot-only local work, `whsec_dev_placeholder` works — the webhook route only rejects bad signatures at request time. Real webhook testing needs ngrok; out of scope here. |
+| `apps/api/.env.local` | `CLERK_SECRET_KEY` | Clerk `remarks-dev` → API keys → `sk_test_…`. The API needs this too (not just the dashboard) — `@clerk/backend` uses it to verify incoming Bearer JWTs and to fetch org memberships. |
+| `apps/api/.env.local` | `R2_ACCOUNT_ID` | Cloudflare dashboard sidebar → Account ID. Not technically secret, but env-validated. |
+| `apps/api/.env.local` | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Cloudflare → R2 → Manage R2 API Tokens → create a token scoped to `remarks-screenshots-dev` with Object R/W. Copy both the Access Key ID and the Secret Access Key. |
+| `apps/api/.env.local` | `R2_BUCKET_SCREENSHOTS` | `remarks-screenshots-dev` (the prod bucket is only for the Fly `remarks-api` app). |
 | `apps/dashboard/.env.local` | `CLERK_SECRET_KEY` | Clerk `remarks-dev` → API keys → `sk_test_…` (never `sk_live_`). |
 | `apps/dashboard/.env.local` | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk `remarks-dev` → API keys → `pk_test_…`. Public; safe in the browser bundle. |
 | `apps/extension/.env` | `WXT_CLERK_PUBLISHABLE_KEY` | Same `pk_test_…` as dashboard. WXT requires the `WXT_` prefix for env injection. |
