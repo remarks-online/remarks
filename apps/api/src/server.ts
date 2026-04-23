@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import { RemarksError, ValidationError } from "@remarks/shared";
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
@@ -59,6 +60,11 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await server.register(sensible);
+  await server.register(cors, {
+    origin: env.NODE_ENV === "production" ? "https://app.remarks.online" : "http://localhost:3000",
+    credentials: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  });
   await server.register(rawBodyPlugin);
   await server.register(dbPlugin);
   await server.register(r2Plugin);

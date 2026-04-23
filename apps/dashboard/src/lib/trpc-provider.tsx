@@ -4,11 +4,16 @@ import { useAuth } from "@clerk/nextjs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { type ReactNode, useState } from "react";
-import { env } from "../env";
 import { trpc } from "./trpc-client";
 
-// Provider is scaffolded for task 1.16+ (status mutations, polling). Not yet
-// mounted anywhere — task 1.11 only exercises the RSC path via trpc-server.ts.
+// Read NEXT_PUBLIC_* directly rather than importing from ../env — env.ts
+// validates server-only secrets (CLERK_SECRET_KEY) that are undefined in the
+// client bundle, which would crash on hydration.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+if (!API_BASE_URL) {
+  throw new Error("NEXT_PUBLIC_API_BASE_URL must be set");
+}
+
 export function TRPCProvider({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
   const [queryClient] = useState(() => new QueryClient());
@@ -16,7 +21,7 @@ export function TRPCProvider({ children }: { children: ReactNode }) {
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: `${env.NEXT_PUBLIC_API_BASE_URL}/trpc`,
+          url: `${API_BASE_URL}/trpc`,
           headers: async () => {
             const token = await getToken();
             return token ? { authorization: `Bearer ${token}` } : {};

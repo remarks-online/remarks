@@ -68,6 +68,28 @@ function listUrl(orgId: string): string {
   return `/trpc/projects.list?input=${input}`;
 }
 
+interface CreateInput {
+  orgId: string;
+  input: {
+    name: string;
+    slug: string;
+    gitRepoUrl?: string;
+    primaryBranch?: string;
+  };
+}
+
+async function invokeCreate(server: FastifyInstance, payload: CreateInput, authorized: boolean) {
+  return server.inject({
+    method: "POST",
+    url: "/trpc/projects.create",
+    headers: {
+      ...(authorized ? { authorization: BEARER } : {}),
+      "content-type": "application/json",
+    },
+    payload,
+  });
+}
+
 describe("tRPC projects.list (integration)", () => {
   let server: FastifyInstance;
 
@@ -190,6 +212,167 @@ describe("tRPC projects.list (integration)", () => {
       method: "GET",
       url: listUrl("org_anything"),
     });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("UNAUTHORIZED");
+  });
+});
+
+describe("tRPC projects.create (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    await truncateAll();
+  });
+
+  test("org admin → project row and creator membership both inserted", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_create_admin" });
+    const user = await seedUser(db, { clerkUserId: "user_create_admin" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await invokeCreate(
+      server,
+      { orgId: org.clerkOrgId, input: { name: "Acme Web", slug: "acme-web" } },
+      true
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json().result.data;
+    expect(body).toMatchObject({
+      orgId: org.id,
+      name: "Acme Web",
+      slug: "acme-web",
+      gitRepoUrl: null,
+      primaryBranch: "main",
+    });
+    expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
+
+    const projectRow = await db.query.projects.findFirst({
+      where: eq(schema.projects.id, body.id),
+    });
+    expect(projectRow?.slug).toBe("acme-web");
+
+    const memberRow = await db.query.projectMembers.findFirst({
+      where: eq(schema.projectMembers.projectId, body.id),
+    });
+    expect(memberRow?.userId).toBe(user.id);
+    expect(memberRow?.role).toBe("admin");
+  });
+
+  test("org member (not admin) → FORBIDDEN, no project inserted", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_create_member" });
+    const user = await seedUser(db, { clerkUserId: "user_create_plain" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await invokeCreate(
+      server,
+      { orgId: org.clerkOrgId, input: { name: "Acme", slug: "acme" } },
+      true
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+
+    const rows = await db.query.projects.findMany({
+      where: eq(schema.projects.orgId, org.id),
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  test("non-member → FORBIDDEN", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_create_target" });
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_create_other" });
+    const user = await seedUser(db, { clerkUserId: "user_create_outsider" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: otherOrg.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await invokeCreate(
+      server,
+      { orgId: org.clerkOrgId, input: { name: "Acme", slug: "acme" } },
+      true
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+  });
+
+  test("duplicate slug in same org → CONFLICT", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_create_dup" });
+    const user = await seedUser(db, { clerkUserId: "user_create_dup" });
+
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+    const first = await invokeCreate(
+      server,
+      { orgId: org.clerkOrgId, input: { name: "Acme", slug: "acme" } },
+      true
+    );
+    expect(first.statusCode).toBe(200);
+
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+    const second = await invokeCreate(
+      server,
+      { orgId: org.clerkOrgId, input: { name: "Acme Two", slug: "acme" } },
+      true
+    );
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error.data.code).toBe("CONFLICT");
+  });
+
+  test("invalid slug → BAD_REQUEST", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_create_badslug" });
+    const user = await seedUser(db, { clerkUserId: "user_create_badslug" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await invokeCreate(
+      server,
+      { orgId: org.clerkOrgId, input: { name: "Acme", slug: "NOT A SLUG" } },
+      true
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.data.code).toBe("BAD_REQUEST");
+  });
+
+  test("missing Authorization → UNAUTHORIZED", async () => {
+    const res = await invokeCreate(
+      server,
+      { orgId: "org_anything", input: { name: "Acme", slug: "acme" } },
+      false
+    );
 
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("UNAUTHORIZED");
