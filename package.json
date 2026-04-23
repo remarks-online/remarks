@@ -16,6 +16,7 @@
     "test:e2e": "turbo run test:e2e",
     "minio:up": "docker compose up -d minio && tools/scripts/wait-for-minio.sh",
     "minio:down": "docker compose down minio",
+    "db:dev:reset": "tools/scripts/neon-dev-reset.sh",
     "format": "biome format --write .",
     "check": "biome check ."
   },
