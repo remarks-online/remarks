@@ -1,4 +1,4 @@
-import { createClient, type DB, schema } from "@remarks/db";
+import { type DB, createClient, schema } from "@remarks/db";
 import { TEST_PROJECT_NAME, TEST_PROJECT_SLUG } from "./constants.js";
 import { expect, test } from "./fixtures.js";
 
@@ -34,7 +34,9 @@ test.describe("annotations grouped by branch", () => {
   const SPEC_PROJECT_NAME = "1.14 Branch Grouping";
   const SPEC_PROJECT_SLUG = "e2e-1-14-branch-grouping";
 
-  async function withDb<T>(fn: (client: ReturnType<typeof createClient>) => Promise<T>): Promise<T> {
+  async function withDb<T>(
+    fn: (client: ReturnType<typeof createClient>) => Promise<T>
+  ): Promise<T> {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) throw new Error("DATABASE_URL missing for e2e seed");
     const client = createClient(databaseUrl);
@@ -45,7 +47,12 @@ test.describe("annotations grouped by branch", () => {
     }
   }
 
-  async function deleteProjectBySlug(db: DB, sql: ReturnType<typeof createClient>["sql"], orgId: string, slug: string): Promise<void> {
+  async function deleteProjectBySlug(
+    db: DB,
+    sql: ReturnType<typeof createClient>["sql"],
+    orgId: string,
+    slug: string
+  ): Promise<void> {
     const existing = await db.query.projects.findFirst({
       where: (p, { and, eq }) => and(eq(p.orgId, orgId), eq(p.slug, slug)),
       columns: { id: true },
