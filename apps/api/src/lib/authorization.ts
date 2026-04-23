@@ -5,7 +5,7 @@ import type { FastifyRequest } from "fastify";
 
 export type ProjectRole = "viewer" | "editor" | "admin";
 
-const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
+export const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
   viewer: 0,
   editor: 1,
   admin: 2,

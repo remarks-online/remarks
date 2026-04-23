@@ -411,7 +411,7 @@ The `triggers` list is agent-agnostic hint text; agents that support skill trigg
 
 ### 4.4 What the Skill replaces
 
-The existing Drawbridge `drawbridge-workflow.md` is the prior art. That file is ~800 lines because it's trying to do two jobs: teach the AI methodology *and* encode a fragile file-based contract (batched reads of `moat-tasks-detail.json`, status updates as simultaneous writes to two files, etc.). Half of it is workarounds for the lack of a proper API.
+The existing [Drawbridge](https://github.com/breschio/drawbridge/blob/main/chrome-extension/rules-templates/drawbridge-workflow.md) `drawbridge-workflow.md` is the prior art. That file is ~800 lines because it's trying to do two jobs: teach the AI methodology *and* encode a fragile file-based contract (batched reads of `moat-tasks-detail.json`, status updates as simultaneous writes to two files, etc.). Half of it is workarounds for the lack of a proper API.
 
 The Remarks Skill drops all the file-format workarounds. It's ~400 lines of pure methodology. The MCP tools handle the contract; the Skill handles the wisdom.
 
@@ -870,6 +870,7 @@ Estimated ~6 weeks total for a solo developer with Claude Code.
 | 2.27 | Docs: full MCP tool reference generated from Zod schemas | Hosted on docs.remarks.dev |
 | 2.28 | Manual E2E with each supported agent (Claude Code, Cursor, Windsurf) | All three process a real task end-to-end |
 | 2.29 | Announcement: launch Phase 2 to existing Phase 1 beta users | Email sent, docs linked |
+| 2.30 | Inngest worker `asset-cleanup`: deletes the R2 objects backing `annotation_assets` rows. Triggered on demand by `DELETE /annotations/:id` and the (Phase 3) org-deletion flow; nightly sweep reconciles R2 against the `annotation_assets` table to clean up Phase 1 orphans. First production use of Inngest per phase 0-1 spec §10. | Worker deployed; deleting an annotation removes its R2 objects within 60s; sweep removes a manually-orphaned R2 key on the next run. |
 
 ---
 

@@ -4,6 +4,8 @@ import {
   type AnnotationResponse,
   type CreateAnnotationRequest,
   type ListAnnotationsQuery,
+  NotFoundError,
+  type UpdateAnnotationRequest,
   ValidationError,
 } from "@remarks/shared";
 import { and, desc, eq, lt, or } from "drizzle-orm";
@@ -253,6 +255,133 @@ export async function listAnnotations(
     : null;
 
   return { items, nextCursor };
+}
+
+export interface AnnotationOwnership {
+  projectId: string;
+  authorId: string;
+}
+
+export async function getAnnotationOwnership(
+  db: DB,
+  annotationId: string
+): Promise<AnnotationOwnership> {
+  const row = await db.query.annotations.findFirst({
+    where: eq(schema.annotations.id, annotationId),
+    columns: { projectId: true, authorId: true },
+  });
+  if (!row) throw new NotFoundError("Annotation");
+  return row;
+}
+
+export async function getAnnotationById(
+  db: DB,
+  annotationId: string,
+  r2: R2Client
+): Promise<AnnotationResponse> {
+  const row = await db.query.annotations.findFirst({
+    where: eq(schema.annotations.id, annotationId),
+    with: {
+      branch: { columns: { name: true } },
+      author: { columns: { id: true, name: true, email: true, avatarUrl: true } },
+      assets: true,
+    },
+  });
+  if (!row) throw new NotFoundError("Annotation");
+
+  const resolvedAssets: ResolvedAsset[] = await Promise.all(
+    row.assets.map(async (asset) => ({
+      row: asset,
+      url: await getPresignedGetUrl(r2, {
+        key: asset.r2Key,
+        ttlSeconds: ANNOTATION_ASSET_GET_TTL_SECONDS,
+      }),
+    }))
+  );
+
+  return toAnnotationResponse({
+    annotationRow: row,
+    branchName: row.branch.name,
+    author: row.author,
+    assets: resolvedAssets,
+  });
+}
+
+export interface UpdateAnnotationArgs {
+  annotationId: string;
+  actorId: string;
+  input: UpdateAnnotationRequest;
+  r2: R2Client;
+}
+
+export async function updateAnnotation(
+  db: DB,
+  args: UpdateAnnotationArgs
+): Promise<AnnotationResponse> {
+  const { annotationId, actorId, input, r2 } = args;
+
+  await db.transaction(async (tx) => {
+    const current = await tx.query.annotations.findFirst({
+      where: eq(schema.annotations.id, annotationId),
+      columns: { id: true, status: true, commentText: true },
+    });
+    if (!current) throw new NotFoundError("Annotation");
+
+    const statusChanged = input.status !== undefined && input.status !== current.status;
+    const commentChanged =
+      input.commentText !== undefined && input.commentText !== current.commentText;
+
+    // Body validation already requires at least one field; if neither produces
+    // an actual change there's nothing to write and no event to emit.
+    if (!statusChanged && !commentChanged) return;
+
+    await tx
+      .update(schema.annotations)
+      .set({
+        ...(statusChanged ? { status: input.status } : {}),
+        ...(commentChanged ? { commentText: input.commentText } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.annotations.id, annotationId));
+
+    // Spec §3.4: any state mutation on an annotation writes an event.
+    if (statusChanged) {
+      await tx.insert(schema.annotationEvents).values({
+        annotationId,
+        actorType: "user",
+        actorId,
+        actorTokenId: null,
+        type: "status_changed",
+        payload: { from: current.status, to: input.status },
+      });
+    }
+    if (commentChanged) {
+      // The enum has no `comment_edited` value (Phase 1), so reuse
+      // `comment_added` with an `edited: true` flag in the payload.
+      await tx.insert(schema.annotationEvents).values({
+        annotationId,
+        actorType: "user",
+        actorId,
+        actorTokenId: null,
+        type: "comment_added",
+        payload: { edited: true, previousLength: current.commentText.length },
+      });
+    }
+  });
+
+  // Re-load the row outside the transaction so the response includes branch,
+  // author, and assets without forcing the writer transaction to do extra work.
+  return getAnnotationById(db, annotationId, r2);
+}
+
+export async function deleteAnnotation(db: DB, annotationId: string): Promise<void> {
+  // FK cascades on annotation_events and annotation_assets handle children.
+  // TODO(phase-2 task 2.30): publish to Inngest for R2 object cleanup.
+  const deleted = await db
+    .delete(schema.annotations)
+    .where(eq(schema.annotations.id, annotationId))
+    .returning({ id: schema.annotations.id });
+  if (deleted.length === 0) throw new NotFoundError("Annotation");
 }
 
 interface ResolvedAsset {
