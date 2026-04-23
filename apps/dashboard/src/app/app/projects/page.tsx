@@ -1,5 +1,7 @@
 import { getTrpcServer } from "@/lib/trpc-server";
 import { auth } from "@clerk/nextjs/server";
+import { Button } from "@remarks/ui";
+import Link from "next/link";
 
 export default async function ProjectsPage() {
   const { orgId } = await auth();
@@ -8,7 +10,7 @@ export default async function ProjectsPage() {
     return (
       <section>
         <h1 className="text-2xl font-semibold">Projects</h1>
-        <p className="mt-2 text-slate-600">
+        <p className="mt-2 text-muted-foreground">
           Select an organization from the switcher to see its projects.
         </p>
       </section>
@@ -20,18 +22,28 @@ export default async function ProjectsPage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold">Projects</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Projects</h1>
+        <Button asChild>
+          <Link href="/app/projects/new">New project</Link>
+        </Button>
+      </div>
       {items.length === 0 ? (
-        <p className="mt-2 text-slate-600">No projects yet. Project creation lands in task 1.13.</p>
+        <div className="mt-8 rounded-md border border-dashed border-border p-8 text-center">
+          <p className="text-muted-foreground">No projects yet.</p>
+          <Button asChild className="mt-4">
+            <Link href="/app/projects/new">Create your first project</Link>
+          </Button>
+        </div>
       ) : (
-        <ul className="mt-4 divide-y divide-slate-200 rounded-md border border-slate-200">
+        <ul className="mt-4 divide-y divide-border rounded-md border border-border">
           {items.map((project) => (
             <li key={project.id} className="flex items-baseline justify-between px-4 py-3">
               <div>
-                <p className="font-medium text-slate-900">{project.name}</p>
-                <p className="text-sm text-slate-500">{project.slug}</p>
+                <p className="font-medium">{project.name}</p>
+                <p className="text-sm text-muted-foreground">{project.slug}</p>
               </div>
-              <p className="text-sm text-slate-500">branch: {project.primaryBranch}</p>
+              <p className="text-sm text-muted-foreground">branch: {project.primaryBranch}</p>
             </li>
           ))}
         </ul>
