@@ -136,3 +136,24 @@ These are hard rules. When running, Claude Code reads this list and refuses to d
 - Disable tests to make CI pass.
 - Use `any` or `@ts-ignore` without a justification comment.
 - Skip the Zod validation on env vars or on API request/response bodies.
+
+## 1.11 Verification before reporting a task done
+
+Before reporting a numbered §13/§14 task (or a `docs/plan/spec-gaps.md` amendment) as complete, **run the checks yourself.** Don't list the commands and hand them to the human — execute them and report the results. Listing "here's what you should run" is a failure mode; the harness has the tools to verify, so use them.
+
+Run in this order, stopping on the first failure:
+
+1. `pnpm turbo typecheck --filter="*"` — every package, not just the affected set
+2. `pnpm turbo lint --filter="*"` — Biome clean (auto-fix with `biome check --write` on specific paths)
+3. `pnpm turbo test --filter="*"` — unit suites
+4. Integration tests for any API or schema change:
+   `cd apps/api && set -a && source .env.local && set +a && export R2_S3_ENDPOINT=http://localhost:9000 && pnpm vitest run --config vitest.integration.config.ts`
+   Prereqs: MinIO running (`pnpm minio:up`) and `DATABASE_URL` reachable. These tests `TRUNCATE ... RESTART IDENTITY CASCADE` — the dev DB is the target by design.
+5. E2E tests for any dashboard UI change: `pnpm --filter @remarks/dashboard test:e2e` (reuses the `signedInPage` fixture; writes throwaway DB state per spec)
+6. `pnpm turbo build --filter="*"` — every app builds
+
+The `--filter="*"` flag is load-bearing: bare `pnpm turbo <task>` only runs in packages whose inputs changed in the git working tree, which can silently skip packages whose inputs changed transitively (e.g., a `@remarks/shared` edit that affects dashboard typecheck).
+
+Only skip a step when the change can't affect it (e.g., no UI changes → skip E2E). Be explicit about what was skipped and why.
+
+If a step genuinely requires human intervention — a credential you don't have, a destructive action that needs confirmation, an external service that's down — say so with the exact command the dev needs to run and the reason you can't run it yourself. Don't dress up "you should run this" as verification.

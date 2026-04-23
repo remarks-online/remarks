@@ -38,12 +38,17 @@ export default async function ProjectsPage() {
       ) : (
         <ul className="mt-4 divide-y divide-border rounded-md border border-border">
           {items.map((project) => (
-            <li key={project.id} className="flex items-baseline justify-between px-4 py-3">
-              <div>
-                <p className="font-medium">{project.name}</p>
-                <p className="text-sm text-muted-foreground">{project.slug}</p>
-              </div>
-              <p className="text-sm text-muted-foreground">branch: {project.primaryBranch}</p>
+            <li key={project.id}>
+              <Link
+                href={`/app/projects/${project.slug}`}
+                className="flex items-baseline justify-between px-4 py-3 transition-colors hover:bg-accent"
+              >
+                <div>
+                  <p className="font-medium">{project.name}</p>
+                  <p className="text-sm text-muted-foreground">{project.slug}</p>
+                </div>
+                <p className="text-sm text-muted-foreground">branch: {project.primaryBranch}</p>
+              </Link>
             </li>
           ))}
         </ul>
