@@ -75,3 +75,8 @@ jobs:
           # instance; production builds on Vercel inject real secrets.
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsucGxhY2Vob2xkZXIuZGV2JA==
           CLERK_SECRET_KEY: sk_test_ci_placeholder_not_for_prod
+          # Placeholder API base URL — the dashboard's env.ts validates this
+          # at module load, which fires during Next.js page-data collection
+          # even for force-dynamic routes. The value is never dialed during
+          # CI build; production builds on Vercel inject the real Fly URL.
+          NEXT_PUBLIC_API_BASE_URL: http://api.placeholder.invalid
