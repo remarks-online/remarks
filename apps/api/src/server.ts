@@ -6,6 +6,7 @@ import authPlugin from "./plugins/auth.js";
 import dbPlugin from "./plugins/db.js";
 import r2Plugin from "./plugins/r2.js";
 import rawBodyPlugin from "./plugins/raw-body.js";
+import { annotationRoutes } from "./routes/annotations/index.js";
 import { healthRoutes } from "./routes/health.js";
 import { projectRoutes } from "./routes/projects/index.js";
 import { uploadRoutes } from "./routes/uploads/index.js";
@@ -65,6 +66,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     await authenticated.register(authPlugin);
     await authenticated.register(projectRoutes);
     await authenticated.register(uploadRoutes);
+    await authenticated.register(annotationRoutes);
   });
 
   return server;
