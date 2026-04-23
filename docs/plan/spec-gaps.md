@@ -114,3 +114,19 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: Independent. Natural to bundle into whichever PR next touches integration-test infra.
 - **Estimated size**: `xs`.
 - **Status**: `open`.
+
+## A7 — Dashboard loading skeletons via in-page Suspense (deferred from task 1.20)
+
+- **Spec reference**: §14 task 1.20 ("Error boundaries and loading states across the app").
+- **Problem**: Task 1.20 was meant to add `loading.tsx` skeletons alongside the error boundaries. Every Next.js App Router `loading.tsx` placement that wraps a page calling `notFound()` flushes the response with HTTP 200 before the page resolves to 404 — the status is locked once streaming begins. The 404 status assertion in `e2e/project-detail.spec.ts` ("unknown slug renders the 404 not-found page") regresses for any `loading.tsx` placed at `projects/`, `projects/[slug]/`, or higher. See [vercel/next.js#76474](https://github.com/vercel/next.js/issues/76474), [#45801](https://github.com/vercel/next.js/issues/45801). Task 1.20 shipped the error.tsx half and explicitly omitted loading.tsx.
+- **Proposed deliverable**: In each data-fetching page, do the early validation step (`projects.getBySlug`, `projects.list`) inline so any `notFound()` runs before streaming. Then wrap the slow part — the annotation list on `[slug]/page.tsx`, the project rows on `projects/page.tsx` — in `<Suspense fallback={<Skeleton />}>` around a child server component that does the second fetch. Skeleton components stay inline (no new `packages/ui` primitives), matching task 1.19's empty-state pattern.
+- **Done when**:
+  - `apps/dashboard/src/app/app/projects/page.tsx` renders the header immediately and streams the project list behind a Suspense skeleton
+  - `apps/dashboard/src/app/app/projects/[slug]/page.tsx` renders the project header immediately (after `getBySlug` resolves) and streams the annotations list behind a Suspense skeleton
+  - The existing e2e 404 status assertion still passes (`pnpm --filter @remarks/dashboard test:e2e -g "unknown slug"`)
+  - No new `loading.tsx` files are added
+- **Conflicts / overlaps with spec**: None. Task 1.20's "loading states" deliverable is fulfilled by this amendment.
+- **Affected tasks / components**: `apps/dashboard/src/app/app/projects/page.tsx`, `apps/dashboard/src/app/app/projects/[slug]/page.tsx`, plus a new child server component per page.
+- **Dependencies**: `after task 1.20` (PR #27 shipped error.tsx + this gap).
+- **Estimated size**: `s`.
+- **Status**: `open`.

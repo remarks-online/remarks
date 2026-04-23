@@ -24,7 +24,7 @@ export function AnnotationsBrowser({
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("a");
 
-  const { data } = trpc.annotations.list.useQuery(
+  const { data, isError } = trpc.annotations.list.useQuery(
     { projectId, limit: 100 },
     {
       initialData,
@@ -32,7 +32,7 @@ export function AnnotationsBrowser({
       refetchIntervalInBackground: false,
     }
   );
-  const items = data.items;
+  const items = (data ?? initialData).items;
 
   const setSelected = useCallback(
     (id: string | null) => {
@@ -47,24 +47,37 @@ export function AnnotationsBrowser({
 
   const groups = groupByBranch(items, primaryBranch);
 
+  const staleBanner = isError ? (
+    <div
+      aria-live="polite"
+      className="mt-6 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+    >
+      Couldn&apos;t refresh annotations — showing the last list we loaded.
+    </div>
+  ) : null;
+
   if (items.length === 0) {
     return (
-      <div className="mt-12 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <MessageSquarePlus className="h-7 w-7" aria-hidden />
+      <>
+        {staleBanner}
+        <div className="mt-12 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <MessageSquarePlus className="h-7 w-7" aria-hidden />
+          </div>
+          <h2 className="mt-4 text-lg font-semibold">No annotations yet</h2>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            Install the Remarks extension, open your site, and click any element to leave your first
+            annotation on this project. New annotations appear here grouped by the branch you picked
+            when you captured them.
+          </p>
         </div>
-        <h2 className="mt-4 text-lg font-semibold">No annotations yet</h2>
-        <p className="mt-2 max-w-md text-sm text-muted-foreground">
-          Install the Remarks extension, open your site, and click any element to leave your first
-          annotation on this project. New annotations appear here grouped by the branch you picked
-          when you captured them.
-        </p>
-      </div>
+      </>
     );
   }
 
   return (
     <>
+      {staleBanner}
       <div className="mt-10 space-y-10">
         {groups.map((group) => (
           <BranchSection
