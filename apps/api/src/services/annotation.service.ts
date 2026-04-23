@@ -356,15 +356,13 @@ export async function updateAnnotation(
       });
     }
     if (commentChanged) {
-      // The enum has no `comment_edited` value (Phase 1), so reuse
-      // `comment_added` with an `edited: true` flag in the payload.
       await tx.insert(schema.annotationEvents).values({
         annotationId,
         actorType: "user",
         actorId,
         actorTokenId: null,
-        type: "comment_added",
-        payload: { edited: true, previousLength: current.commentText.length },
+        type: "comment_edited",
+        payload: { previousLength: current.commentText.length },
       });
     }
   });

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."annotation_event_type" ADD VALUE 'comment_edited';

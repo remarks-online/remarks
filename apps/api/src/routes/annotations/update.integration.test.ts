@@ -210,7 +210,7 @@ describe("PATCH /annotations/:annotationId (integration)", () => {
     expect(after?.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
   });
 
-  test("author (viewer role) changes commentText → 200, comment_added event written", async () => {
+  test("author (viewer role) changes commentText → 200, comment_edited event written", async () => {
     const seeded = await seedAnnotation({ role: "viewer", authorIsCurrentUser: true });
     mockAuth({
       clerkUserId: seeded.userClerkId,
@@ -231,10 +231,9 @@ describe("PATCH /annotations/:annotationId (integration)", () => {
     const events = await db.query.annotationEvents.findMany({
       where: eq(schema.annotationEvents.annotationId, seeded.annotationId),
     });
-    const commentEvents = events.filter((e) => e.type === "comment_added");
+    const commentEvents = events.filter((e) => e.type === "comment_edited");
     expect(commentEvents).toHaveLength(1);
     expect(commentEvents[0]?.payload).toMatchObject({
-      edited: true,
       previousLength: "Original comment".length,
     });
   });
@@ -260,7 +259,7 @@ describe("PATCH /annotations/:annotationId (integration)", () => {
       where: eq(schema.annotationEvents.annotationId, seeded.annotationId),
     });
     expect(events.filter((e) => e.type === "status_changed")).toHaveLength(1);
-    expect(events.filter((e) => e.type === "comment_added")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "comment_edited")).toHaveLength(1);
   });
 
   test("empty body → 400 VALIDATION_ERROR", async () => {
