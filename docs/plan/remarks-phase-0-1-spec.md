@@ -1688,7 +1688,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.4 ✓ | `POST /orgs/:orgId/projects` endpoint + service | Integration test: create project as admin, 403 as non-member |
 | 1.5 ✓ | `GET /orgs/:orgId/projects` + `GET /projects/:id` | Integration tests pass |
 | 1.6 ✓ | `R2` client in `apps/api/src/lib/r2.ts` | Can PUT and GET an object in tests |
-| 1.7 | `POST /uploads/presign` endpoint | Integration test uploads a file end-to-end |
+| 1.7 ✓ | `POST /uploads/presign` endpoint | Integration test uploads a file end-to-end |
 | 1.8 | `POST /projects/:id/annotations` endpoint + service (validates branch exists/creates lazily) | Integration test creates annotation with screenshot reference |
 | 1.9 | `GET /projects/:id/annotations` with cursor pagination + filters | Integration test paginates through 100 seeded annotations |
 | 1.10 | `GET /annotations/:id`, `PATCH`, `DELETE` | All integration tests pass |

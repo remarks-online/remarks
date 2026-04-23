@@ -4,9 +4,11 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./env.js";
 import authPlugin from "./plugins/auth.js";
 import dbPlugin from "./plugins/db.js";
+import r2Plugin from "./plugins/r2.js";
 import rawBodyPlugin from "./plugins/raw-body.js";
 import { healthRoutes } from "./routes/health.js";
 import { projectRoutes } from "./routes/projects/index.js";
+import { uploadRoutes } from "./routes/uploads/index.js";
 import { clerkWebhookRoutes } from "./routes/webhooks/clerk.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -55,12 +57,14 @@ export async function buildServer(): Promise<FastifyInstance> {
   await server.register(sensible);
   await server.register(rawBodyPlugin);
   await server.register(dbPlugin);
+  await server.register(r2Plugin);
   await server.register(healthRoutes);
   await server.register(clerkWebhookRoutes);
 
   await server.register(async (authenticated) => {
     await authenticated.register(authPlugin);
     await authenticated.register(projectRoutes);
+    await authenticated.register(uploadRoutes);
   });
 
   return server;
