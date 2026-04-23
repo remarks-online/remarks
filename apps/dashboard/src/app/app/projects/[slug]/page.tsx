@@ -34,7 +34,7 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
     throw err;
   }
 
-  const { items } = await trpc.annotations.list.query({
+  const initialList = await trpc.annotations.list.query({
     projectId: project.id,
     limit: 100,
   });
@@ -69,7 +69,11 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
         </div>
       </div>
 
-      <AnnotationsBrowser items={items} primaryBranch={project.primaryBranch} />
+      <AnnotationsBrowser
+        projectId={project.id}
+        initialData={initialList}
+        primaryBranch={project.primaryBranch}
+      />
     </section>
   );
 }

@@ -1,21 +1,37 @@
 "use client";
 
-import type { AnnotationResponse } from "@remarks/shared";
+import { trpc } from "@/lib/trpc-client";
+import type { AnnotationListResponse, AnnotationResponse } from "@remarks/shared";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { AnnotationCard } from "./annotation-card";
 import { AnnotationDetailSheet } from "./annotation-detail-sheet";
 
 interface AnnotationsBrowserProps {
-  items: AnnotationResponse[];
+  projectId: string;
+  initialData: AnnotationListResponse;
   primaryBranch: string;
 }
 
-export function AnnotationsBrowser({ items, primaryBranch }: AnnotationsBrowserProps) {
+export function AnnotationsBrowser({
+  projectId,
+  initialData,
+  primaryBranch,
+}: AnnotationsBrowserProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("a");
+
+  const { data } = trpc.annotations.list.useQuery(
+    { projectId, limit: 100 },
+    {
+      initialData,
+      refetchInterval: 5000,
+      refetchIntervalInBackground: false,
+    }
+  );
+  const items = data.items;
 
   const setSelected = useCallback(
     (id: string | null) => {
