@@ -4,8 +4,8 @@ import { useAuth } from "@clerk/nextjs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { type ReactNode, useState } from "react";
-import { env } from "../env.js";
-import { trpc } from "./trpc-client.js";
+import { env } from "../env";
+import { trpc } from "./trpc-client";
 
 // Provider is scaffolded for task 1.16+ (status mutations, polling). Not yet
 // mounted anywhere — task 1.11 only exercises the RSC path via trpc-server.ts.

@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import type { AppRouter } from "@remarks/api/trpc/router";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import { env } from "../env.js";
+import { env } from "../env";
 
 export async function getTrpcServer() {
   const { getToken } = await auth();
