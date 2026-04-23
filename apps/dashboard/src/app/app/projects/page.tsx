@@ -1,6 +1,7 @@
 import { getTrpcServer } from "@/lib/trpc-server";
 import { auth } from "@clerk/nextjs/server";
 import { Button } from "@remarks/ui";
+import { FolderPlus } from "lucide-react";
 import Link from "next/link";
 
 export default async function ProjectsPage() {
@@ -29,9 +30,16 @@ export default async function ProjectsPage() {
         </Button>
       </div>
       {items.length === 0 ? (
-        <div className="mt-8 rounded-md border border-dashed border-border p-8 text-center">
-          <p className="text-muted-foreground">No projects yet.</p>
-          <Button asChild className="mt-4">
+        <div className="mt-8 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <FolderPlus className="h-7 w-7" aria-hidden />
+          </div>
+          <h2 className="mt-4 text-lg font-semibold">No projects yet</h2>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            Projects group the annotations you and your teammates capture on a single website or
+            staging environment. Create one to get started.
+          </p>
+          <Button asChild className="mt-6">
             <Link href="/app/projects/new">Create your first project</Link>
           </Button>
         </div>
