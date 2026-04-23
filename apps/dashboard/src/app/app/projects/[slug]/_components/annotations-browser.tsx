@@ -2,6 +2,7 @@
 
 import { trpc } from "@/lib/trpc-client";
 import type { AnnotationListResponse, AnnotationResponse } from "@remarks/shared";
+import { MessageSquarePlus } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { AnnotationCard } from "./annotation-card";
@@ -48,10 +49,15 @@ export function AnnotationsBrowser({
 
   if (items.length === 0) {
     return (
-      <div className="mt-12 rounded-md border border-dashed border-border p-10 text-center">
-        <p className="font-medium">No annotations yet</p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Install the Remarks extension to start capturing annotations on this project.
+      <div className="mt-12 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <MessageSquarePlus className="h-7 w-7" aria-hidden />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold">No annotations yet</h2>
+        <p className="mt-2 max-w-md text-sm text-muted-foreground">
+          Install the Remarks extension, open your site, and click any element to leave your first
+          annotation on this project. New annotations appear here grouped by the branch you picked
+          when you captured them.
         </p>
       </div>
     );
