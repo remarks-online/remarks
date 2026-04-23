@@ -1709,7 +1709,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.17 ✓ | Org switcher (Clerk component) | Switching orgs re-fetches projects |
 | 1.18 ✓ | Polling: annotation list refetches every 5s when tab is visible | Verified manually |
 | 1.19 ✓ | Empty states for zero projects / zero annotations | Designed and shipped |
-| 1.20 | Error boundaries and loading states across the app | No UI crashes on API error |
+| 1.20 ✓ | Error boundaries and loading states across the app | No UI crashes on API error |
 
 ### Weeks 8–11: extension rewrite
 

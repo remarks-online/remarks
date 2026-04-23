@@ -16,7 +16,15 @@ if (!API_BASE_URL) {
 
 export function TRPCProvider({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: 1, staleTime: 5_000 },
+          mutations: { retry: 0 },
+        },
+      })
+  );
   const [trpcClient] = useState(() =>
     trpc.createClient({
       links: [
