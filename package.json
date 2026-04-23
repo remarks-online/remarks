@@ -14,6 +14,8 @@
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
+    "minio:up": "docker compose up -d minio && tools/scripts/wait-for-minio.sh",
+    "minio:down": "docker compose down minio",
     "format": "biome format --write .",
     "check": "biome check ."
   },

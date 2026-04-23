@@ -9,16 +9,27 @@ process.env.CLERK_SECRET_KEY =
 if (!process.env.DATABASE_URL) {
   throw new Error(
     "DATABASE_URL is required for integration tests. In CI it's injected by the postgres service; " +
-      "locally, point it at any Postgres 16 (e.g. your Neon dev branch).",
+      "locally, point it at any Postgres 16 (e.g. your Neon dev branch)."
   );
 }
 
-// R2 env is required by envSchema; tests that don't exercise R2 still load
-// src/env.ts transitively (via buildServer), so placeholders keep parsing
-// happy. The r2 integration test reads process.env directly and fails fast
-// when the real endpoint isn't set.
-process.env.R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "integration-test-account";
-process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "integration-test-key";
-process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY ?? "integration-test-secret";
-process.env.R2_BUCKET_SCREENSHOTS =
-  process.env.R2_BUCKET_SCREENSHOTS ?? "remarks-screenshots-test";
+// R2 env: when R2_S3_ENDPOINT points at localhost (i.e. MinIO via
+// `pnpm minio:up` or the CI service container), force MinIO creds even if
+// the dev has real R2 creds in their .env.local. That keeps runtime env
+// (real R2) and test env (MinIO) from colliding and prevents accidental
+// writes to a real bucket. When R2_S3_ENDPOINT is unset, fall back to
+// placeholders so envSchema.parse doesn't fail for non-R2 tests.
+const r2Endpoint = process.env.R2_S3_ENDPOINT ?? "";
+const isLocalMinio = r2Endpoint.includes("localhost") || r2Endpoint.includes("127.0.0.1");
+if (isLocalMinio) {
+  process.env.R2_ACCOUNT_ID = "test";
+  process.env.R2_ACCESS_KEY_ID = "minioadmin";
+  process.env.R2_SECRET_ACCESS_KEY = "minioadmin";
+  process.env.R2_BUCKET_SCREENSHOTS = "remarks-screenshots-test";
+} else {
+  process.env.R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "test";
+  process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "minioadmin";
+  process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY ?? "minioadmin";
+  process.env.R2_BUCKET_SCREENSHOTS =
+    process.env.R2_BUCKET_SCREENSHOTS ?? "remarks-screenshots-test";
+}
