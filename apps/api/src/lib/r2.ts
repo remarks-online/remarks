@@ -1,8 +1,10 @@
 import {
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
   type S3ClientConfig,
+  S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { Env } from "../env-schema.js";
@@ -101,4 +103,34 @@ export async function getPresignedGetUrl(
 ): Promise<string> {
   const command = new GetObjectCommand({ Bucket: client.bucket, Key: args.key });
   return await getSignedUrl(client.s3, command, { expiresIn: args.ttlSeconds });
+}
+
+export interface HeadObjectResult {
+  contentType: string | undefined;
+  contentLength: number;
+}
+
+// Returns null when the object does not exist (404/NotFound). Other errors
+// propagate — the caller distinguishes a missing upload from infra issues.
+export async function headObject(
+  client: R2Client,
+  args: { key: string }
+): Promise<HeadObjectResult | null> {
+  try {
+    const res = await client.s3.send(
+      new HeadObjectCommand({ Bucket: client.bucket, Key: args.key })
+    );
+    return {
+      contentType: res.ContentType,
+      contentLength: res.ContentLength ?? 0,
+    };
+  } catch (err) {
+    if (err instanceof S3ServiceException) {
+      const status = err.$metadata?.httpStatusCode;
+      if (status === 404 || err.name === "NotFound" || err.name === "NoSuchKey") {
+        return null;
+      }
+    }
+    throw err;
+  }
 }

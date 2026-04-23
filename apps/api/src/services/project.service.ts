@@ -6,20 +6,12 @@ import {
   type ProjectResponse,
 } from "@remarks/shared";
 import { eq } from "drizzle-orm";
+import { isUniqueViolation } from "../lib/db-errors.js";
 
 export interface CreateProjectArgs {
   clerkOrgId: string;
   authorUserId: string;
   input: CreateProjectRequest;
-}
-
-// Postgres SQLSTATE for unique-constraint violations. postgres.js surfaces the
-// original error code unchanged; drizzle propagates it as-is.
-const PG_UNIQUE_VIOLATION = "23505";
-
-function isUniqueViolation(err: unknown): boolean {
-  const e = err as { code?: string; cause?: { code?: string } } | null;
-  return e?.code === PG_UNIQUE_VIOLATION || e?.cause?.code === PG_UNIQUE_VIOLATION;
 }
 
 function toProjectResponse(row: typeof schema.projects.$inferSelect): ProjectResponse {
