@@ -12,3 +12,13 @@ if (!process.env.DATABASE_URL) {
       "locally, point it at any Postgres 16 (e.g. your Neon dev branch).",
   );
 }
+
+// R2 env is required by envSchema; tests that don't exercise R2 still load
+// src/env.ts transitively (via buildServer), so placeholders keep parsing
+// happy. The r2 integration test reads process.env directly and fails fast
+// when the real endpoint isn't set.
+process.env.R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "integration-test-account";
+process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "integration-test-key";
+process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY ?? "integration-test-secret";
+process.env.R2_BUCKET_SCREENSHOTS =
+  process.env.R2_BUCKET_SCREENSHOTS ?? "remarks-screenshots-test";
