@@ -1,5 +1,6 @@
 import sensible from "@fastify/sensible";
 import { RemarksError, ValidationError } from "@remarks/shared";
+import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./env.js";
 import authPlugin from "./plugins/auth.js";
@@ -11,6 +12,8 @@ import { healthRoutes } from "./routes/health.js";
 import { projectRoutes } from "./routes/projects/index.js";
 import { uploadRoutes } from "./routes/uploads/index.js";
 import { clerkWebhookRoutes } from "./routes/webhooks/clerk.js";
+import { createContext } from "./trpc/context.js";
+import { type AppRouter, appRouter } from "./trpc/router.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const server = Fastify({
@@ -67,6 +70,19 @@ export async function buildServer(): Promise<FastifyInstance> {
     await authenticated.register(projectRoutes);
     await authenticated.register(uploadRoutes);
     await authenticated.register(annotationRoutes);
+    await authenticated.register(fastifyTRPCPlugin<AppRouter>, {
+      prefix: "/trpc",
+      trpcOptions: {
+        router: appRouter,
+        createContext,
+        onError({ error, path, ctx }) {
+          server.log.error(
+            { err: error, path, requestId: ctx?.requestId },
+            "trpc procedure errored"
+          );
+        },
+      },
+    });
   });
 
   return server;

@@ -4,7 +4,12 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", ".output/**", ".wxt/**"]
+      "outputs": ["dist/**", ".next/**", ".output/**", ".wxt/**"],
+      "env": [
+        "CLERK_SECRET_KEY",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+        "NEXT_PUBLIC_API_BASE_URL"
+      ]
     },
     "lint": {},
     "typecheck": {
