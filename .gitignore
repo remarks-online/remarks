@@ -25,6 +25,11 @@ coverage/
 # Vercel CLI link state (per-project .vercel/ dir, written by `vercel link`)
 .vercel/
 
+# Claude Code personal/ephemeral state. Shared .claude/settings.json,
+# agents/, and commands/ stay tracked.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
 # OS
 .DS_Store
 Thumbs.db
