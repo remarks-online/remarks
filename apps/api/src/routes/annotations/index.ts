@@ -13,6 +13,7 @@ import {
   deleteAnnotation,
   getAnnotationById,
   getAnnotationOwnership,
+  listAnnotationEvents,
   listAnnotations,
   updateAnnotation,
 } from "../../services/annotation.service.js";
@@ -107,6 +108,20 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
 
     const response = await getAnnotationById(request.server.db, annotationId, request.server.r2);
     return reply.send(response);
+  });
+
+  fastify.get("/annotations/:annotationId/events", async (request, reply) => {
+    const paramsResult = annotationParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      throw new ValidationError("Invalid path params", paramsResult.error.issues);
+    }
+    const { annotationId } = paramsResult.data;
+
+    const ownership = await getAnnotationOwnership(request.server.db, annotationId);
+    await requireProjectMember(request, ownership.projectId);
+
+    const events = await listAnnotationEvents(request.server.db, annotationId);
+    return reply.send({ events });
   });
 
   fastify.patch("/annotations/:annotationId", async (request, reply) => {

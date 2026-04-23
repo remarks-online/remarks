@@ -168,3 +168,168 @@ test.describe("annotations grouped by branch", () => {
     await expect(signedInPage.getByText("1.14-e2e-feature-annotation-text")).toBeVisible();
   });
 });
+
+test.describe("annotation detail drawer", () => {
+  const SPEC_PROJECT_NAME = "1.15 Detail Drawer";
+  const SPEC_PROJECT_SLUG = "e2e-1-15-detail-drawer";
+  const ANNOTATION_COMMENT = "1.15-e2e-drawer-annotation-text";
+
+  async function withDb<T>(
+    fn: (client: ReturnType<typeof createClient>) => Promise<T>
+  ): Promise<T> {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) throw new Error("DATABASE_URL missing for e2e seed");
+    const client = createClient(databaseUrl);
+    try {
+      return await fn(client);
+    } finally {
+      await client.sql.end({ timeout: 5 });
+    }
+  }
+
+  async function deleteProjectBySlug(
+    db: DB,
+    sql: ReturnType<typeof createClient>["sql"],
+    orgId: string,
+    slug: string
+  ): Promise<void> {
+    const existing = await db.query.projects.findFirst({
+      where: (p, { and, eq }) => and(eq(p.orgId, orgId), eq(p.slug, slug)),
+      columns: { id: true },
+    });
+    if (!existing) return;
+    await sql`DELETE FROM projects WHERE id = ${existing.id}`;
+  }
+
+  let seededAnnotationId = "";
+
+  test.beforeAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      const clerkUserId = process.env.E2E_CLERK_USER_ID;
+      if (!clerkOrgId || !clerkUserId) {
+        throw new Error("E2E_CLERK_ORG_ID and E2E_CLERK_USER_ID must be set by global-setup");
+      }
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      const user = await db.query.users.findFirst({
+        where: (u, { eq }) => eq(u.clerkUserId, clerkUserId),
+      });
+      if (!org || !user) throw new Error("global-setup did not seed the expected org/user");
+
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+
+      const [project] = await db
+        .insert(schema.projects)
+        .values({
+          orgId: org.id,
+          name: SPEC_PROJECT_NAME,
+          slug: SPEC_PROJECT_SLUG,
+          primaryBranch: "main",
+        })
+        .returning();
+      if (!project) throw new Error("project insert returned no rows");
+
+      await db.insert(schema.projectMembers).values({
+        projectId: project.id,
+        userId: user.id,
+        role: "admin",
+      });
+
+      const [branch] = await db
+        .insert(schema.branches)
+        .values({ projectId: project.id, name: "main" })
+        .returning();
+      if (!branch) throw new Error("branch insert returned no rows");
+
+      const [annotation] = await db
+        .insert(schema.annotations)
+        .values({
+          projectId: project.id,
+          branchId: branch.id,
+          authorId: user.id,
+          targetType: "element",
+          url: "https://acme.example.com/checkout",
+          targetSelector: "button.submit",
+          viewport: { width: 1440, height: 900, dpr: 2 },
+          commentText: ANNOTATION_COMMENT,
+        })
+        .returning();
+      if (!annotation) throw new Error("annotation insert returned no rows");
+      seededAnnotationId = annotation.id;
+
+      await db.insert(schema.annotationEvents).values({
+        annotationId: annotation.id,
+        actorType: "user",
+        actorId: user.id,
+        type: "created",
+        payload: {},
+      });
+    });
+  });
+
+  test.afterAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      if (!clerkOrgId) return;
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      if (!org) return;
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+    });
+  });
+
+  test("opens drawer on card click, changes status, reflects on list", async ({ signedInPage }) => {
+    await signedInPage.goto(`/app/projects/${SPEC_PROJECT_SLUG}`);
+
+    // Card text is an <p> inside a <button>; click the button by its aria-label.
+    const cardButton = signedInPage.getByRole("button", {
+      name: new RegExp(`Open annotation: ${ANNOTATION_COMMENT}`),
+    });
+    await expect(cardButton).toBeVisible();
+    await cardButton.click();
+
+    // URL reflects the selected annotation id.
+    await expect(signedInPage).toHaveURL(new RegExp(`\\?a=${seededAnnotationId}$`));
+
+    // Drawer shows the full comment, the status dropdown, and the activity list.
+    const drawer = signedInPage.getByRole("dialog");
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByText(ANNOTATION_COMMENT)).toBeVisible();
+
+    const statusSelect = drawer.getByRole("combobox", { name: "Status" });
+    await expect(statusSelect).toContainText("To do");
+
+    // Activity timeline includes the "created" event.
+    await expect(drawer.getByText(/created this/i)).toBeVisible();
+
+    // Change status to Done via the Radix Select.
+    await statusSelect.click();
+    await signedInPage.getByRole("option", { name: "Done" }).click();
+
+    // After the mutation resolves, the trigger reflects the new value and a new
+    // event row is rendered.
+    await expect(statusSelect).toContainText("Done");
+    await expect(drawer.getByText(/changed status: To do → Done/i)).toBeVisible();
+
+    // Close the drawer via Escape; URL loses the `?a=` param.
+    await signedInPage.keyboard.press("Escape");
+    await expect(signedInPage).toHaveURL(`/app/projects/${SPEC_PROJECT_SLUG}`);
+
+    // The card now shows the updated status badge.
+    await expect(
+      signedInPage
+        .getByRole("button", { name: new RegExp(`Open annotation: ${ANNOTATION_COMMENT}`) })
+        .getByText("Done")
+    ).toBeVisible();
+  });
+
+  test("deep-link via ?a= opens the drawer on reload", async ({ signedInPage }) => {
+    await signedInPage.goto(`/app/projects/${SPEC_PROJECT_SLUG}?a=${seededAnnotationId}`);
+    const drawer = signedInPage.getByRole("dialog");
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByText(ANNOTATION_COMMENT)).toBeVisible();
+  });
+});
