@@ -14,6 +14,9 @@ export const annotationEventTypeEnum = pgEnum("annotation_event_type", [
   "resolved",
   "agent_updated_status",
   "agent_commented",
+  // Appended (matches `ALTER TYPE ADD VALUE` ordering); keep new values at the
+  // end so the runtime enum order stays in sync with this list.
+  "comment_edited",
 ]);
 
 export const eventActorTypeEnum = pgEnum("event_actor_type", ["user", "agent", "system"]);

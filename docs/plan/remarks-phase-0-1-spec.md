@@ -613,6 +613,7 @@ export const annotationEventTypeEnum = pgEnum("annotation_event_type", [
   "pr_linked", "asset_attached", "resolved",
   "agent_updated_status",   // emitted when an agent (not a human) calls update_status
   "agent_commented",        // emitted when an agent calls add_task_comment
+  "comment_edited",         // emitted when a user edits an existing annotation's commentText
 ]);
 
 export const eventActorTypeEnum = pgEnum("event_actor_type", ["user", "agent", "system"]);
@@ -1691,7 +1692,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.7 ✓ | `POST /uploads/presign` endpoint | Integration test uploads a file end-to-end |
 | 1.8 ✓ | `POST /projects/:id/annotations` endpoint + service (validates branch exists/creates lazily) | Integration test creates annotation with screenshot reference |
 | 1.9 ✓ | `GET /projects/:id/annotations` with cursor pagination + filters | Integration test paginates through 100 seeded annotations |
-| 1.10 | `GET /annotations/:id`, `PATCH`, `DELETE` | All integration tests pass |
+| 1.10 ✓ | `GET /annotations/:id`, `PATCH`, `DELETE` | All integration tests pass |
 
 ### Weeks 5–7: dashboard
 

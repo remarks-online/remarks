@@ -1,15 +1,28 @@
 import {
+  ForbiddenError,
   ValidationError,
   createAnnotationRequestSchema,
   listAnnotationsQuerySchema,
+  updateAnnotationRequestSchema,
 } from "@remarks/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireProjectMember } from "../../lib/authorization.js";
-import { createAnnotation, listAnnotations } from "../../services/annotation.service.js";
+import { PROJECT_ROLE_RANK, requireProjectMember } from "../../lib/authorization.js";
+import {
+  createAnnotation,
+  deleteAnnotation,
+  getAnnotationById,
+  getAnnotationOwnership,
+  listAnnotations,
+  updateAnnotation,
+} from "../../services/annotation.service.js";
 
 const projectParamsSchema = z.object({
   projectId: z.string().uuid(),
+});
+
+const annotationParamsSchema = z.object({
+  annotationId: z.string().uuid(),
 });
 
 export async function annotationRoutes(fastify: FastifyInstance): Promise<void> {
@@ -77,5 +90,68 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
     });
 
     return reply.code(201).send(response);
+  });
+
+  fastify.get("/annotations/:annotationId", async (request, reply) => {
+    const paramsResult = annotationParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      throw new ValidationError("Invalid path params", paramsResult.error.issues);
+    }
+    const { annotationId } = paramsResult.data;
+
+    // Authorize before loading the full row + assets so non-members don't pay
+    // the R2 presign cost. requireProjectMember returns 404 for non-members
+    // (NotFoundError("Project")) so project existence isn't leaked.
+    const ownership = await getAnnotationOwnership(request.server.db, annotationId);
+    await requireProjectMember(request, ownership.projectId);
+
+    const response = await getAnnotationById(request.server.db, annotationId, request.server.r2);
+    return reply.send(response);
+  });
+
+  fastify.patch("/annotations/:annotationId", async (request, reply) => {
+    const paramsResult = annotationParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      throw new ValidationError("Invalid path params", paramsResult.error.issues);
+    }
+    const { annotationId } = paramsResult.data;
+
+    const bodyResult = updateAnnotationRequestSchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      throw new ValidationError("Invalid request body", bodyResult.error.issues);
+    }
+
+    const ownership = await getAnnotationOwnership(request.server.db, annotationId);
+    const { role } = await requireProjectMember(request, ownership.projectId);
+    const isAuthor = ownership.authorId === request.auth.user.id;
+    if (PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK.editor && !isAuthor) {
+      throw new ForbiddenError("Requires project editor role or annotation author");
+    }
+
+    const response = await updateAnnotation(request.server.db, {
+      annotationId,
+      actorId: request.auth.user.id,
+      input: bodyResult.data,
+      r2: request.server.r2,
+    });
+    return reply.send(response);
+  });
+
+  fastify.delete("/annotations/:annotationId", async (request, reply) => {
+    const paramsResult = annotationParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      throw new ValidationError("Invalid path params", paramsResult.error.issues);
+    }
+    const { annotationId } = paramsResult.data;
+
+    const ownership = await getAnnotationOwnership(request.server.db, annotationId);
+    const { role } = await requireProjectMember(request, ownership.projectId);
+    const isAuthor = ownership.authorId === request.auth.user.id;
+    if (PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK.admin && !isAuthor) {
+      throw new ForbiddenError("Requires project admin role or annotation author");
+    }
+
+    await deleteAnnotation(request.server.db, annotationId);
+    return reply.code(204).send();
   });
 }
