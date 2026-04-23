@@ -2,11 +2,14 @@
 
 import { trpc } from "@/lib/trpc-client";
 import type { AnnotationListResponse, AnnotationResponse } from "@remarks/shared";
+import { Button } from "@remarks/ui";
 import { MessageSquarePlus } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { AnnotationCard } from "./annotation-card";
 import { AnnotationDetailSheet } from "./annotation-detail-sheet";
+
+export const ANNOTATION_LIST_PAGE_SIZE = 50;
 
 interface AnnotationsBrowserProps {
   projectId: string;
@@ -24,15 +27,21 @@ export function AnnotationsBrowser({
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("a");
 
-  const { data, isError } = trpc.annotations.list.useQuery(
-    { projectId, limit: 100 },
-    {
-      initialData,
-      refetchInterval: 5000,
-      refetchIntervalInBackground: false,
-    }
-  );
-  const items = (data ?? initialData).items;
+  // refetchInterval on useInfiniteQuery refetches every loaded page in order;
+  // safe under (createdAt DESC, id DESC) keyset cursors — already-loaded pages
+  // stay stable, new top items appear at the top.
+  const { data, hasNextPage, fetchNextPage, isFetchingNextPage, isError } =
+    trpc.annotations.list.useInfiniteQuery(
+      { projectId, limit: ANNOTATION_LIST_PAGE_SIZE },
+      {
+        initialData: { pages: [initialData], pageParams: [undefined] },
+        initialCursor: undefined,
+        getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+        refetchInterval: 5000,
+        refetchIntervalInBackground: false,
+      }
+    );
+  const items = data?.pages.flatMap((p) => p.items) ?? initialData.items;
 
   const setSelected = useCallback(
     (id: string | null) => {
@@ -88,6 +97,13 @@ export function AnnotationsBrowser({
             onSelect={setSelected}
           />
         ))}
+        {hasNextPage ? (
+          <div className="flex justify-center pt-2">
+            <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? "Loading…" : "Load more"}
+            </Button>
+          </div>
+        ) : null}
       </div>
       <AnnotationDetailSheet
         selectedId={selectedId}
