@@ -1,0 +1,20 @@
+# Local services for integration tests. Spin up with `pnpm minio:up`,
+# tear down with `pnpm minio:down`. CI provides MinIO via a dedicated
+# `docker run` step in .github/workflows/ci.yml — credentials and port
+# match here so the same R2_* env values work in both places.
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: remarks-minio
+    command: server /data
+    ports:
+      - "9000:9000"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20

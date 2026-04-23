@@ -50,7 +50,7 @@ const rand = () => Math.random().toString(36).slice(2, 10);
 
 export async function seedOrg(
   db: DB,
-  overrides: Partial<typeof schema.organizations.$inferInsert> = {},
+  overrides: Partial<typeof schema.organizations.$inferInsert> = {}
 ): Promise<typeof schema.organizations.$inferSelect> {
   const [row] = await db
     .insert(schema.organizations)
@@ -67,7 +67,7 @@ export async function seedOrg(
 
 export async function seedUser(
   db: DB,
-  overrides: Partial<typeof schema.users.$inferInsert> = {},
+  overrides: Partial<typeof schema.users.$inferInsert> = {}
 ): Promise<typeof schema.users.$inferSelect> {
   const [row] = await db
     .insert(schema.users)

@@ -1,4 +1,3 @@
-import { CreateBucketCommand, S3ServiceException } from "@aws-sdk/client-s3";
 import { schema } from "@remarks/db";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -9,6 +8,7 @@ import {
   seedUser,
   truncateAll,
 } from "../../../test/integration/db.js";
+import { ensureBucket, readR2EnvOrThrow } from "../../../test/integration/r2.js";
 import { type R2Client, createR2Client, getObject } from "../../lib/r2.js";
 import { buildAssetR2Key } from "../../services/upload.service.js";
 
@@ -39,47 +39,6 @@ function mockAuth(args: {
       organization: { id: m.clerkOrgId },
     })),
   });
-}
-
-// Read R2 env directly (bypassing src/env.ts) — the harness fills in
-// placeholder values for tests that don't touch R2, so the presence of an
-// R2_S3_ENDPOINT override is what tells us MinIO is actually reachable.
-function readR2EnvOrThrow(): {
-  R2_ACCOUNT_ID: string;
-  R2_ACCESS_KEY_ID: string;
-  R2_SECRET_ACCESS_KEY: string;
-  R2_BUCKET_SCREENSHOTS: string;
-  R2_S3_ENDPOINT: string;
-} {
-  const endpoint = process.env.R2_S3_ENDPOINT;
-  if (!endpoint) {
-    throw new Error(
-      "presign integration test requires R2_S3_ENDPOINT (MinIO). In CI it's injected; " +
-        "locally, run `docker run --rm -p 9000:9000 quay.io/minio/minio server /data` " +
-        "and set R2_S3_ENDPOINT=http://localhost:9000 R2_ACCESS_KEY_ID=minioadmin " +
-        "R2_SECRET_ACCESS_KEY=minioadmin R2_BUCKET_SCREENSHOTS=remarks-screenshots-test."
-    );
-  }
-  return {
-    R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID ?? "test",
-    R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID as string,
-    R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY as string,
-    R2_BUCKET_SCREENSHOTS: process.env.R2_BUCKET_SCREENSHOTS as string,
-    R2_S3_ENDPOINT: endpoint,
-  };
-}
-
-async function ensureBucket(client: R2Client): Promise<void> {
-  try {
-    await client.s3.send(new CreateBucketCommand({ Bucket: client.bucket }));
-  } catch (err) {
-    if (err instanceof S3ServiceException) {
-      if (err.name === "BucketAlreadyOwnedByYou" || err.name === "BucketAlreadyExists") {
-        return;
-      }
-    }
-    throw err;
-  }
 }
 
 describe("POST /uploads/presign (integration)", () => {
