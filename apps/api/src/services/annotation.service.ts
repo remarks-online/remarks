@@ -1,5 +1,6 @@
 import { type DB, schema } from "@remarks/db";
 import {
+  type AnnotationEventResponse,
   type AnnotationListResponse,
   type AnnotationResponse,
   type CreateAnnotationRequest,
@@ -8,7 +9,7 @@ import {
   type UpdateAnnotationRequest,
   ValidationError,
 } from "@remarks/shared";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, lt, or } from "drizzle-orm";
 import {
   type AnnotationListCursor,
   decodeAnnotationListCursor,
@@ -370,6 +371,47 @@ export async function updateAnnotation(
   // Re-load the row outside the transaction so the response includes branch,
   // author, and assets without forcing the writer transaction to do extra work.
   return getAnnotationById(db, annotationId, r2);
+}
+
+export async function listAnnotationEvents(
+  db: DB,
+  annotationId: string
+): Promise<AnnotationEventResponse[]> {
+  // Confirm the annotation exists so callers can rely on 404 semantics
+  // rather than an empty list masking a wrong id.
+  const exists = await db.query.annotations.findFirst({
+    where: eq(schema.annotations.id, annotationId),
+    columns: { id: true },
+  });
+  if (!exists) throw new NotFoundError("Annotation");
+
+  const rows = await db.query.annotationEvents.findMany({
+    where: eq(schema.annotationEvents.annotationId, annotationId),
+    with: {
+      actor: { columns: { id: true, name: true, email: true, avatarUrl: true } },
+    },
+    orderBy: [asc(schema.annotationEvents.createdAt), asc(schema.annotationEvents.id)],
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    annotationId: row.annotationId,
+    type: row.type,
+    actorType: row.actorType,
+    // For "agent" and "system" events the join yields null. For "user" events
+    // the actor row is expected but may be missing if the user was hard-deleted
+    // — surface null there rather than crashing the response.
+    actor: row.actor
+      ? {
+          id: row.actor.id,
+          name: row.actor.name,
+          email: row.actor.email,
+          avatarUrl: row.actor.avatarUrl,
+        }
+      : null,
+    payload: row.payload,
+    createdAt: row.createdAt.toISOString(),
+  }));
 }
 
 export async function deleteAnnotation(db: DB, annotationId: string): Promise<void> {
