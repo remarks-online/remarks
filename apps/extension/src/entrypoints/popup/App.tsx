@@ -1,4 +1,5 @@
 import { env } from "@/env";
+import { setActiveClerkOrgId } from "@/lib/active-org";
 import { TrpcProvider } from "@/lib/trpc-provider";
 import type { BackgroundRequest, BackgroundResponse } from "@/types";
 import {
@@ -8,8 +9,24 @@ import {
   SignInButton,
   SignUpButton,
   UserButton,
+  useOrganization,
 } from "@clerk/chrome-extension";
+import { Button } from "@remarks/ui";
+import { useEffect } from "react";
 import { ProjectPicker } from "./ProjectPicker";
+
+/**
+ * Broadcasts the popup's active Clerk org to chrome.storage so the content
+ * script (which has no ClerkProvider) can surface the right selected project
+ * and, in turn, per-project tRPC queries. Invisible — only runs an effect.
+ */
+function ActiveOrgSync() {
+  const { organization } = useOrganization();
+  useEffect(() => {
+    void setActiveClerkOrgId(organization?.id ?? null);
+  }, [organization?.id]);
+  return null;
+}
 
 const EXTENSION_URL = chrome.runtime.getURL(".");
 const POPUP_URL = `${EXTENSION_URL}popup.html`;
@@ -17,9 +34,9 @@ const POPUP_URL = `${EXTENSION_URL}popup.html`;
 async function pingBackground() {
   const request: BackgroundRequest = { kind: "ping" };
   const response = (await chrome.runtime.sendMessage(request)) as BackgroundResponse;
-  if (response.ok) {
+  if (response.ok && response.kind === "ping") {
     console.log("[remarks] background pong", response.pong);
-  } else {
+  } else if (!response.ok) {
     console.error("[remarks] background error", response.error);
   }
 }
@@ -34,9 +51,9 @@ export function App() {
       signUpFallbackRedirectUrl={POPUP_URL}
     >
       <TrpcProvider>
-        <main className="popup">
-          <header className="popup-header">
-            <h1>Remarks</h1>
+        <main className="flex min-w-[360px] flex-col gap-3 bg-background p-4 text-foreground">
+          <header className="flex items-center justify-between">
+            <h1 className="text-base font-semibold">Remarks</h1>
             <Show when="signed-in">
               <UserButton />
             </Show>
@@ -46,28 +63,31 @@ export function App() {
             when="signed-in"
             fallback={
               <>
-                <p>Sign in to start annotating pages.</p>
-                <div className="popup-actions">
+                <p className="text-sm text-muted-foreground">Sign in to start annotating pages.</p>
+                <div className="flex gap-2">
                   <SignInButton mode="modal">
-                    <button type="button">Sign in</button>
+                    <Button size="sm" type="button">
+                      Sign in
+                    </Button>
                   </SignInButton>
                   <SignUpButton mode="modal">
-                    <button type="button" className="popup-secondary">
+                    <Button size="sm" variant="outline" type="button">
                       Create account
-                    </button>
+                    </Button>
                   </SignUpButton>
                 </div>
               </>
             }
           >
+            <ActiveOrgSync />
             <OrganizationSwitcher hidePersonal />
             <ProjectPicker />
-            <p className="popup-hint">
+            <p className="text-xs text-muted-foreground">
               The sidebar is injected on every page. Open a tab to start annotating.
             </p>
-            <button type="button" onClick={pingBackground}>
+            <Button size="sm" variant="ghost" type="button" onClick={pingBackground}>
               Ping background
-            </button>
+            </Button>
           </Show>
         </main>
       </TrpcProvider>

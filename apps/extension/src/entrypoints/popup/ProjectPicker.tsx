@@ -3,7 +3,16 @@ import { getSelectedProjectId, setSelectedProjectId } from "@/lib/selected-proje
 import { trpc } from "@/lib/trpc";
 import { useOrganization } from "@clerk/chrome-extension";
 import type { ProjectResponse } from "@remarks/shared";
-import { type ChangeEvent, useEffect, useState } from "react";
+import {
+  Button,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@remarks/ui";
+import { useEffect, useState } from "react";
 
 export function ProjectPicker() {
   const { organization } = useOrganization();
@@ -44,9 +53,8 @@ export function ProjectPicker() {
     };
   }, [clerkOrgId, query.data]);
 
-  async function onChange(event: ChangeEvent<HTMLSelectElement>) {
+  async function onValueChange(nextId: string) {
     if (!clerkOrgId) return;
-    const nextId = event.target.value;
     setSelectedId(nextId);
     await setSelectedProjectId(clerkOrgId, nextId);
   }
@@ -59,19 +67,19 @@ export function ProjectPicker() {
 
   if (query.isLoading) {
     return (
-      <div className="popup-picker">
-        <p className="popup-hint">Loading projects…</p>
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-muted-foreground">Loading projects…</p>
       </div>
     );
   }
 
   if (query.isError) {
     return (
-      <div className="popup-picker">
-        <p className="popup-error">Could not load projects.</p>
-        <button type="button" className="popup-secondary" onClick={() => query.refetch()}>
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-destructive">Could not load projects.</p>
+        <Button size="sm" variant="outline" onClick={() => query.refetch()}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -80,25 +88,35 @@ export function ProjectPicker() {
 
   if (items.length === 0) {
     return (
-      <div className="popup-picker">
-        <p className="popup-hint">No projects in this organization yet.</p>
-        <button type="button" onClick={openNewProjectTab}>
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-muted-foreground">No projects in this organization yet.</p>
+        <Button size="sm" onClick={openNewProjectTab}>
           Create project in dashboard
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <label className="popup-picker">
-      <span className="popup-picker-label">Project</span>
-      <select value={selectedId ?? ""} onChange={onChange}>
-        {items.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.name} — {project.slug}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="flex flex-col gap-1">
+      <Label
+        htmlFor="popup-project-select"
+        className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+      >
+        Project
+      </Label>
+      <Select {...(selectedId ? { value: selectedId } : {})} onValueChange={onValueChange}>
+        <SelectTrigger id="popup-project-select">
+          <SelectValue placeholder="Select a project" />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((project) => (
+            <SelectItem key={project.id} value={project.id}>
+              {project.name} — {project.slug}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

@@ -1,167 +1,98 @@
-.rmk-root {
-  all: initial;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #0f172a;
+@import "tailwindcss";
+@source "../../../../packages/ui/src";
+@source "../";
+
+/*
+ * Shadcn design tokens scoped to the sidebar root wrapper. We can't use :root
+ * (that refers to the host document's <html> inside shadow DOM) and :host is
+ * awkward because the `data-theme` attribute has to sit on the shadow host
+ * itself, which lives outside the React tree. The `.rmk-root` wrapper is
+ * rendered by SidebarShell, so React controls the theme attribute directly.
+ */
+@layer base {
+  .rmk-root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 10% 3.9%;
+    --radius: 0.5rem;
+  }
+
+  .rmk-root[data-theme="dark"] {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
 }
 
-.rmk-sidebar {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  width: 320px;
-  max-height: calc(100vh - 32px);
-  display: flex;
-  flex-direction: column;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
-  z-index: 2147483647;
-  overflow: hidden;
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
 }
 
-.rmk-sidebar-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid #e2e8f0;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.rmk-sidebar-body {
-  padding: 16px;
-  font-size: 13px;
-  color: #475569;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.rmk-picker-hint {
-  margin: 0;
-  line-height: 1.5;
-}
-
-.rmk-picker-hint kbd {
-  display: inline-block;
-  padding: 1px 5px;
-  margin: 0 2px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  color: #0f172a;
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  line-height: 1.2;
-}
-
-.rmk-picker-hint-keys {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: #64748b;
-}
-
-.rmk-picker-tag-chip {
-  display: inline-block;
-  padding: 2px 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #1e40af;
-  background: #dbeafe;
-  border: 1px solid #bfdbfe;
-  border-radius: 4px;
-}
-
-.rmk-picker-tag-chip-rect {
-  color: #92400e;
-  background: #fef3c7;
-  border-color: #fde68a;
-}
-
-.rmk-picker-selector {
-  display: block;
-  padding: 8px 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: #0f172a;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  word-break: break-all;
-  white-space: pre-wrap;
-}
-
-.rmk-capture {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.rmk-capture-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rmk-capture-strategy {
-  font-size: 11px;
-  color: #64748b;
-}
-
-.rmk-capture-text {
-  margin: 0;
-  font-size: 12px;
-  color: #334155;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.rmk-capture-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.rmk-btn {
-  appearance: none;
-  border: 1px solid #3b82f6;
-  background: #3b82f6;
-  color: #ffffff;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.rmk-btn:hover {
-  background: #2563eb;
-  border-color: #2563eb;
-}
-
-.rmk-btn-ghost {
-  background: transparent;
-  color: #3b82f6;
-}
-
-.rmk-btn-ghost:hover {
-  background: #eff6ff;
-  color: #2563eb;
-}
-
+/*
+ * Picker cursor overrides live on the host document (not the shadow root), so
+ * they have to stay as plain CSS rules matching document.body. The picker
+ * controller adds these classes for the duration of an element/rect session.
+ */
 body.rmk-picker-active,
-body.rmk-picker-active *,
-body.rmk-rect-active,
-body.rmk-rect-active * {
+body.rmk-picker-active * {
   cursor: crosshair !important;
 }
 
 body.rmk-rect-active,
 body.rmk-rect-active * {
+  cursor: crosshair !important;
   user-select: none !important;
 }
