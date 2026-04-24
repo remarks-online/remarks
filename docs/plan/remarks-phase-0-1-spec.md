@@ -74,7 +74,7 @@ If a type is used in more than one app, it lives in a package. Never duplicate.
 ### 1.5 Testing rules
 
 - **Unit tests**: Vitest, colocated (`foo.ts` + `foo.test.ts`).
-- **Integration tests** (API endpoints hitting a real DB): Vitest + Testcontainers for ephemeral Postgres, colocated in `apps/api/src/**/*.integration.test.ts`.
+- **Integration tests** (API endpoints hitting a real DB): Vitest against a real Postgres 16 via `DATABASE_URL`, colocated in `apps/api/src/**/*.integration.test.ts`. Full setup in `CLAUDE.md` §1.5 and §10.2 below.
 - **E2E tests**: Playwright at `apps/*/e2e/*.spec.ts`.
 - **Extension tests**: Playwright with `@playwright/test` — launches Chromium with the extension loaded.
 - **Coverage target: 70% lines for `packages/*`, no target for `apps/*`.** Integration and E2E give better signal than unit coverage for app code.
@@ -1031,7 +1031,7 @@ Base URL: `https://api.remarks.online/v1`
 | GET | `/annotations/:annotationId/events` | Event log | User (project member) |
 | POST | `/uploads/presign` | Get presigned R2 upload URL | User |
 
-**tRPC slug resolution.** REST is UUID-addressed so the extension never has to track a second identity axis. The dashboard's slug routes from §7.2 (`/app/projects/:slug`) are resolved in tRPC instead, via `projects.getBySlug({ orgId, slug }) → Project`. The procedure checks Clerk org membership (per `ctx.orgMemberships`) before the lookup, so non-members can't probe slug existence. Uniqueness is guaranteed by `projects_org_slug_idx` on `(orgId, slug)` in `packages/db/src/schema/projects.ts`, matching §3.2. A canonical enumeration of Phase 1 tRPC procedures and the Context shape they share is tracked in [`spec-gaps.md` A4](./spec-gaps.md); only the slug resolver is called out here because §5.2 is otherwise silent on how the slug route gets answered.
+**tRPC slug resolution.** REST is UUID-addressed so the extension never has to track a second identity axis. The dashboard's slug routes from §7.2 (`/app/projects/:slug`) are resolved in tRPC instead, via `projects.getBySlug({ orgId, slug }) → Project`. The procedure checks Clerk org membership (per `ctx.orgMemberships`) before the lookup, so non-members can't probe slug existence. Uniqueness is guaranteed by `projects_org_slug_idx` on `(orgId, slug)` in `packages/db/src/schema/projects.ts`, matching §3.2. The canonical Context shape and the full Phase 1 tRPC procedure enumeration live in §5.7; only the slug resolver is called out here because §5.2 is otherwise silent on how the slug route gets answered.
 
 ### 5.3 Request/response examples
 
@@ -1200,6 +1200,43 @@ export const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
 };
 ```
 This is the total Redis footprint in Phase 1. No caching, no session store, no queue, no presence tracking. Those are Phase 2+ decisions and require their own ADRs before adding
+
+## 5.7 tRPC surface (dashboard only)
+
+§7.3 covers how the dashboard *consumes* tRPC (RSC server caller + client React hooks). This subsection pins the server-side contract: what lives in the per-request Context and which procedures exist in Phase 1. Any PR that adds a field to Context or a new procedure updates this subsection in the same change.
+
+**Canonical Context shape** — matches `apps/api/src/trpc/trpc.ts`:
+
+```ts
+interface Context {
+  user?: AuthenticatedUser;    // unset for unauthenticated requests; protectedProcedure rejects with UNAUTHORIZED
+  orgMemberships: OrgMembership[];
+  db: DB;                      // Drizzle client from @remarks/db
+  r2: R2Client;                // used by procedures that presign annotation asset URLs
+  requestId: string;           // forwarded from Fastify `req.id` for log correlation
+}
+```
+
+Built once per request by `apps/api/src/trpc/context.ts` from the Fastify request decorated by the auth plugin. `AuthenticatedUser` and `OrgMembership` are defined inline in `trpc.ts` rather than imported from the Fastify plugin so the dashboard's type-only `AppRouter` import doesn't transitively pull in server-only Fastify instance decorations.
+
+**Phase 1 procedure enumeration** — reflects `apps/api/src/trpc/router.ts`:
+
+| Router | Procedure | Kind | Purpose |
+|---|---|---|---|
+| `me` | `getCurrentUser` | query | Current user from `ctx.user` (protected) |
+| `projects` | `list` | query | Projects the caller can see in a given Clerk org |
+| `projects` | `getBySlug` | query | Slug → project resolver for `/app/projects/:slug` (see §5.2) |
+| `projects` | `create` | mutation | Create a project in a Clerk org |
+| `annotations` | `list` | query | Cursor-paginated annotations for a project (§5.5); presigns asset URLs via `ctx.r2` |
+| `annotations` | `get` | query | Single annotation detail |
+| `annotations` | `listEvents` | query | Annotation event log (§3.4) |
+| `annotations` | `update` | mutation | Status / comment changes |
+
+Input shapes live in `packages/shared` per §4 (the tRPC router imports the same Zod schemas as the REST handlers for procedures that mirror a REST endpoint).
+
+**Rate-limit boundary.** The §5.6 rate-limit middleware is a Fastify `preHandler` hook; tRPC mutations bypass it by design in Phase 1. Phase 1 dashboard traffic is internal-user traffic behind Clerk, so per-user mutation flooding isn't a realistic threat surface. Adding tRPC-layer rate-limiting is deferred and will need its own amendment (it would extend Context with a `redis` field and wrap mutations in a middleware that mirrors the bucket/identifier scheme in §5.6).
+
+**Adding a new procedure.** If the procedure needs a new ambient dependency (e.g., `redis`, `inngest`), extend the `Context` definition above, update `apps/api/src/trpc/trpc.ts` and `apps/api/src/trpc/context.ts` in the same PR, and add the row to the enumeration table. Don't thread raw Fastify request objects into tRPC procedures — keep authorization helpers pure (see `assertProjectMember` introduced by `spec-gaps.md` A5).
 
 ---
 
@@ -1568,8 +1605,12 @@ Manual for Phase 1 (Chrome Web Store doesn't support auto-submit easily):
 
 ### 10.2 Integration tests
 
-- `apps/api/**/*.integration.test.ts`: spin up a Postgres container (Testcontainers), run migrations, test real HTTP endpoints with a real DB.
+- `apps/api/**/*.integration.test.ts` run under Vitest against a real Postgres 16 pointed at by `DATABASE_URL`, exercising real HTTP endpoints against a real DB.
+- Shared harness under `apps/api/test/integration/` migrates once per run and `TRUNCATE ... RESTART IDENTITY CASCADE`s between tests.
+- Runs with `fileParallelism: false` because every file shares one DB.
+- CI provides Postgres as a GitHub Actions service container (`.github/workflows/ci.yml`); locally, point `DATABASE_URL` at any Postgres 16 (a Neon dev branch, `docker run postgres:16`, or a local install).
 - Fast enough to run on every PR (< 60s total).
+- Integration-test infrastructure authoritative in `CLAUDE.md` §1.5.
 
 ### 10.3 E2E tests
 
@@ -1721,7 +1762,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.22 | Project picker in popup (which project does this tab's annotations go to?) | Selected project persists in `chrome.storage` |
 | 1.23 | Port element picker from existing [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
 | 1.24 | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
-| 1.25 | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Visual parity with existing Drawbridge tool but with shadcn and any UX enhancements that can be imagined during planning |
+| 1.25 | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with existing Drawbridge tool. Take advantage of any opportunities for visual or UX improvements with shadcn imagined during planning |
 | 1.26 | Native screenshot capture via background service worker | Screenshot appears in sidebar preview |
 | 1.27 | Upload flow: presign → PUT → create annotation | Annotation appears in dashboard |
 | 1.28 | Offline queue: IndexedDB outbox, retry on reconnect | Kill network, create annotation, restore network, see it sync |
