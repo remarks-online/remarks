@@ -1284,7 +1284,7 @@ If the network fails at any step after capture, the annotation is queued in Inde
 
 ### 6.5 Element picker
 
-Port from the existing Remarks. Key behaviors:
+Port from the existing Drawbridge tool[https://github.com/breschio/drawbridge]. Key behaviors:
 - `C` to enter pick mode (pointer cursor).
 - Hovering highlights elements with a blue outline.
 - Click captures the element; comment box opens next to it.
@@ -1293,7 +1293,7 @@ Port from the existing Remarks. Key behaviors:
 
 ### 6.6 Rectangle picker
 
-Port from existing. Key behaviors:
+Port from the existing Drawbridge tool[https://github.com/breschio/drawbridge]. Key behaviors:
 - `R` to enter draw mode (crosshair cursor).
 - Click and drag to draw; release to commit.
 - Rectangle coordinates saved in document coordinates (not viewport) so they survive scroll.
@@ -1758,7 +1758,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 
 | # | Task | Done when |
 |---|---|---|
-| 1.21 | [Clerk Chrome Extension SDK](https://clerk.com/docs/reference/chrome-extension/overview) integrated; sign-in works from popup | Can sign in, see user's orgs |
+| 1.21 ✓ | [Clerk Chrome Extension SDK](https://clerk.com/docs/reference/chrome-extension/overview) integrated; sign-in works from popup | Can sign in, see user's orgs |
 | 1.22 | Project picker in popup (which project does this tab's annotations go to?) | Selected project persists in `chrome.storage` |
 | 1.23 | Port element picker from existing [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
 | 1.24 | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
