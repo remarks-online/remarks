@@ -13,7 +13,7 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
-    "typecheck": "wxt prepare && tsc --noEmit",
+    "typecheck": "node scripts/prepare-with-exit.cjs && tsc --noEmit",
     "lint": "biome check src",
     "test": "vitest run",
     "verify:auth": "wxt build && playwright test --config verify/playwright.config.ts"
