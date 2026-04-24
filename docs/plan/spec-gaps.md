@@ -36,7 +36,7 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
   - Any future annotation filter UI
 - **Dependencies**: Independent. Worth resolving before 1.29.
 - **Estimated size**: `s` for (a), `m` for (b), `l` for (c).
-- **Status**: `open`. Task 1.14 ships with the 100-row ceiling; this amendment picks a permanent answer.
+- **Status**: `done in task 1.14 — option (b)`. `useInfiniteQuery` + "Load more" button on the project detail page; per-page size 50; branch grouping stays client-side. Same pattern is now the reference for task 1.29 (extension sidebar).
 
 ## A2 — Dev seed script referenced in §2 but no task creates it
 

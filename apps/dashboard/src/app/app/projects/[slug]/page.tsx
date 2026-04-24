@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { TRPCClientError } from "@trpc/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AnnotationsBrowser } from "./_components/annotations-browser";
+import { ANNOTATION_LIST_PAGE_SIZE, AnnotationsBrowser } from "./_components/annotations-browser";
 
 type Params = Promise<{ slug: string }>;
 
@@ -36,7 +36,7 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
 
   const initialList = await trpc.annotations.list.query({
     projectId: project.id,
-    limit: 100,
+    limit: ANNOTATION_LIST_PAGE_SIZE,
   });
 
   return (
