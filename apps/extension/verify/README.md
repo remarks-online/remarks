@@ -1,6 +1,10 @@
-# `verify/` — local extension auth-flow verification
+# `verify/` — local extension service-worker verification
 
-One-off Playwright suite that boots the built extension in a real Chromium, drives a Clerk sign-in via the sign-in-ticket API, and asserts the MV3 service worker's `createClerkClient({ background: true })` successfully mints a Bearer token. **Not part of CI.** Not part of the turbo pipeline. Run locally when the extension's Clerk integration changes or before shipping tasks 1.27 / 1.29 / 1.30.
+Playwright suite that boots the built extension in a real Chromium and drives the pieces of the MV3 service worker that CI and unit tests can't reach. **Not part of CI.** Not part of the turbo pipeline. Run locally when extension SW code changes or before shipping tasks 1.27 / 1.29 / 1.30.
+
+Specs:
+- `auth-flow.spec.ts` — Clerk `createClerkClient({ background: true })` mints a valid Bearer token (task 1.21 / A10).
+- `screenshot-preview.spec.ts` — `captureScreenshot` handler cuts a valid PNG out of the visible tab (task 1.26).
 
 ## Why this is separate from `apps/extension/e2e/`
 
@@ -23,7 +27,9 @@ pnpm --filter @remarks/dashboard dev
 ## Run
 
 ```
-pnpm --filter @remarks/extension verify:auth
+pnpm --filter @remarks/extension verify            # all specs
+pnpm --filter @remarks/extension verify:auth       # auth-flow.spec.ts only
+pnpm --filter @remarks/extension verify:screenshot # screenshot-preview.spec.ts only
 ```
 
 The script builds the extension first (so `.output/chrome-mv3/` is current), then launches headed Chromium. Expect a browser window for ~30 seconds. Pass = all assertions green.

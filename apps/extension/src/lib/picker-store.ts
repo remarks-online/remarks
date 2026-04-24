@@ -13,10 +13,20 @@ export interface HoveredPreview {
   dims: { w: number; h: number };
 }
 
+export interface CaptureScreenshot {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 interface CaptureBase {
   url: string;
   viewport: { width: number; height: number; dpr: number };
+  // Scroll offset at commit time. Used to translate document-coord bounds back
+  // to viewport coords for the cropped screenshot (see lib/screenshot.ts).
+  scroll: { x: number; y: number };
   capturedAt: number;
+  screenshot?: CaptureScreenshot;
 }
 
 export interface ElementCapture extends CaptureBase {
@@ -45,6 +55,7 @@ export interface PickerState {
   cancel: () => void;
   setHovered: (preview: HoveredPreview | null) => void;
   commit: (capture: Capture) => void;
+  setScreenshot: (screenshot: CaptureScreenshot | null) => void;
   clearCapture: () => void;
 }
 
@@ -57,6 +68,15 @@ export const pickerStore = createStore<PickerState>((set) => ({
   cancel: () => set({ mode: "idle", hovered: null }),
   setHovered: (preview) => set({ hovered: preview }),
   commit: (capture) => set({ mode: "idle", hovered: null, capture }),
+  setScreenshot: (screenshot) =>
+    set((state) => {
+      if (!state.capture) return {};
+      if (screenshot) {
+        return { capture: { ...state.capture, screenshot } };
+      }
+      const { screenshot: _discard, ...rest } = state.capture;
+      return { capture: rest as Capture };
+    }),
   clearCapture: () => set({ capture: null }),
 }));
 
