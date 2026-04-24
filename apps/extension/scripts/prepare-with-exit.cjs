@@ -1,56 +1,94 @@
 #!/usr/bin/env node
 /**
- * Wrapper around `wxt prepare` that force-exits after types are generated.
+ * Wrapper around `wxt <subcommand>` (`prepare` or `build`) that force-exits
+ * after wxt logs "Finished in …".
  *
- * WXT 0.20.25's `prepare` command logs "✔ Finished in NNN ms" once type
- * generation completes, but its Node process doesn't exit — a kqueue/epoll
- * handle leak. Locally that stalls `pnpm install`'s postinstall and CI's
- * typecheck step indefinitely. Polling for `.wxt/wxt.d.ts` and killing the
- * child once the file materializes is the narrow fix that matches what the
- * downstream consumer (tsc --noEmit) actually needs.
+ * wxt 0.20.25 has a handle leak (kqueue on macOS, epoll in Linux CI) that
+ * prevents its Node process from exiting after the subcommand logically
+ * completes. Locally this looked like postinstall hanging; in CI it stalls
+ * the build step indefinitely after wxt's final log line.
+ *
+ * Usage:
+ *   node scripts/prepare-with-exit.cjs prepare
+ *   node scripts/prepare-with-exit.cjs build [extra-wxt-args...]
+ *
+ * Strategy: spawn wxt with stdio piped, tee its output to the parent, and
+ * watch for the "Finished in" line. Once seen, wait a short grace period
+ * and SIGTERM → SIGKILL the child. Exits with wxt's code on natural exit or
+ * 0 after a forced kill.
  */
 const { spawn } = require("node:child_process");
-const { existsSync } = require("node:fs");
 const path = require("node:path");
 
-const TYPES_FILE = path.resolve(__dirname, "..", ".wxt", "wxt.d.ts");
-const MAX_MS = 60_000;
-const GRACE_MS = 300; // let wxt finish its final log flush after types land.
-const POLL_MS = 150;
+const argv = process.argv.slice(2);
+if (argv.length === 0) {
+  console.error("usage: prepare-with-exit.cjs <subcommand> [...args]");
+  process.exit(2);
+}
 
-// Resolve the wxt binary directly from this package's node_modules so we
-// don't depend on PATH inheritance. Works across pnpm's strict-linker and
-// hoisted layouts.
 const WXT_BIN = path.resolve(__dirname, "..", "node_modules", ".bin", "wxt");
-const child = spawn(WXT_BIN, ["prepare"], { stdio: "inherit", shell: false });
+const MAX_MS = 300_000; // 5 min ceiling — builds can be slow on CI
+const GRACE_MS = 400; // let wxt flush anything after "Finished in".
+
+const child = spawn(WXT_BIN, argv, { stdio: ["inherit", "pipe", "pipe"], shell: false });
+let finishedSeen = false;
+let killScheduled = false;
+let exited = false;
+let exitCode = 0;
 const started = Date.now();
 
-const poll = setInterval(() => {
-  if (existsSync(TYPES_FILE)) {
-    clearInterval(poll);
+function killAndExit() {
+  if (killScheduled) return;
+  killScheduled = true;
+  setTimeout(() => {
+    if (exited) return;
+    child.kill("SIGTERM");
     setTimeout(() => {
-      child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 500);
-    }, GRACE_MS);
-    return;
-  }
+      if (!exited) child.kill("SIGKILL");
+    }, 500);
+  }, GRACE_MS);
+}
+
+function teeAndWatch(stream, downstream) {
+  stream.on("data", (chunk) => {
+    downstream.write(chunk);
+    if (finishedSeen) return;
+    const text = chunk.toString("utf8");
+    // Match wxt's success line: "✔ Finished in NNN ms". Fall back to any
+    // line containing the ASCII "Finished in" to survive minor formatting
+    // changes.
+    if (text.includes("Finished in")) {
+      finishedSeen = true;
+      killAndExit();
+    }
+  });
+}
+
+teeAndWatch(child.stdout, process.stdout);
+teeAndWatch(child.stderr, process.stderr);
+
+const watchdog = setInterval(() => {
   if (Date.now() - started > MAX_MS) {
-    clearInterval(poll);
-    console.error("wxt prepare did not produce .wxt/wxt.d.ts within 60s");
+    console.error(`wxt ${argv[0]} exceeded ${MAX_MS}ms without finishing`);
+    clearInterval(watchdog);
     child.kill("SIGKILL");
     process.exit(1);
   }
-}, POLL_MS);
+}, 2000);
 
 child.on("exit", (code, signal) => {
-  clearInterval(poll);
-  // SIGTERM/SIGKILL means we killed it after types were generated — success.
-  if (signal === "SIGTERM" || signal === "SIGKILL") process.exit(0);
-  process.exit(code ?? 0);
+  exited = true;
+  clearInterval(watchdog);
+  // If we initiated the kill after seeing "Finished in", treat it as success.
+  if (finishedSeen && (signal === "SIGTERM" || signal === "SIGKILL")) {
+    process.exit(0);
+  }
+  exitCode = code ?? 0;
+  process.exit(exitCode);
 });
 
 child.on("error", (err) => {
-  clearInterval(poll);
+  clearInterval(watchdog);
   console.error("failed to start wxt:", err);
   process.exit(1);
 });
