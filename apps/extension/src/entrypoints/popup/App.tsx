@@ -1,6 +1,16 @@
 import { env } from "@/env";
 import type { BackgroundRequest, BackgroundResponse } from "@/types";
-import { ClerkProvider, Show, SignInButton, UserButton } from "@clerk/chrome-extension";
+import {
+  ClerkProvider,
+  OrganizationSwitcher,
+  Show,
+  SignInButton,
+  SignUpButton,
+  UserButton,
+} from "@clerk/chrome-extension";
+
+const EXTENSION_URL = chrome.runtime.getURL(".");
+const POPUP_URL = `${EXTENSION_URL}popup.html`;
 
 async function pingBackground() {
   const request: BackgroundRequest = { kind: "ping" };
@@ -14,22 +24,42 @@ async function pingBackground() {
 
 export function App() {
   return (
-    <ClerkProvider publishableKey={env.WXT_CLERK_PUBLISHABLE_KEY}>
+    <ClerkProvider
+      publishableKey={env.WXT_CLERK_PUBLISHABLE_KEY}
+      afterSignOutUrl={POPUP_URL}
+      signInFallbackRedirectUrl={POPUP_URL}
+      signUpFallbackRedirectUrl={POPUP_URL}
+    >
       <main className="popup">
-        <h1>Remarks</h1>
+        <header className="popup-header">
+          <h1>Remarks</h1>
+          <Show when="signed-in">
+            <UserButton />
+          </Show>
+        </header>
+
         <Show
           when="signed-in"
           fallback={
             <>
               <p>Sign in to start annotating pages.</p>
-              <SignInButton mode="modal">
-                <button type="button">Sign in</button>
-              </SignInButton>
+              <div className="popup-actions">
+                <SignInButton mode="modal">
+                  <button type="button">Sign in</button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button type="button" className="popup-secondary">
+                    Create account
+                  </button>
+                </SignUpButton>
+              </div>
             </>
           }
         >
-          <p>Signed in. The sidebar is injected on every page.</p>
-          <UserButton />
+          <OrganizationSwitcher hidePersonal />
+          <p className="popup-hint">
+            The sidebar is injected on every page. Open a tab to start annotating.
+          </p>
           <button type="button" onClick={pingBackground}>
             Ping background
           </button>
