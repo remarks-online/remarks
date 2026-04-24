@@ -18,6 +18,7 @@ playwright-report/
 playwright/.cache/
 # Chromium profile dirs for the extension's local verify suite
 .user-data/
+.user-data-*/
 
 # TypeScript
 *.tsbuildinfo

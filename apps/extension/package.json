@@ -16,7 +16,9 @@
     "typecheck": "node scripts/prepare-with-exit.cjs prepare && tsc --noEmit",
     "lint": "biome check src",
     "test": "vitest run",
-    "verify:auth": "node scripts/prepare-with-exit.cjs build && playwright test --config verify/playwright.config.ts"
+    "verify:auth": "node scripts/prepare-with-exit.cjs build && playwright test --config verify/playwright.config.ts verify/auth-flow.spec.ts",
+    "verify:screenshot": "node scripts/prepare-with-exit.cjs build && playwright test --config verify/playwright.config.ts verify/screenshot-preview.spec.ts",
+    "verify": "node scripts/prepare-with-exit.cjs build && playwright test --config verify/playwright.config.ts"
   },
   "dependencies": {
     "@clerk/chrome-extension": "^3.1.0",

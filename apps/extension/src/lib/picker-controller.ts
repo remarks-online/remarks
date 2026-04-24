@@ -2,12 +2,14 @@ import { buildDomContext } from "./dom-context";
 import { elementAtPoint } from "./elements-at-point";
 import { isInSidebarUi, isTypingTarget } from "./picker-guards";
 import {
+  type Capture,
   type ElementCapture,
   type HoveredPreview,
   type PickerMode,
   type RectCapture,
   pickerStore,
 } from "./picker-store";
+import { requestScreenshot } from "./screenshot";
 import { generateSelector } from "./selector-generator";
 
 const ELEMENT_OVERLAY_ID = "rmk-picker-overlay";
@@ -154,6 +156,7 @@ function buildElementCapture(el: Element, preview: HoveredPreview): ElementCaptu
       height: window.innerHeight,
       dpr: window.devicePixelRatio,
     },
+    scroll: { x: window.scrollX, y: window.scrollY },
     targetCoords: {
       x: rect.left + window.scrollX,
       y: rect.top + window.scrollY,
@@ -162,6 +165,17 @@ function buildElementCapture(el: Element, preview: HoveredPreview): ElementCaptu
     },
     capturedAt: Date.now(),
   };
+}
+
+/**
+ * Wait one frame after `commit()` so the picker overlays (which get torn down
+ * when mode flips to "idle") are gone before captureVisibleTab fires. Without
+ * this the blue element outline or orange rect shows up in the screenshot.
+ */
+function scheduleScreenshot(capture: Capture) {
+  requestAnimationFrame(() => {
+    void requestScreenshot(capture);
+  });
 }
 
 function startElementSession(sidebarRoot: Node | null): ActiveSession {
@@ -263,6 +277,7 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
     const preview = previewFromElement(hoveredElement);
     const capture = buildElementCapture(hoveredElement, preview);
     pickerStore.getState().commit(capture);
+    scheduleScreenshot(capture);
   };
 
   const stepToParent = () => {
@@ -449,9 +464,11 @@ function startRectSession(sidebarRoot: Node | null): ActiveSession {
         height: window.innerHeight,
         dpr: window.devicePixelRatio,
       },
+      scroll: { x: window.scrollX, y: window.scrollY },
       capturedAt: Date.now(),
     };
     pickerStore.getState().commit(capture);
+    scheduleScreenshot(capture);
   };
 
   // Suppress the click that follows mouseup so a tiny drag never activates a

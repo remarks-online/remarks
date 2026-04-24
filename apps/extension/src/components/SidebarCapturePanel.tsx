@@ -1,4 +1,4 @@
-import { type Capture, pickerStore } from "@/lib/picker-store";
+import { type Capture, type CaptureScreenshot, pickerStore } from "@/lib/picker-store";
 import { Badge, Button } from "@remarks/ui";
 import { useState } from "react";
 
@@ -9,6 +9,32 @@ interface SidebarCapturePanelProps {
 export function SidebarCapturePanel({ capture }: SidebarCapturePanelProps) {
   if (capture.kind === "rect") return <RectCapturePanel capture={capture} />;
   return <ElementCapturePanel capture={capture} />;
+}
+
+function ScreenshotPreview({
+  screenshot,
+  alt,
+}: {
+  screenshot: CaptureScreenshot | undefined;
+  alt: string;
+}) {
+  if (!screenshot) {
+    // Skeleton while captureVisibleTab is in flight. Non-animated in tests
+    // because verify specs poll for a real data: URL, not the skeleton.
+    return (
+      <div
+        aria-hidden
+        className="h-24 w-full animate-pulse rounded-md border border-border bg-muted"
+      />
+    );
+  }
+  return (
+    <img
+      src={screenshot.dataUrl}
+      alt={alt}
+      className="max-h-48 w-full rounded-md border border-border bg-background object-contain"
+    />
+  );
 }
 
 function ElementCapturePanel({ capture }: { capture: Extract<Capture, { kind: "element" }> }) {
@@ -38,6 +64,7 @@ function ElementCapturePanel({ capture }: { capture: Extract<Capture, { kind: "e
         </Badge>
         <span className="text-[11px] text-muted-foreground">via {capture.strategy}</span>
       </div>
+      <ScreenshotPreview screenshot={capture.screenshot} alt="Screenshot of selected element" />
       {textPreview ? (
         <p className="line-clamp-2 text-xs text-foreground/80" title={textPreview}>
           {textPreview}
@@ -91,6 +118,7 @@ function RectCapturePanel({ capture }: { capture: Extract<Capture, { kind: "rect
         </Badge>
         <span className="text-[11px] text-muted-foreground">document coords</span>
       </div>
+      <ScreenshotPreview screenshot={capture.screenshot} alt="Screenshot of drawn rectangle" />
       <code className="block rounded border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground">
         {bounds}
       </code>
