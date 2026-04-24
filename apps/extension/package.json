@@ -16,8 +16,7 @@
     "typecheck": "wxt prepare && tsc --noEmit",
     "lint": "biome check src",
     "test": "vitest run",
-    "verify:auth": "wxt build && playwright test --config verify/playwright.config.ts",
-    "postinstall": "wxt prepare"
+    "verify:auth": "wxt build && playwright test --config verify/playwright.config.ts"
   },
   "dependencies": {
     "@clerk/chrome-extension": "^3.1.0",
