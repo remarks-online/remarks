@@ -8,17 +8,20 @@ import { SidebarResizeHandle } from "@/components/SidebarResizeHandle";
 import { SidebarSignedOut } from "@/components/SidebarSignedOut";
 import { SidebarStatusTabs } from "@/components/SidebarStatusTabs";
 import { SidebarThreadList } from "@/components/SidebarThreadList";
+import { env } from "@/env";
 import { useAuthStatus } from "@/lib/auth-status";
-import { usePicker } from "@/lib/picker-store";
+import { type Capture, pickerStore, usePicker } from "@/lib/picker-store";
 import { getSelectedProjectId, watchSelectedProjectId } from "@/lib/selected-project";
 import { saveSidebarPrefs, watchSidebarPrefs } from "@/lib/sidebar-prefs";
 import { registerSidebarShortcuts } from "@/lib/sidebar-shortcuts";
 import { getPersistablePrefs, sidebarStore, useSidebar } from "@/lib/sidebar-store";
 import { SidebarTrpcProvider } from "@/lib/sidebar-trpc-provider";
+import { UploadAnnotationError, uploadAnnotation } from "@/lib/upload-annotation";
 import { useAutoCompact } from "@/lib/use-auto-compact";
 import { useResolvedTheme } from "@/lib/use-host-theme";
 import { cn } from "@remarks/ui";
-import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface DockStyle {
   container: string;
@@ -44,10 +47,12 @@ function dockStyle(dock: string): DockStyle {
   };
 }
 
-export function SidebarShell() {
-  const mode = usePicker((s) => s.mode);
-  const capture = usePicker((s) => s.capture);
+type SubmitState =
+  | { status: "idle" }
+  | { status: "uploading" }
+  | { status: "error"; message: string };
 
+export function SidebarShell() {
   const visible = useSidebar((s) => s.visible);
   const dock = useSidebar((s) => s.dock);
   const manualCompact = useSidebar((s) => s.compact);
@@ -96,14 +101,6 @@ export function SidebarShell() {
     };
   }, [auth.clerkOrgId]);
 
-  // Shortcut: F focuses the compose textarea.
-  const composeRef = useRef<SidebarComposeBoxHandle | null>(null);
-  useEffect(() => {
-    return registerSidebarShortcuts({
-      onFocusCompose: () => composeRef.current?.focus(),
-    });
-  }, []);
-
   if (!visible) {
     return <SidebarLauncher />;
   }
@@ -119,17 +116,7 @@ export function SidebarShell() {
     <SidebarNoProject />
   ) : (
     <SidebarTrpcProvider token={auth.token}>
-      <SidebarBranchSelector />
-      <SidebarStatusTabs compact={compact} />
-      <div className="flex-1 overflow-y-auto">
-        <SidebarThreadList />
-      </div>
-      {mode !== "idle" && !capture ? (
-        <div className="border-t border-border bg-muted/40 px-2 py-1.5">
-          <SidebarPickerHint mode={mode} />
-        </div>
-      ) : null}
-      <SidebarComposeBox ref={composeRef} capture={capture} />
+      <SidebarBody projectId={projectId} token={auth.token} compact={compact} />
     </SidebarTrpcProvider>
   );
 
@@ -152,5 +139,82 @@ export function SidebarShell() {
         <SidebarResizeHandle />
       </div>
     </div>
+  );
+}
+
+interface SidebarBodyProps {
+  projectId: string;
+  token: string | null;
+  compact: boolean;
+}
+
+function SidebarBody({ projectId, token, compact }: SidebarBodyProps) {
+  const capture = usePicker((s) => s.capture);
+  const mode = usePicker((s) => s.mode);
+  const queryClient = useQueryClient();
+  const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
+  const composeRef = useRef<SidebarComposeBoxHandle | null>(null);
+
+  // Shortcut: F focuses the compose textarea. Lives here so the ref stays
+  // colocated with the component that owns it.
+  useEffect(() => {
+    return registerSidebarShortcuts({
+      onFocusCompose: () => composeRef.current?.focus(),
+    });
+  }, []);
+
+  const onSubmit = useCallback(
+    async (text: string, cap: Capture | null) => {
+      if (!token || !cap || submit.status === "uploading") return;
+      setSubmit({ status: "uploading" });
+      try {
+        await uploadAnnotation({
+          token,
+          apiUrl: env.WXT_API_URL,
+          projectId,
+          branch: "main", // TODO(task 1.30): thread selected branch from SidebarBranchSelector.
+          capture: cap,
+          commentText: text,
+        });
+        sidebarStore.getState().setDraftComment("");
+        pickerStore.getState().clearCapture();
+        // Literal tRPC v10 query key for `annotations.list`. task 1.29 can
+        // switch to `getQueryKey(trpc.annotations.list)` if it wants
+        // finer-grained filters.
+        await queryClient.invalidateQueries({ queryKey: [["annotations", "list"]] });
+        setSubmit({ status: "idle" });
+      } catch (err) {
+        setSubmit({
+          status: "error",
+          message:
+            err instanceof UploadAnnotationError
+              ? `${err.step} failed: ${err.message}`
+              : "Upload failed. Please try again.",
+        });
+      }
+    },
+    [token, projectId, queryClient, submit.status]
+  );
+
+  return (
+    <>
+      <SidebarBranchSelector />
+      <SidebarStatusTabs compact={compact} />
+      <div className="flex-1 overflow-y-auto">
+        <SidebarThreadList />
+      </div>
+      {mode !== "idle" && !capture ? (
+        <div className="border-t border-border bg-muted/40 px-2 py-1.5">
+          <SidebarPickerHint mode={mode} />
+        </div>
+      ) : null}
+      <SidebarComposeBox
+        ref={composeRef}
+        capture={capture}
+        onSubmit={capture ? onSubmit : undefined}
+        disabled={submit.status === "uploading"}
+        error={submit.status === "error" ? submit.message : undefined}
+      />
+    </>
   );
 }

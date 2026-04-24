@@ -1766,7 +1766,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.24 ✓ | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
 | 1.25 ✓ | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with Drawbridge tool |
 | 1.26 ✓ | Native screenshot capture via background service worker | Screenshot appears in sidebar preview |
-| 1.27 | Upload flow: presign → PUT → create annotation | Annotation appears in dashboard |
+| 1.27 ✓ | Upload flow: presign → PUT → create annotation | Annotation appears in dashboard |
 | 1.28 | Offline queue: IndexedDB outbox, retry on reconnect | Kill network, create annotation, restore network, see it sync |
 | 1.29 | Sidebar thread view: list of annotations for current URL/branch, with statuses | Threads filter correctly |
 | 1.30 | Branch selector in sidebar (free text for Phase 1; GitHub-backed in Phase 3) | User can set branch name and it persists |
