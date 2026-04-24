@@ -1,3 +1,4 @@
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 
 // Base64-encoded DER RSA public key. Commits are intentional: the public key
@@ -11,6 +12,9 @@ const CRX_PUBLIC_KEY =
 export default defineConfig({
   srcDir: "src",
   modules: ["@wxt-dev/module-react"],
+  vite: () => ({
+    plugins: [tailwindcss()],
+  }),
   manifest: {
     name: "Remarks",
     description: "In-context feedback for websites.",

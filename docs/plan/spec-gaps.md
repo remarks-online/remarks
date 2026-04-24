@@ -186,6 +186,58 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Estimated size**: `m`.
 - **Status**: `done in task 1.21` — dev Clerk `allowed_origins` now `["chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd"]` (verified via PATCH response). Prod run deferred to the production deploy milestone, with the runbook as the handoff.
 
+## A10 — Full Clerk session inside the sidebar shadow root
+
+| # | Done when | Complete |
+|---|---|---|
+| A10 ✓ | Sidebar can make Bearer-authenticated tRPC calls without embedding `ClerkProvider`; active org id surfaced to content script | [x] |
+
+- **Spec reference**: §6 extension architecture; §14 task 1.25 (sidebar UI), task 1.27 (create annotation flow), task 1.29 (sidebar thread view).
+- **Problem**: Task 1.25 shipped the sidebar UI shell built on shadcn + Tailwind inside a closed shadow DOM. The shell needs to know whether the user is signed in (to show the right empty state) but not the full Clerk session, so 1.25 avoided embedding `ClerkProvider` in the content script. Instead, a background handler reads the `__session` cookie on `WXT_CLERK_SYNC_HOST` and replies to `{ kind: "auth-status" }` requests, with `chrome.cookies.onChanged` pushing updates to every tab. That's enough for the sidebar's signed-in dot and the signed-out / no-project CTAs. Tasks 1.27 (create annotation) and 1.29 (tRPC-backed thread list) need a real Bearer token from Clerk, and the current shape can't supply one without running a `ClerkProvider` somewhere.
+- **Proposed deliverable**: Choose one and ship it:
+  - (a) Embed `@clerk/chrome-extension`'s `ClerkProvider` + `syncHost` inside the content-script React tree. Requires solving: Clerk SDK's internal iframe injection against host-page CSP (github.com, banks, admin consoles typically block third-party iframes); key-rotation / token-refresh running in a page context we don't fully control; making the SDK Portal-aware (its UI components portal to `document.body`, which leaks).
+  - (b) Keep Clerk confined to the popup/service-worker. Background worker brokers authenticated API calls on the content script's behalf: content script sends `{ kind: "trpc-call", path, input }`; background uses the popup's stored Clerk session to attach the Bearer header and returns the tRPC response. Heavier wire format but bounds Clerk to one document.
+  - (c) Hybrid: sidebar uses `chrome.cookies.get` + a background message that returns a short-lived Clerk JWT, content script uses that token directly with its own tRPC client.
+  - (d) **Chosen (and landed).** Run Clerk's headless client directly inside the MV3 service worker via `createClerkClient({ publishableKey, syncHost, background: true })` from `@clerk/chrome-extension/client`. This is the SDK's sanctioned path for background contexts (shipped in Chrome Extension SDK 2.0, Nov 2024). The sidebar asks the background for a token; the background calls `clerk.session.getToken()` which refreshes on demand (60s default per the [force-token-refresh guide](https://clerk.com/docs/guides/sessions/force-token-refresh)). Session state persists to `chrome.storage`, shared with the popup's `ClerkProvider`. No offscreen document, no cookie reading.
+- **Done when**:
+  - Sidebar can render a tRPC-backed `annotations.list` query without requiring the popup to be open
+  - Signed-in dot, auth CTAs, and token refresh all work across reloads, tab switches, and sign-in/out events
+  - Decision documented here (and a short design note under `docs/runbooks/` or in §6 of the spec, whichever matches)
+- **Conflicts / overlaps with spec**: §6.2 says the extension "uses Clerk's Chrome extension SDK to get a JWT"; that's true for the popup today but not the content script. Resolving this amendment reconciles §6.2 across both surfaces.
+- **Affected tasks / components**: Task 1.27 (upload flow needs a Bearer), task 1.29 (real sidebar thread list), task 1.30 (branch selector reads/writes projects). `apps/extension/src/lib/trpc.ts`, `apps/extension/src/lib/auth-status.ts`, `apps/extension/src/entrypoints/background.ts`.
+- **Dependencies**: `before task 1.27` (submit flow needs auth). Independent of A11+.
+- **Estimated size**: `l`.
+- **Status**: `done in task 1.25` via option (d). Journey: we briefly shipped option (c) (raw cookie reads), then tried a Chrome offscreen document hosting `<ClerkProvider>` to solve cookie staleness, then deep-dove Clerk's docs and found `createClerkClient({ background: true })` — the officially-supported path that eliminates both the cookie-read and the offscreen document. Final shape:
+  - `apps/extension/src/entrypoints/background.ts` calls `createClerkClient({ publishableKey, syncHost, background: true })` lazily on first message. The `auth-status` handler returns `signedIn` (from `clerk.session != null`), `token` (from `clerk.session.getToken()`), and `clerkOrgId` (read from `local:remarks.activeClerkOrgId`, written by the popup's `<ActiveOrgSync />`). `clerk.addListener` pushes `auth-status-changed` to every tab whenever Clerk state moves (sign-in, sign-out, token refresh, org switch).
+  - Active org id surfaced via `apps/extension/src/lib/active-org.ts` (storage key `local:remarks.activeClerkOrgId`). Popup's `<ActiveOrgSync />` writes it when `useOrganization()` resolves. Background `watchActiveClerkOrgId` re-broadcasts on change. **Follow-up worth considering**: Clerk's default session token v2 (April 2025) now includes `o.id` (active org) as a first-class claim. API server-side could extract it from `verifyToken(token).payload.o.id` and drop the `chrome.storage.local` broadcast — cleaner and removes the popup-open-at-least-once dependency. Parked as a potential future amendment; not blocking.
+  - `apps/extension/src/lib/sidebar-trpc-provider.tsx` consumes `useAuthStatus().token` as the Bearer, re-materializing the tRPC client when the token changes.
+  - `wxt.config.ts` manifest permissions: `["storage", "activeTab", "tabs", "scripting", "cookies"]`. `offscreen` dropped after the offscreen experiment was removed. `cookies` stays because `@clerk/chrome-extension`'s background client throws `Missing 'permissions.cookies' entry in manifest.json` at first `getToken()` call without it — caught by the Playwright verify suite (see `apps/extension/verify/`).
+  - **Firefox**: `createClerkClient({ background: true })` works in Firefox MV2 service workers too (same chrome.storage-based persistence via `webextension-polyfill`), so the previous Firefox staleness caveat is also gone.
+  - **Known limitation**: Clerk has a documented "side panel needs reopen after web auth" bug ([syncHost guide](https://clerk.com/docs/guides/sessions/sync-host)) — if the user signs in/out on the dashboard while the sidebar is open in another tab, state may lag until `clerk.addListener` fires (typically quick via chrome.storage broadcast, but worth knowing). Not blocking Phase 1.
+
+## A11 — `authorizedParties` missing from Clerk `verifyToken`
+
+| # | Done when | Complete |
+|---|---|---|
+| A11 | `apps/api/src/plugins/auth.ts` passes `authorizedParties` to `verifyToken`; integration tests still pass | [ ] |
+
+- **Spec reference**: Not explicitly in the spec; surfaced by Clerk's [`verifyToken` reference](https://clerk.com/docs/reference/backend/verify-token) and [Manual JWT verification guide](https://clerk.com/docs/guides/sessions/manual-jwt-verification), which call `authorizedParties` out as a mitigation for a "subdomain cookie leaking attack."
+- **Problem**: `apps/api/src/plugins/auth.ts` today calls `verifyToken(token, { secretKey: env.CLERK_SECRET_KEY })` without `authorizedParties`. Clerk's docs treat the missing allowlist as a security gap: a token legitimately minted for some other application on a Clerk subdomain could be replayed against our API. Phase 1's blast radius is low (single Clerk instance, internal beta users), but this is the kind of thing that bites the moment you add a second hosted front-end.
+- **Proposed deliverable**:
+  - Add `CLERK_AUTHORIZED_PARTIES` to `apps/api/src/env.ts` as a comma-separated `z.string()` → `.transform(s => s.split(",").map(p => p.trim()))`. Required in all environments. Example dev value: `http://localhost:3000,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd`. Example prod: `https://app.remarks.online,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd`.
+  - Update `apps/api/src/plugins/auth.ts` to pass `authorizedParties` into `verifyToken`.
+  - Extend the `.env.example` and deploy runbook so Vercel/Fly configs set it.
+  - Integration test: a token whose `azp` isn't in the list is rejected; tokens whose `azp` matches pass.
+- **Done when**:
+  - `verifyToken` is called with `authorizedParties` in every environment
+  - Env schema rejects missing `CLERK_AUTHORIZED_PARTIES`
+  - Integration test covers the reject path
+- **Conflicts / overlaps with spec**: §12 ("Security baseline") says "Clerk handles password hashing, session management, email verification. You don't touch any of it." True for the primitives, but `authorizedParties` is a *caller-side* mitigation the spec didn't call out.
+- **Affected tasks / components**: `apps/api/src/plugins/auth.ts`, `apps/api/src/env.ts`, `.env.example` for apps/api, deploy runbooks under `docs/runbooks/`.
+- **Dependencies**: Independent. Cheap to fold into the next API PR.
+- **Estimated size**: `s`.
+- **Status**: `open`.
+
 ## A9 — Drop Drawbridge-era names from spec §6
 
 | # | Done when | Complete |

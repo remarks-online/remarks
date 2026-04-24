@@ -1277,11 +1277,12 @@ If the network fails at any step after capture, the annotation is queued in Inde
 
 ### 6.4 Sidebar
 
-- Injected into every page, iframe-free (direct DOM injection with strict CSS namespacing).
-- All styles prefixed with `.rmk-` to avoid conflicts with host page.
-- Respects host page's `html[data-theme]` and mirrors it if possible; otherwise light theme default.
-- Dockable: right (default), left, bottom.
-- States: signed out → sign-in prompt; signed in, no project → project picker; signed in with project → thread view.
+- Injected into every page, iframe-free (WXT `createShadowRootUi` → closed shadow DOM attached to `<body>`).
+- Built from `@remarks/ui` (shadcn) primitives with Tailwind v4 utilities; design tokens live on a `.rmk-root` wrapper (`:root` isn't available inside shadow DOM) so React controls theme via `data-theme`. Radix primitives portal to the shadow root via the `container` prop added in task 1.25; the old `.rmk-*` class-name namespace was retired in that task.
+- Respects host page's `html[data-theme]` / `prefers-color-scheme`, with Auto/Light/Dark override in the More menu.
+- Dockable: right (default), left, bottom. User-dragged width (320–520px vertical) and height (200–600px bottom) persist in `storage.sync`.
+- Compact mode triggers automatically below 420px viewport; manual override in More menu. Minimized → 40×40 launcher pill anchored to current dock.
+- States: signed out → "open popup to sign in" CTA; signed in, no project → "pick project in popup" CTA; signed in with project → status tabs (To Do / Doing / Done / Rejected), thread list (populated in task 1.29), compose box. Clerk session presence in the content script is learned via a background `auth-status` message + `chrome.cookies.onChanged` push; full `ClerkProvider` inside the shadow root is deferred (spec-gaps A10).
 
 ### 6.5 Element picker
 
@@ -1763,7 +1764,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.22 ✓ | Project picker in popup (which project does this tab's annotations go to?) | Selected project persists in `chrome.storage` |
 | 1.23 ✓ | Port element picker from [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
 | 1.24 ✓ | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
-| 1.25 | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with Drawbridge tool. Take advantage of any opportunities for visual or UX improvements with shadcn imagined during planning |
+| 1.25 ✓ | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with Drawbridge tool |
 | 1.26 | Native screenshot capture via background service worker | Screenshot appears in sidebar preview |
 | 1.27 | Upload flow: presign → PUT → create annotation | Annotation appears in dashboard |
 | 1.28 | Offline queue: IndexedDB outbox, retry on reconnect | Kill network, create annotation, restore network, see it sync |

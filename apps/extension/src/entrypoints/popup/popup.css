@@ -1,109 +1,16 @@
-:root {
-  color-scheme: light;
+@import "tailwindcss";
+@import "@remarks/ui/styles/globals.css";
+@source "../../../../../packages/ui/src";
+@source "../../";
+
+html,
+body {
+  margin: 0;
 }
 
 body {
-  margin: 0;
   min-width: 380px;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #0f172a;
-  background: #ffffff;
-}
-
-.popup {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-}
-
-.popup-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.popup h1 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.popup p {
-  margin: 0;
-  font-size: 13px;
-  color: #475569;
-}
-
-.popup-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.popup-hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #64748b;
-}
-
-.popup button {
-  appearance: none;
-  border: 1px solid #0f172a;
-  background: #0f172a;
-  color: #ffffff;
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.popup button:hover {
-  background: #1e293b;
-}
-
-.popup button.popup-secondary {
-  background: #ffffff;
-  color: #0f172a;
-}
-
-.popup button.popup-secondary:hover {
-  background: #f1f5f9;
-}
-
-.popup-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.popup-picker-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.popup-picker select {
-  appearance: none;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: inherit;
-  color: #0f172a;
-  background: #ffffff;
-  cursor: pointer;
-}
-
-.popup-picker select:focus {
-  outline: 2px solid #0f172a;
-  outline-offset: 1px;
-}
-
-.popup-error {
-  margin: 0;
-  font-size: 13px;
-  color: #b91c1c;
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
 }
