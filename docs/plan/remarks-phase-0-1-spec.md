@@ -1762,7 +1762,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | 1.21 ✓ | [Clerk Chrome Extension SDK](https://clerk.com/docs/reference/chrome-extension/overview) integrated; sign-in works from popup | Can sign in, see user's orgs |
 | 1.22 ✓ | Project picker in popup (which project does this tab's annotations go to?) | Selected project persists in `chrome.storage` |
 | 1.23 ✓ | Port element picker from [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
-| 1.24 | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
+| 1.24 ✓ | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
 | 1.25 | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with Drawbridge tool. Take advantage of any opportunities for visual or UX improvements with shadcn imagined during planning |
 | 1.26 | Native screenshot capture via background service worker | Screenshot appears in sidebar preview |
 | 1.27 | Upload flow: presign → PUT → create annotation | Annotation appears in dashboard |
