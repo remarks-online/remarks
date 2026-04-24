@@ -22,6 +22,30 @@ export class UploadAnnotationError extends Error {
   }
 }
 
+/**
+ * Classify an upload failure for the outbox retry loop (task 1.28).
+ *
+ * Retryable: anything the client can expect might succeed on a later attempt.
+ * - Missing status (network error, DNS failure, offline) — retry on reconnect.
+ * - 401 (auth) — Clerk may refresh the bearer between attempts.
+ * - 408, 429, 5xx — server or transport hiccup; typical retry territory.
+ *
+ * Non-retryable: deterministic failures that another attempt won't fix.
+ * - 400 (validation), 403 (permission), 404 (not found), 409 (conflict),
+ *   413 (payload too large), etc.
+ *
+ * Non-UploadAnnotationError exceptions are treated as retryable — they
+ * usually come from `fetch` throwing before producing a status.
+ */
+export function isRetryable(err: unknown): boolean {
+  if (!(err instanceof UploadAnnotationError)) return true;
+  if (err.status === undefined) return true;
+  if (err.status === 401) return true;
+  if (err.status === 408 || err.status === 429) return true;
+  if (err.status >= 500 && err.status < 600) return true;
+  return false;
+}
+
 export interface UploadAnnotationInput {
   // Clerk Bearer token; caller guarantees non-empty.
   token: string;
