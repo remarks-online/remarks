@@ -6,10 +6,11 @@ IDs are stable (`A1`, `A2`, …) so they can be referenced from PR titles and co
 
 Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and can be handed to a Claude Code session the same way:
 
+- **Lead-in table** — 3-column `| # | Done when | Complete |` table directly under the H2. Mirrors §13/§14 task tables at a glance: the `#` cell gets a trailing `✓` when the amendment is done; `Done when` is the highest-signal acceptance criterion as a single line; `Complete` is a GFM `[ ]`/`[x]` checkbox so reviewers can see open-vs-done without reading the Status bullet.
 - **Spec reference** — line(s) in `docs/plan/remarks-phase-0-1-spec.md` or "not specified"
 - **Problem** — what's broken, ambiguous, or missing
 - **Proposed deliverable** — concrete change to code, spec, or docs. PR-description shape.
-- **Done when** — one or two bullets, checklist-style
+- **Done when** — one or two bullets, checklist-style. The table above condenses this to one line; this bullet carries the full checklist.
 - **Conflicts / overlaps with spec** — stale or contradicted language
 - **Affected tasks / components** — specific §13/§14 task numbers and file areas
 - **Dependencies** — `after task X.Y` / `before task X.Y` / `independent`
@@ -19,6 +20,10 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 ---
 
 ## A1 — Annotation list pagination UI on the project detail page
+
+| # | Done when | Complete |
+|---|---|---|
+| A1 ✓ | Project with >100 annotations renders without silent data loss; chosen pattern documented in spec | [x] |
 
 - **Spec reference**: §14 task 1.14 says only "Shows seeded data with screenshots"; no pagination task. §5.5 mandates cursor-based pagination server-side. `listAnnotationsQuerySchema` caps `limit` at 100.
 - **Problem**: The Phase 1 API returns annotations in cursor-paginated pages, but no §14 task creates a client-side pagination or infinite-scroll UI. Any project that crosses 100 annotations silently truncates on the detail page.
@@ -40,6 +45,10 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 ## A2 — Dev seed script referenced in §2 but no task creates it
 
+| # | Done when | Complete |
+|---|---|---|
+| A2 ✓ | `pnpm seed` is idempotent and populates ≥3 branches + ≥8 annotations covering all 4 statuses | [x] |
+
 - **Spec reference**: §2 (monorepo tree listing for `tools/scripts/seed.ts`); §14 task 1.14 ("Shows seeded data with screenshots").
 - **Problem**: The spec tree shows `tools/scripts/seed.ts` but no §13 or §14 task creates it. Task 1.14's done-when depends on seeded data existing and — without the extension, which doesn't ship until weeks 8–11 — there's no way to produce any.
 - **Proposed deliverable**: Idempotent script that populates an org/user/project/branches/annotations and uploads a placeholder screenshot to R2. Accepts real Clerk org + user IDs via `DEV_SEED_CLERK_ORG_ID` and `DEV_SEED_CLERK_USER_ID` since Clerk owns auth identity per §3.1. Wired behind `pnpm seed` at repo root. Requires `tools/*` added to `pnpm-workspace.yaml` so the new `@remarks/scripts` package can resolve `@remarks/db`.
@@ -56,6 +65,10 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 ## A3 — Project fetch by slug is not in the REST API
 
+| # | Done when | Complete |
+|---|---|---|
+| A3 ✓ | §5.2 documents `projects.getBySlug({ orgId, slug })` with Clerk org-scoping | [x] |
+
 - **Spec reference**: §5.2 endpoint table; §7.2 route structure.
 - **Problem**: §5.2 lists only `GET /projects/:projectId` (UUID). The dashboard route convention is `/app/projects/:slug` (§7.2), so something has to resolve slug → id. Nothing did before task 1.14.
 - **Proposed deliverable**: Choose one and update the spec to match:
@@ -71,9 +84,13 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
   - Task 1.15 (annotation detail — likely `/app/projects/:slug/annotations/:annotationId`, reuses the same resolver)
 - **Dependencies**: Independent. Code path exists; amendment is the spec update.
 - **Estimated size**: `xs` if we stay with (b) (spec edit only); `s` if we also add the REST form for symmetry.
-- **Status**: `open` — code shipped in task 1.14 via option (b); spec doc is the remaining work.
+- **Status**: `done` — spec follow-up to task 1.14. Option (b) ratified by the "tRPC slug resolution" note appended to §5.2. A full tRPC procedure enumeration + Context shape is deferred to A4.
 
 ## A4 — tRPC Context shape is underspecified
+
+| # | Done when | Complete |
+|---|---|---|
+| A4 | §5 (or §7.3) pins a canonical tRPC Context shape and `apps/api/src/trpc/trpc.ts` matches | [ ] |
 
 - **Spec reference**: §7.3 (dashboard tRPC); §5 generally (no tRPC context mention).
 - **Problem**: §7.3 shows dashboard-side tRPC setup but never specifies what lives in the server-side Context. Task 1.14 added `r2` because `annotations.list` presigns assets. Future tRPC rate limiting would want `redis`. Without a canonical definition, every new procedure re-decides.
@@ -89,6 +106,10 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 ## A5 — Authorization helpers are Fastify-coupled
 
+| # | Done when | Complete |
+|---|---|---|
+| A5 ✓ | Pure `assertProjectMember` used by tRPC; Fastify `requireProjectMember` wraps it with integration tests still green | [x] |
+
 - **Spec reference**: Not specified.
 - **Problem**: `requireProjectMember` in `apps/api/src/lib/authorization.ts` originally took a `FastifyRequest`. tRPC procedures have no request object, which would have forced either faking one or duplicating logic.
 - **Proposed deliverable**: Extract a pure `assertProjectMember(db, userId, projectId, opts?)` and keep the Fastify `requireProjectMember` as a thin adapter calling it. Same pattern for any future request-coupled helper.
@@ -103,6 +124,10 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 ## A6 — Spec §10.2 still says Testcontainers; repo uses a Postgres service container
 
+| # | Done when | Complete |
+|---|---|---|
+| A6 | §10.2 no longer mentions Testcontainers and describes the GitHub Actions service-container setup per CLAUDE.md §1.5 | [ ] |
+
 - **Spec reference**: spec §10.2; CLAUDE.md §1.5.
 - **Problem**: §10.2 describes "Vitest + Testcontainers for ephemeral Postgres". CLAUDE.md §1.5 is the authoritative account: GitHub Actions service container in CI; local Postgres 16 via `DATABASE_URL`; `fileParallelism: false`; `TRUNCATE ... RESTART IDENTITY CASCADE` between tests. The spec paragraph is stale.
 - **Proposed deliverable**: Replace the §10.2 Testcontainers paragraph with language matching CLAUDE.md §1.5. Add a one-line pointer: "Integration-test infrastructure authoritative in `CLAUDE.md` §1.5."
@@ -116,6 +141,10 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Status**: `open`.
 
 ## A7 — Dashboard loading skeletons via in-page Suspense (deferred from task 1.20)
+
+| # | Done when | Complete |
+|---|---|---|
+| A7 | Both projects pages stream slow parts behind `<Suspense>`; no new `loading.tsx`; 404 e2e still passes | [ ] |
 
 - **Spec reference**: §14 task 1.20 ("Error boundaries and loading states across the app").
 - **Problem**: Task 1.20 was meant to add `loading.tsx` skeletons alongside the error boundaries. Every Next.js App Router `loading.tsx` placement that wraps a page calling `notFound()` flushes the response with HTTP 200 before the page resolves to 404 — the status is locked once streaming begins. The 404 status assertion in `e2e/project-detail.spec.ts` ("unknown slug renders the 404 not-found page") regresses for any `loading.tsx` placed at `projects/`, `projects/[slug]/`, or higher. See [vercel/next.js#76474](https://github.com/vercel/next.js/issues/76474), [#45801](https://github.com/vercel/next.js/issues/45801). Task 1.20 shipped the error.tsx half and explicitly omitted loading.tsx.
