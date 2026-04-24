@@ -90,7 +90,7 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 | # | Done when | Complete |
 |---|---|---|
-| A4 | §5 (or §7.3) pins a canonical tRPC Context shape and `apps/api/src/trpc/trpc.ts` matches | [ ] |
+| A4 ✓ | §5 (or §7.3) pins a canonical tRPC Context shape and `apps/api/src/trpc/trpc.ts` matches | [x] |
 
 - **Spec reference**: §7.3 (dashboard tRPC); §5 generally (no tRPC context mention).
 - **Problem**: §7.3 shows dashboard-side tRPC setup but never specifies what lives in the server-side Context. Task 1.14 added `r2` because `annotations.list` presigns assets. Future tRPC rate limiting would want `redis`. Without a canonical definition, every new procedure re-decides.
@@ -102,7 +102,7 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Affected tasks / components**: Every tRPC procedure that needs presigned URLs or will need rate limiting in the future.
 - **Dependencies**: Independent.
 - **Estimated size**: `xs` (spec edit only — code is already in place from task 1.14).
-- **Status**: `open` — code shipped; spec edit pending.
+- **Status**: `done` — spec edit landed as new §5.7 "tRPC surface (dashboard only)"; the §5.2 A3-era pointer to this entry was rewritten to reference §5.7 instead. `apps/api/src/trpc/trpc.ts` already matched the canonical shape since task 1.14, so no code change was needed.
 
 ## A5 — Authorization helpers are Fastify-coupled
 
@@ -120,13 +120,13 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Affected tasks / components**: Task 1.16 (status update mutation), 1.32 (settings mutations), 1.33 (invitations, if done via tRPC).
 - **Dependencies**: Independent. Implemented in 1.14 as a precondition for `annotations.list`.
 - **Estimated size**: `s`.
-- **Status**: `done in task 1.14`.
+- **Status**: `done in task 1.14` (PR #21, commit `769b475`). Pure `assertProjectMember(db, userId, projectId, opts?)` lives in `apps/api/src/lib/project-authorization.ts`; `apps/api/src/lib/authorization.ts` re-exports it and keeps the Fastify `requireProjectMember(request, projectId, opts?)` adapter. The two-file split keeps Fastify type augmentations (`request.auth`, `fastify.db`) out of the tRPC import graph — the dashboard's type-only `AppRouter` import would otherwise pull them in. All four `annotations.*` tRPC procedures (`list`, `get`, `listEvents`, `update`) call the pure helper; Fastify routes under `apps/api/src/routes/{annotations,projects,uploads}` keep using the adapter unchanged. §5.7's "Adding a new procedure" paragraph already cites `assertProjectMember` as the canonical pattern, so the cross-link runs both ways.
 
 ## A6 — Spec §10.2 still says Testcontainers; repo uses a Postgres service container
 
 | # | Done when | Complete |
 |---|---|---|
-| A6 | §10.2 no longer mentions Testcontainers and describes the GitHub Actions service-container setup per CLAUDE.md §1.5 | [ ] |
+| A6 ✓ | §10.2 no longer mentions Testcontainers and describes the GitHub Actions service-container setup per CLAUDE.md §1.5 | [x] |
 
 - **Spec reference**: spec §10.2; CLAUDE.md §1.5.
 - **Problem**: §10.2 describes "Vitest + Testcontainers for ephemeral Postgres". CLAUDE.md §1.5 is the authoritative account: GitHub Actions service container in CI; local Postgres 16 via `DATABASE_URL`; `fileParallelism: false`; `TRUNCATE ... RESTART IDENTITY CASCADE` between tests. The spec paragraph is stale.
@@ -138,13 +138,13 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Affected tasks / components**: All integration tests; no Phase 1 task is currently blocked.
 - **Dependencies**: Independent. Natural to bundle into whichever PR next touches integration-test infra.
 - **Estimated size**: `xs`.
-- **Status**: `open`.
+- **Status**: `done` — spec edit only. §10.2 rewritten against CLAUDE.md §1.5 (Postgres 16 via `DATABASE_URL`, shared harness, migrate-once + `TRUNCATE ... RESTART IDENTITY CASCADE` between tests, `fileParallelism: false`, GitHub Actions service container in CI) and ends with the authoritative pointer. The stale Testcontainers mention at spec line 77 (spec's own §1.5 "Testing rules") was the same problem and was bundled into this amendment so the spec stays internally consistent. ADR 0004 (`docs/adr/0004-neon-postgres-and-drizzle.md`) still references Testcontainers and was deliberately left alone per CLAUDE.md §1.10 — ADRs are historical by design, and its Testcontainers reference accurately captures the plan at decision time. **Testcontainers was reconsidered before closing and rejected**: its real win is per-file DB isolation enabling `fileParallelism: true`, but container startup (~3–5s per file) loses to the current TRUNCATE-between-tests model (microseconds per reset) at Phase-1 suite size. Secondary wins (zero-config local testing, removing the `services:` block in `ci.yml`) are marginal and don't justify a new runtime dep (CLAUDE.md §1.10), Docker-in-Docker complexity on Apple Silicon, or a superseding ADR to 0004. Revisit if the integration suite exceeds ~30s or a second engineer joins and onboarding friction shows up.
 
 ## A7 — Dashboard loading skeletons via in-page Suspense (deferred from task 1.20)
 
 | # | Done when | Complete |
 |---|---|---|
-| A7 | Both projects pages stream slow parts behind `<Suspense>`; no new `loading.tsx`; 404 e2e still passes | [ ] |
+| A7 ✓ | Both projects pages stream slow parts behind `<Suspense>`; no new `loading.tsx`; 404 e2e still passes | [x] |
 
 - **Spec reference**: §14 task 1.20 ("Error boundaries and loading states across the app").
 - **Problem**: Task 1.20 was meant to add `loading.tsx` skeletons alongside the error boundaries. Every Next.js App Router `loading.tsx` placement that wraps a page calling `notFound()` flushes the response with HTTP 200 before the page resolves to 404 — the status is locked once streaming begins. The 404 status assertion in `e2e/project-detail.spec.ts` ("unknown slug renders the 404 not-found page") regresses for any `loading.tsx` placed at `projects/`, `projects/[slug]/`, or higher. See [vercel/next.js#76474](https://github.com/vercel/next.js/issues/76474), [#45801](https://github.com/vercel/next.js/issues/45801). Task 1.20 shipped the error.tsx half and explicitly omitted loading.tsx.
@@ -158,4 +158,4 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Affected tasks / components**: `apps/dashboard/src/app/app/projects/page.tsx`, `apps/dashboard/src/app/app/projects/[slug]/page.tsx`, plus a new child server component per page.
 - **Dependencies**: `after task 1.20` (PR #27 shipped error.tsx + this gap).
 - **Estimated size**: `s`.
-- **Status**: `open`.
+- **Status**: `done` — spec follow-up to task 1.20. Inline `<Suspense>` wraps `<ProjectList>` on `projects/page.tsx` and `<AnnotationsPanel>` on `[slug]/page.tsx`; the validating `projects.getBySlug` fetch stays inline in the detail page so `notFound()` runs pre-stream and the e2e 404 assertion (`project-detail.spec.ts:24`) still passes. No `loading.tsx` added and no new `packages/ui` primitive — skeletons live inline under route-private `_components/` folders with `animate-pulse` + `bg-muted`. The two Next.js issue links in this entry were re-verified against upstream discussions (#76501 confirmed WONTFIX) before landing, and the inline-Suspense pattern is the community-standard workaround — a middleware rewrite was rejected as overkill for a problem the in-page split already solves.

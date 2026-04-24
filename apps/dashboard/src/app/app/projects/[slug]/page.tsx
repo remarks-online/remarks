@@ -3,7 +3,9 @@ import { auth } from "@clerk/nextjs/server";
 import { TRPCClientError } from "@trpc/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ANNOTATION_LIST_PAGE_SIZE, AnnotationsBrowser } from "./_components/annotations-browser";
+import { Suspense } from "react";
+import { AnnotationsPanel } from "./_components/annotations-panel";
+import { AnnotationsPanelSkeleton } from "./_components/annotations-panel-skeleton";
 
 type Params = Promise<{ slug: string }>;
 
@@ -24,6 +26,9 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
 
   const trpc = await getTrpcServer();
 
+  // Inline pre-stream validation: keeps notFound() ahead of any Suspense flush
+  // so /app/projects/<unknown-slug> resolves to a real HTTP 404, not a
+  // streamed 200. See docs/plan/spec-gaps.md A7.
   let project: Awaited<ReturnType<typeof trpc.projects.getBySlug.query>>;
   try {
     project = await trpc.projects.getBySlug.query({ orgId, slug });
@@ -33,11 +38,6 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
     }
     throw err;
   }
-
-  const initialList = await trpc.annotations.list.query({
-    projectId: project.id,
-    limit: ANNOTATION_LIST_PAGE_SIZE,
-  });
 
   return (
     <section className="mx-auto max-w-4xl">
@@ -69,11 +69,9 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
         </div>
       </div>
 
-      <AnnotationsBrowser
-        projectId={project.id}
-        initialData={initialList}
-        primaryBranch={project.primaryBranch}
-      />
+      <Suspense fallback={<AnnotationsPanelSkeleton />}>
+        <AnnotationsPanel projectId={project.id} primaryBranch={project.primaryBranch} />
+      </Suspense>
     </section>
   );
 }
