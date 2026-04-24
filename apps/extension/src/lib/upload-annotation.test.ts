@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ZodError } from "zod";
 import type { Capture, ElementCapture, RectCapture } from "./picker-store";
-import { UploadAnnotationError, uploadAnnotation } from "./upload-annotation";
+import { UploadAnnotationError, isRetryable, uploadAnnotation } from "./upload-annotation";
 
 // 1×1 transparent PNG — 67 bytes decoded, ~92-char base64 payload. The size
 // delta is load-bearing for the sizeBytes-accuracy test.
@@ -370,5 +370,35 @@ describe("uploadAnnotation", () => {
     const presignBody = parseJsonBody(calls[0]?.init ?? {});
     expect(presignBody.sizeBytes).toBe(PNG_BYTE_LENGTH);
     expect(presignBody.sizeBytes).not.toBe(PNG_BASE64.length);
+  });
+});
+
+describe("isRetryable", () => {
+  test("missing status (network failure) is retryable", () => {
+    expect(isRetryable(new UploadAnnotationError("presign", "offline"))).toBe(true);
+  });
+
+  test("401, 408, 429 are retryable", () => {
+    expect(isRetryable(new UploadAnnotationError("create", "unauth", 401))).toBe(true);
+    expect(isRetryable(new UploadAnnotationError("create", "timeout", 408))).toBe(true);
+    expect(isRetryable(new UploadAnnotationError("create", "rate limit", 429))).toBe(true);
+  });
+
+  test("5xx responses are retryable", () => {
+    expect(isRetryable(new UploadAnnotationError("put", "bad gateway", 502))).toBe(true);
+    expect(isRetryable(new UploadAnnotationError("create", "down", 503))).toBe(true);
+  });
+
+  test("400, 403, 404, 409, 413 are not retryable", () => {
+    expect(isRetryable(new UploadAnnotationError("create", "validation", 400))).toBe(false);
+    expect(isRetryable(new UploadAnnotationError("create", "forbidden", 403))).toBe(false);
+    expect(isRetryable(new UploadAnnotationError("create", "not found", 404))).toBe(false);
+    expect(isRetryable(new UploadAnnotationError("create", "conflict", 409))).toBe(false);
+    expect(isRetryable(new UploadAnnotationError("presign", "too big", 413))).toBe(false);
+  });
+
+  test("unknown error types default to retryable", () => {
+    expect(isRetryable(new Error("something broke"))).toBe(true);
+    expect(isRetryable(undefined)).toBe(true);
   });
 });

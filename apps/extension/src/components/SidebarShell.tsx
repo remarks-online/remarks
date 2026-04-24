@@ -3,6 +3,7 @@ import { SidebarComposeBox, type SidebarComposeBoxHandle } from "@/components/Si
 import { SidebarHeader } from "@/components/SidebarHeader";
 import { SidebarLauncher } from "@/components/SidebarLauncher";
 import { SidebarNoProject } from "@/components/SidebarNoProject";
+import { SidebarOutboxBanner } from "@/components/SidebarOutboxBanner";
 import { SidebarPickerHint } from "@/components/SidebarPickerHint";
 import { SidebarResizeHandle } from "@/components/SidebarResizeHandle";
 import { SidebarSignedOut } from "@/components/SidebarSignedOut";
@@ -10,15 +11,16 @@ import { SidebarStatusTabs } from "@/components/SidebarStatusTabs";
 import { SidebarThreadList } from "@/components/SidebarThreadList";
 import { env } from "@/env";
 import { useAuthStatus } from "@/lib/auth-status";
+import { enqueue as enqueueOutbox } from "@/lib/outbox-db";
 import { type Capture, pickerStore, usePicker } from "@/lib/picker-store";
 import { getSelectedProjectId, watchSelectedProjectId } from "@/lib/selected-project";
 import { saveSidebarPrefs, watchSidebarPrefs } from "@/lib/sidebar-prefs";
 import { registerSidebarShortcuts } from "@/lib/sidebar-shortcuts";
 import { getPersistablePrefs, sidebarStore, useSidebar } from "@/lib/sidebar-store";
 import { SidebarTrpcProvider } from "@/lib/sidebar-trpc-provider";
-import { UploadAnnotationError, uploadAnnotation } from "@/lib/upload-annotation";
 import { useAutoCompact } from "@/lib/use-auto-compact";
 import { useResolvedTheme } from "@/lib/use-host-theme";
+import { triggerOutboxDrain, useOutboxDrain } from "@/lib/use-outbox-drain";
 import { cn } from "@remarks/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,11 +48,6 @@ function dockStyle(dock: string): DockStyle {
     frame: "w-full",
   };
 }
-
-type SubmitState =
-  | { status: "idle" }
-  | { status: "uploading" }
-  | { status: "error"; message: string };
 
 export function SidebarShell() {
   const visible = useSidebar((s) => s.visible);
@@ -116,7 +113,12 @@ export function SidebarShell() {
     <SidebarNoProject />
   ) : (
     <SidebarTrpcProvider token={auth.token}>
-      <SidebarBody projectId={projectId} token={auth.token} compact={compact} />
+      <SidebarBody
+        projectId={projectId}
+        token={auth.token}
+        clerkOrgId={auth.clerkOrgId}
+        compact={compact}
+      />
     </SidebarTrpcProvider>
   );
 
@@ -145,14 +147,14 @@ export function SidebarShell() {
 interface SidebarBodyProps {
   projectId: string;
   token: string | null;
+  clerkOrgId: string | null;
   compact: boolean;
 }
 
-function SidebarBody({ projectId, token, compact }: SidebarBodyProps) {
+function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps) {
   const capture = usePicker((s) => s.capture);
   const mode = usePicker((s) => s.mode);
   const queryClient = useQueryClient();
-  const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
   const composeRef = useRef<SidebarComposeBoxHandle | null>(null);
 
   // Shortcut: F focuses the compose textarea. Lives here so the ref stays
@@ -163,37 +165,48 @@ function SidebarBody({ projectId, token, compact }: SidebarBodyProps) {
     });
   }, []);
 
+  // Literal tRPC v10 query key for `annotations.list`. task 1.29 can switch
+  // to `getQueryKey(trpc.annotations.list)` if it wants finer-grained filters.
+  const invalidateAnnotationsList = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: [["annotations", "list"]] });
+  }, [queryClient]);
+
+  useOutboxDrain({
+    apiUrl: env.WXT_API_URL,
+    token,
+    clerkOrgId,
+    onSuccess: invalidateAnnotationsList,
+  });
+
   const onSubmit = useCallback(
     async (text: string, cap: Capture | null) => {
-      if (!token || !cap || submit.status === "uploading") return;
-      setSubmit({ status: "uploading" });
-      try {
-        await uploadAnnotation({
-          token,
-          apiUrl: env.WXT_API_URL,
-          projectId,
-          branch: "main", // TODO(task 1.30): thread selected branch from SidebarBranchSelector.
+      if (!cap) return;
+      await enqueueOutbox({
+        id: crypto.randomUUID(),
+        clerkOrgId,
+        projectId,
+        payload: {
+          // TODO(task 1.30): thread selected branch from SidebarBranchSelector.
+          branch: "main",
           capture: cap,
           commentText: text,
-        });
-        sidebarStore.getState().setDraftComment("");
-        pickerStore.getState().clearCapture();
-        // Literal tRPC v10 query key for `annotations.list`. task 1.29 can
-        // switch to `getQueryKey(trpc.annotations.list)` if it wants
-        // finer-grained filters.
-        await queryClient.invalidateQueries({ queryKey: [["annotations", "list"]] });
-        setSubmit({ status: "idle" });
-      } catch (err) {
-        setSubmit({
-          status: "error",
-          message:
-            err instanceof UploadAnnotationError
-              ? `${err.step} failed: ${err.message}`
-              : "Upload failed. Please try again.",
-        });
-      }
+        },
+      });
+      // Clear the draft + capture immediately so the user can move on; the
+      // outbox now owns the item.
+      sidebarStore.getState().setDraftComment("");
+      pickerStore.getState().clearCapture();
+      // Don't await — the drain is a best-effort kick; the 30s interval and
+      // window `online` listener (mounted by useOutboxDrain) are the safety
+      // nets.
+      void triggerOutboxDrain({
+        apiUrl: env.WXT_API_URL,
+        token,
+        clerkOrgId,
+        onSuccess: invalidateAnnotationsList,
+      });
     },
-    [token, projectId, queryClient, submit.status]
+    [token, projectId, clerkOrgId, invalidateAnnotationsList]
   );
 
   return (
@@ -208,12 +221,16 @@ function SidebarBody({ projectId, token, compact }: SidebarBodyProps) {
           <SidebarPickerHint mode={mode} />
         </div>
       ) : null}
+      <SidebarOutboxBanner
+        apiUrl={env.WXT_API_URL}
+        token={token}
+        clerkOrgId={clerkOrgId}
+        compact={compact}
+      />
       <SidebarComposeBox
         ref={composeRef}
         capture={capture}
         onSubmit={capture ? onSubmit : undefined}
-        disabled={submit.status === "uploading"}
-        error={submit.status === "error" ? submit.message : undefined}
       />
     </>
   );
