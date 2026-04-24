@@ -185,3 +185,27 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: `in task 1.21` (bundled).
 - **Estimated size**: `m`.
 - **Status**: `done in task 1.21` — dev Clerk `allowed_origins` now `["chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd"]` (verified via PATCH response). Prod run deferred to the production deploy milestone, with the runbook as the handoff.
+
+## A9 — Drop Drawbridge-era names from spec §6
+
+| # | Done when | Complete |
+|---|---|---|
+| A9 ✓ | Spec §6 no longer references "Moat" or the `.db-` CSS prefix; extension code matches | [x] |
+
+- **Spec reference**: §6.2 lines 1258–1259; §6.4 line 1281; §6.8 line 1310.
+- **Problem**: Drawbridge is the predecessor product; the Phase 0-1 spec copy-carried three Drawbridge-era names into §6. "Moat" was Drawbridge's internal nickname for the injected sidebar, and `.db-` (Drawbridge) was its CSS-scope prefix. Both leak through in the spec even though no Remarks code has ever used the word "Moat". Leaving them makes the spec confusing for new readers and anchors new task plans (1.23–1.31) to names that have no referent in the actual product.
+- **Proposed deliverable**:
+  - §6.2 line 1258: "Runs the Moat sidebar, element picker, rectangle drawer" → "Runs the Remarks panel, element picker, rectangle drawer."
+  - §6.2 line 1259: `"Open Moat"` button → `"Open Remarks panel"` button.
+  - §6.4 line 1281: "All styles prefixed with `.db-`" → "All styles prefixed with `.rmk-`."
+  - §6.8 line 1310: `"moat-watcher"` → `"file-watcher"`.
+  - Rename extension CSS prefix in `apps/extension/src/styles/content.css` (4 classes) + `apps/extension/src/components/SidebarShell.tsx` (3 `className` refs) from `.db-*` to `.rmk-*`. All new picker classes (task 1.23) already use `.rmk-`.
+- **Done when**:
+  - Spec §6.2 / §6.4 / §6.8 no longer mention "Moat" or `.db-`
+  - `rg "\.db-|Moat" apps/extension/src docs/plan/remarks-phase-0-1-spec.md` returns empty (besides this amendment entry, which is the rename's historical record)
+  - Extension builds, lints, and tests stay green
+- **Conflicts / overlaps with spec**: None — this is the spec edit itself.
+- **Affected tasks / components**: Task 1.23 bundles this; tasks 1.24–1.31 inherit the new naming.
+- **Dependencies**: `in task 1.23` (bundled).
+- **Estimated size**: `xs`.
+- **Status**: `done in task 1.23` — CSS rename + spec edits landed in the element-picker PR.

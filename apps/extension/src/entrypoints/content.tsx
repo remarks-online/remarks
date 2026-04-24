@@ -1,4 +1,5 @@
 import { SidebarShell } from "@/components/SidebarShell";
+import { initPickerController } from "@/lib/picker-controller";
 import { createRoot } from "react-dom/client";
 import "@/styles/content.css";
 
@@ -11,15 +12,17 @@ export default defineContentScript({
       name: "remarks-sidebar",
       position: "inline",
       anchor: "body",
-      onMount: (container) => {
+      onMount: (container, shadow) => {
         const mountPoint = document.createElement("div");
         container.append(mountPoint);
         const root = createRoot(mountPoint);
         root.render(<SidebarShell />);
-        return root;
+        const picker = initPickerController({ sidebarRoot: shadow });
+        return { root, picker };
       },
-      onRemove: (root) => {
-        root?.unmount();
+      onRemove: (mounted) => {
+        mounted?.picker.teardown();
+        mounted?.root.unmount();
       },
     });
 
