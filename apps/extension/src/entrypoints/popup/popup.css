@@ -70,3 +70,40 @@ body {
 .popup button.popup-secondary:hover {
   background: #f1f5f9;
 }
+
+.popup-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.popup-picker-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.popup-picker select {
+  appearance: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.popup-picker select:focus {
+  outline: 2px solid #0f172a;
+  outline-offset: 1px;
+}
+
+.popup-error {
+  margin: 0;
+  font-size: 13px;
+  color: #b91c1c;
+}

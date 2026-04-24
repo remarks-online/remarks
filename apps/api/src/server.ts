@@ -60,8 +60,14 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await server.register(sensible);
+  // Extension origin is the committed public-key-derived ID from apps/extension/wxt.config.ts.
+  // Pinned across all "Load unpacked" installs of this repo. A separate Chrome-Web-Store
+  // release would need its own origin added here (see docs/runbooks/extension-clerk-synchost.md).
+  const extensionOrigin = "chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd";
+  const dashboardOrigin =
+    env.NODE_ENV === "production" ? "https://app.remarks.online" : "http://localhost:3000";
   await server.register(cors, {
-    origin: env.NODE_ENV === "production" ? "https://app.remarks.online" : "http://localhost:3000",
+    origin: [dashboardOrigin, extensionOrigin],
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   });

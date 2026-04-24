@@ -1,4 +1,5 @@
 import { env } from "@/env";
+import { TrpcProvider } from "@/lib/trpc-provider";
 import type { BackgroundRequest, BackgroundResponse } from "@/types";
 import {
   ClerkProvider,
@@ -8,6 +9,7 @@ import {
   SignUpButton,
   UserButton,
 } from "@clerk/chrome-extension";
+import { ProjectPicker } from "./ProjectPicker";
 
 const EXTENSION_URL = chrome.runtime.getURL(".");
 const POPUP_URL = `${EXTENSION_URL}popup.html`;
@@ -31,41 +33,44 @@ export function App() {
       signInFallbackRedirectUrl={POPUP_URL}
       signUpFallbackRedirectUrl={POPUP_URL}
     >
-      <main className="popup">
-        <header className="popup-header">
-          <h1>Remarks</h1>
-          <Show when="signed-in">
-            <UserButton />
-          </Show>
-        </header>
+      <TrpcProvider>
+        <main className="popup">
+          <header className="popup-header">
+            <h1>Remarks</h1>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
+          </header>
 
-        <Show
-          when="signed-in"
-          fallback={
-            <>
-              <p>Sign in to start annotating pages.</p>
-              <div className="popup-actions">
-                <SignInButton mode="modal">
-                  <button type="button">Sign in</button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <button type="button" className="popup-secondary">
-                    Create account
-                  </button>
-                </SignUpButton>
-              </div>
-            </>
-          }
-        >
-          <OrganizationSwitcher hidePersonal />
-          <p className="popup-hint">
-            The sidebar is injected on every page. Open a tab to start annotating.
-          </p>
-          <button type="button" onClick={pingBackground}>
-            Ping background
-          </button>
-        </Show>
-      </main>
+          <Show
+            when="signed-in"
+            fallback={
+              <>
+                <p>Sign in to start annotating pages.</p>
+                <div className="popup-actions">
+                  <SignInButton mode="modal">
+                    <button type="button">Sign in</button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <button type="button" className="popup-secondary">
+                      Create account
+                    </button>
+                  </SignUpButton>
+                </div>
+              </>
+            }
+          >
+            <OrganizationSwitcher hidePersonal />
+            <ProjectPicker />
+            <p className="popup-hint">
+              The sidebar is injected on every page. Open a tab to start annotating.
+            </p>
+            <button type="button" onClick={pingBackground}>
+              Ping background
+            </button>
+          </Show>
+        </main>
+      </TrpcProvider>
     </ClerkProvider>
   );
 }

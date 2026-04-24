@@ -1201,9 +1201,9 @@ export const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
 ```
 This is the total Redis footprint in Phase 1. No caching, no session store, no queue, no presence tracking. Those are Phase 2+ decisions and require their own ADRs before adding
 
-## 5.7 tRPC surface (dashboard only)
+## 5.7 tRPC surface
 
-§7.3 covers how the dashboard *consumes* tRPC (RSC server caller + client React hooks). This subsection pins the server-side contract: what lives in the per-request Context and which procedures exist in Phase 1. Any PR that adds a field to Context or a new procedure updates this subsection in the same change.
+Both the dashboard and the extension popup consume tRPC. §7.3 covers how the dashboard *consumes* it (RSC server caller + client React hooks); §6.1 lists the extension's tRPC deps. This subsection pins the server-side contract: what lives in the per-request Context and which procedures exist in Phase 1. Any PR that adds a field to Context or a new procedure updates this subsection in the same change.
 
 **Canonical Context shape** — matches `apps/api/src/trpc/trpc.ts`:
 
@@ -1249,7 +1249,8 @@ Input shapes live in `packages/shared` per §4 (the tRPC router imports the same
 - **Tailwind** for styling. Shadcn components from `packages/ui`.
 - **Zustand** for in-extension state.
 - **TanStack Query** for server state with optimistic updates and offline mutation queue.
-- **Clerk Chrome Extension SDK** for auth.
+- **tRPC** (`@trpc/client` + `@trpc/react-query`) for API calls. Shares the `AppRouter` type from `@remarks/api` so procedures are type-checked end-to-end — same contract as the dashboard (see §5.7).
+- **Clerk Chrome Extension SDK** for auth. `useAuth().getToken()` supplies the bearer token to the tRPC `httpBatchLink`.
 
 ### 6.2 Entry points
 
@@ -1759,10 +1760,10 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 | # | Task | Done when |
 |---|---|---|
 | 1.21 ✓ | [Clerk Chrome Extension SDK](https://clerk.com/docs/reference/chrome-extension/overview) integrated; sign-in works from popup | Can sign in, see user's orgs |
-| 1.22 | Project picker in popup (which project does this tab's annotations go to?) | Selected project persists in `chrome.storage` |
-| 1.23 | Port element picker from existing [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
+| 1.22 ✓ | Project picker in popup (which project does this tab's annotations go to?) | Selected project persists in `chrome.storage` |
+| 1.23 | Port element picker from [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
 | 1.24 | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
-| 1.25 | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with existing Drawbridge tool. Take advantage of any opportunities for visual or UX improvements with shadcn imagined during planning |
+| 1.25 | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with Drawbridge tool. Take advantage of any opportunities for visual or UX improvements with shadcn imagined during planning |
 | 1.26 | Native screenshot capture via background service worker | Screenshot appears in sidebar preview |
 | 1.27 | Upload flow: presign → PUT → create annotation | Annotation appears in dashboard |
 | 1.28 | Offline queue: IndexedDB outbox, retry on reconnect | Kill network, create annotation, restore network, see it sync |
