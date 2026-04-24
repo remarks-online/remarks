@@ -1,10 +1,21 @@
+import { SidebarCapturePanel } from "@/components/SidebarCapturePanel";
+import { SidebarPickerHint } from "@/components/SidebarPickerHint";
+import { usePicker } from "@/lib/picker-store";
+
 export function SidebarShell() {
+  const mode = usePicker((s) => s.mode);
+  const capture = usePicker((s) => s.capture);
+
   return (
-    <div className="db-root">
-      <aside className="db-sidebar" aria-label="Remarks sidebar">
-        <header className="db-sidebar-header">Remarks</header>
-        <div className="db-sidebar-body">
-          Sign in from the extension popup to start annotating this page.
+    <div className="rmk-root">
+      <aside className="rmk-sidebar" aria-label="Remarks sidebar">
+        <header className="rmk-sidebar-header">Remarks</header>
+        <div className="rmk-sidebar-body">
+          {capture ? (
+            <SidebarCapturePanel capture={capture} />
+          ) : (
+            <SidebarPickerHint active={mode === "element"} />
+          )}
         </div>
       </aside>
     </div>

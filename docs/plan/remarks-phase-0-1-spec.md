@@ -1255,8 +1255,8 @@ Input shapes live in `packages/shared` per §4 (the tRPC router imports the same
 ### 6.2 Entry points
 
 - **Background service worker** (`entrypoints/background.ts`): handles `chrome.tabs.captureVisibleTab`, responds to messages from content script.
-- **Content script** (`entrypoints/content.ts`): injected into every page. Runs the Moat sidebar, element picker, rectangle drawer. Posts messages to background for screenshot capture.
-- **Popup** (`entrypoints/popup/`): click the icon → small popup with sign-in status, current project, and a "Open Moat" button. Keep it minimal; the real UI is the sidebar injected into the page.
+- **Content script** (`entrypoints/content.ts`): injected into every page. Runs the Remarks panel, element picker, rectangle drawer. Posts messages to background for screenshot capture.
+- **Popup** (`entrypoints/popup/`): click the icon → small popup with sign-in status, current project, and an "Open Remarks panel" button. Keep it minimal; the real UI is the sidebar injected into the page.
 
 ### 6.3 Data flow
 
@@ -1278,7 +1278,7 @@ If the network fails at any step after capture, the annotation is queued in Inde
 ### 6.4 Sidebar
 
 - Injected into every page, iframe-free (direct DOM injection with strict CSS namespacing).
-- All styles prefixed with `.db-` to avoid conflicts with host page.
+- All styles prefixed with `.rmk-` to avoid conflicts with host page.
 - Respects host page's `html[data-theme]` and mirrors it if possible; otherwise light theme default.
 - Dockable: right (default), left, bottom.
 - States: signed out → sign-in prompt; signed in, no project → project picker; signed in with project → thread view.
@@ -1307,7 +1307,7 @@ Persist annotations in IndexedDB under key `remarks.outbox`. On reconnect or eve
 
 - File System Access API usage (no more direct local file writes).
 - `html2canvas` (use native capture).
-- The entire "moat-watcher" and file-sync workflow (server is the source of truth now).
+- The entire file-watcher and file-sync workflow (server is the source of truth now).
 - Embedded rule templates (replaced by hosted MCP docs).
 
 ### 6.9 What to keep
@@ -1761,7 +1761,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 |---|---|---|
 | 1.21 ✓ | [Clerk Chrome Extension SDK](https://clerk.com/docs/reference/chrome-extension/overview) integrated; sign-in works from popup | Can sign in, see user's orgs |
 | 1.22 ✓ | Project picker in popup (which project does this tab's annotations go to?) | Selected project persists in `chrome.storage` |
-| 1.23 | Port element picker from [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
+| 1.23 ✓ | Port element picker from [Drawbridge repo](https://github.com/breschio/drawbridge/tree/main/chrome-extension) to React + WXT | Press `C`, click element, see selector |
 | 1.24 | Port [rectangle picker](https://github.com/breschio/drawbridge/tree/main/chrome-extension) | Press `R`, draw, commit |
 | 1.25 | Port [sidebar UI](https://github.com/breschio/drawbridge/tree/main/chrome-extension) (docking, compact mode) | Feature parity with Drawbridge tool. Take advantage of any opportunities for visual or UX improvements with shadcn imagined during planning |
 | 1.26 | Native screenshot capture via background service worker | Screenshot appears in sidebar preview |
