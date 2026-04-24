@@ -10,13 +10,16 @@ export interface SidebarComposeBoxHandle {
 
 interface Props {
   capture: Capture | null;
-  // Optional submit wiring; task 1.27 plugs this in. Until then the button is
-  // disabled unless a handler is supplied.
-  onSubmit?: (text: string, capture: Capture | null) => void;
+  // Submit wiring is supplied only when there's something to post. Button stays
+  // disabled when the handler is absent (no capture) or while an upload is
+  // in-flight (disabled prop).
+  onSubmit?: ((text: string, capture: Capture | null) => void) | undefined;
+  disabled?: boolean | undefined;
+  error?: string | undefined;
 }
 
 export const SidebarComposeBox = forwardRef<SidebarComposeBoxHandle, Props>(
-  ({ capture, onSubmit }, ref) => {
+  ({ capture, onSubmit, disabled, error }, ref) => {
     const draft = useSidebar((s) => s.draftComment);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -24,7 +27,7 @@ export const SidebarComposeBox = forwardRef<SidebarComposeBoxHandle, Props>(
       focus: () => textareaRef.current?.focus(),
     }));
 
-    const canSubmit = draft.trim().length > 0 && Boolean(onSubmit);
+    const canSubmit = draft.trim().length > 0 && Boolean(onSubmit) && !disabled;
 
     const handleSubmit = () => {
       if (!onSubmit || !canSubmit) return;
@@ -59,6 +62,11 @@ export const SidebarComposeBox = forwardRef<SidebarComposeBoxHandle, Props>(
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           )}
         />
+        {error ? (
+          <p className="text-[11px] text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] text-muted-foreground">
             {capture ? "Tip: ⌘⏎ to post." : "Press F to focus this box once you have a capture."}
@@ -70,7 +78,7 @@ export const SidebarComposeBox = forwardRef<SidebarComposeBoxHandle, Props>(
               </Button>
             ) : null}
             <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
-              Post
+              {disabled ? "Posting…" : "Post"}
             </Button>
           </div>
         </div>
