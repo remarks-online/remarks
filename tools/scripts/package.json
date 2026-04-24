@@ -8,6 +8,7 @@
   },
   "scripts": {
     "seed": "tsx seed.ts",
+    "clerk:allowlist-extension": "tsx clerk-allowlist-extension.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check ."
   },

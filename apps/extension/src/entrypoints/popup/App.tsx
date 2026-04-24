@@ -26,6 +26,7 @@ export function App() {
   return (
     <ClerkProvider
       publishableKey={env.WXT_CLERK_PUBLISHABLE_KEY}
+      syncHost={env.WXT_CLERK_SYNC_HOST}
       afterSignOutUrl={POPUP_URL}
       signInFallbackRedirectUrl={POPUP_URL}
       signUpFallbackRedirectUrl={POPUP_URL}

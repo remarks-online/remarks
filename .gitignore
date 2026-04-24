@@ -25,6 +25,9 @@ playwright/.cache/
 .env.local
 .env.*.local
 
+# Private keys (extension CRX signing, etc.)
+.keys/
+
 # Vercel CLI link state (per-project .vercel/ dir, written by `vercel link`)
 .vercel/
 

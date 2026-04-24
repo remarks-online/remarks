@@ -159,3 +159,29 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: `after task 1.20` (PR #27 shipped error.tsx + this gap).
 - **Estimated size**: `s`.
 - **Status**: `done` — spec follow-up to task 1.20. Inline `<Suspense>` wraps `<ProjectList>` on `projects/page.tsx` and `<AnnotationsPanel>` on `[slug]/page.tsx`; the validating `projects.getBySlug` fetch stays inline in the detail page so `notFound()` runs pre-stream and the e2e 404 assertion (`project-detail.spec.ts:24`) still passes. No `loading.tsx` added and no new `packages/ui` primitive — skeletons live inline under route-private `_components/` folders with `animate-pulse` + `bg-muted`. The two Next.js issue links in this entry were re-verified against upstream discussions (#76501 confirmed WONTFIX) before landing, and the inline-Suspense pattern is the community-standard workaround — a middleware rewrite was rejected as overkill for a problem the in-page split already solves.
+
+## A8 — Clerk syncHost for extension-to-dashboard session sharing
+
+| # | Done when | Complete |
+|---|---|---|
+| A8 ✓ | Signing into `localhost:3000` results in the popup being signed in; prod allowlist documented for re-run | [x] |
+
+- **Spec reference**: §6.2 (extension popup), §14 task 1.21 (Clerk popup sign-in).
+- **Problem**: Task 1.21 wired standalone sign-in in the popup, but the Phase 1 UX story assumes a user who's already signed into the dashboard shouldn't have to sign in separately in the extension. Clerk's Chrome Extension SDK supports this via `syncHost`, but it requires (a) a stable `chrome-extension://<id>` origin via a committed `manifest.key` public key, (b) that exact origin in Clerk's `allowed_origins` allowlist, and (c) host_permissions for the dashboard URL. Task 1.21's plan deferred this as "separate amendment if beta users ask" — doing it in the same branch keeps the extension UX coherent.
+- **Proposed deliverable**:
+  - Commit a DER-encoded RSA public key to `apps/extension/wxt.config.ts` (`CRX_PUBLIC_KEY`), pinning the extension ID to `baikikfefeheiildmfoaicbjbnbecgjd` across all clones.
+  - Add `https://app.remarks.online/*` to `host_permissions`.
+  - Wire `ClerkProvider syncHost={env.WXT_CLERK_SYNC_HOST}` with a new env var (dev default `http://localhost:3000`, prod `https://app.remarks.online`).
+  - New idempotent script `tools/scripts/clerk-allowlist-extension.ts` that merges `chrome-extension://<id>` into Clerk `/v1/instance` `allowed_origins` via Backend API (no dashboard clicking).
+  - New runbook `docs/runbooks/extension-clerk-synchost.md` covering one-time keypair generation, dev vs prod allowlist flow, and the Chrome Web Store ID caveat.
+- **Done when**:
+  - Dev instance's `allowed_origins` contains `chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd` (ran `clerk-allowlist-extension.ts` — confirmed)
+  - Extension built, loaded unpacked at the expected ID, popup picks up session from signed-in dashboard at `localhost:3000`
+  - Runbook documents the prod re-run with the `sk_live_` key and the Web-Store-ID reassignment step
+- **Conflicts / overlaps with spec**: None. Extends §6 extension architecture without contradicting it.
+- **Affected tasks / components**:
+  - Task 1.21 (shipped in the same PR as the syncHost wiring)
+  - Task 1.22+ (project picker, API calls) — will consume the synced session via `@clerk/chrome-extension`'s `useAuth`
+- **Dependencies**: `in task 1.21` (bundled).
+- **Estimated size**: `m`.
+- **Status**: `done in task 1.21` — dev Clerk `allowed_origins` now `["chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd"]` (verified via PATCH response). Prod run deferred to the production deploy milestone, with the runbook as the handoff.
