@@ -817,7 +817,7 @@ Estimated ~6 weeks total for a solo developer with Claude Code.
 
 | # | Task | Done when |
 |---|---|---|
-| 2.2 | Scaffold `apps/mcp` with the official [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk), health check, deployed to Fly | `curl https://mcp.remarks.dev/health` returns 200 |
+| 2.2 | Scaffold `apps/mcp` with the official [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk); [Build Server Overview](https://modelcontextprotocol.io/docs/develop/build-server#typescript), health check, deployed to Fly | `curl https://mcp.remarks.dev/health` returns 200 |
 | 2.3 | Build `packages/mcp-schema` with Zod schemas for all 8 tools from §3 | Exports type-safe tool definitions; imported by api and mcp |
 | 2.4 | Auth middleware on the MCP server: parse `Authorization`, hash token, call API to resolve, cache in Redis (5 min TTL) | Integration test: valid token → success, invalid → 401, revoked → 401 |
 | 2.5 | Internal API endpoint for MCP server to resolve tokens (not exposed publicly) | Integration test passes |
