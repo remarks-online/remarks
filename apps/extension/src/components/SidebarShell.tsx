@@ -11,11 +11,7 @@ export function SidebarShell() {
       <aside className="rmk-sidebar" aria-label="Remarks sidebar">
         <header className="rmk-sidebar-header">Remarks</header>
         <div className="rmk-sidebar-body">
-          {capture ? (
-            <SidebarCapturePanel capture={capture} />
-          ) : (
-            <SidebarPickerHint active={mode === "element"} />
-          )}
+          {capture ? <SidebarCapturePanel capture={capture} /> : <SidebarPickerHint mode={mode} />}
         </div>
       </aside>
     </div>

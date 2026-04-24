@@ -1,9 +1,11 @@
+import type { PickerMode } from "@/lib/picker-store";
+
 interface SidebarPickerHintProps {
-  active: boolean;
+  mode: PickerMode;
 }
 
-export function SidebarPickerHint({ active }: SidebarPickerHintProps) {
-  if (active) {
+export function SidebarPickerHint({ mode }: SidebarPickerHintProps) {
+  if (mode === "element") {
     return (
       <p className="rmk-picker-hint">
         Pick mode on. Hover any element on the page, then click to capture.
@@ -15,9 +17,21 @@ export function SidebarPickerHint({ active }: SidebarPickerHintProps) {
     );
   }
 
+  if (mode === "rect") {
+    return (
+      <p className="rmk-picker-hint">
+        Draw mode on. Click and drag to mark a region on the page.
+        <br />
+        <span className="rmk-picker-hint-keys">
+          <kbd>Esc</kbd> or right-click to cancel
+        </span>
+      </p>
+    );
+  }
+
   return (
     <p className="rmk-picker-hint">
-      Press <kbd>C</kbd> to pick an element on this page.
+      Press <kbd>C</kbd> to pick an element · <kbd>R</kbd> to draw a rectangle.
     </p>
   );
 }

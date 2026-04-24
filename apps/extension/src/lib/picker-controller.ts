@@ -1,32 +1,55 @@
 import { buildDomContext } from "./dom-context";
 import { elementAtPoint } from "./elements-at-point";
 import { isInSidebarUi, isTypingTarget } from "./picker-guards";
-import { type Capture, type HoveredPreview, type PickerState, pickerStore } from "./picker-store";
+import {
+  type ElementCapture,
+  type HoveredPreview,
+  type PickerMode,
+  type RectCapture,
+  pickerStore,
+} from "./picker-store";
 import { generateSelector } from "./selector-generator";
 
-const OVERLAY_ID = "rmk-picker-overlay";
-const LABEL_ID = "rmk-picker-label";
-const BODY_ACTIVE_CLASS = "rmk-picker-active";
-const Z_INDEX = 2147483646;
+const ELEMENT_OVERLAY_ID = "rmk-picker-overlay";
+const ELEMENT_LABEL_ID = "rmk-picker-label";
+const ELEMENT_BODY_ACTIVE_CLASS = "rmk-picker-active";
 
-interface Session {
-  abort: AbortController;
-  overlay: HTMLDivElement;
-  label: HTMLDivElement;
-  hoveredElement: Element | null;
-  pinnedParent: Element | null;
-  resizeObserver: ResizeObserver | null;
-  rafScheduled: boolean;
-  lastPointer: { x: number; y: number } | null;
+const RECT_OVERLAY_ID = "rmk-rect-overlay";
+const RECT_LABEL_ID = "rmk-rect-label";
+const RECT_BODY_ACTIVE_CLASS = "rmk-rect-active";
+
+const Z_INDEX = 2147483646;
+const MIN_RECT_SIZE = 8;
+const AUTO_SCROLL_EDGE = 40;
+const AUTO_SCROLL_MAX_VELOCITY = 18;
+
+/**
+ * Pure helper exposed for unit testing: returns the per-frame scroll delta
+ * (positive = scroll down) when the cursor sits inside the auto-scroll band.
+ */
+export function computeAutoScrollDelta(clientY: number, viewportHeight: number): number {
+  if (clientY < AUTO_SCROLL_EDGE) {
+    const intensity = (AUTO_SCROLL_EDGE - clientY) / AUTO_SCROLL_EDGE;
+    return -Math.ceil(intensity * AUTO_SCROLL_MAX_VELOCITY);
+  }
+  if (clientY > viewportHeight - AUTO_SCROLL_EDGE) {
+    const intensity = (clientY - (viewportHeight - AUTO_SCROLL_EDGE)) / AUTO_SCROLL_EDGE;
+    return Math.ceil(intensity * AUTO_SCROLL_MAX_VELOCITY);
+  }
+  return 0;
+}
+
+interface ActiveSession {
+  end: () => void;
 }
 
 interface ControllerHandle {
   teardown: () => void;
 }
 
-function createOverlay(): HTMLDivElement {
+function createElementOverlay(): HTMLDivElement {
   const el = document.createElement("div");
-  el.id = OVERLAY_ID;
+  el.id = ELEMENT_OVERLAY_ID;
   el.setAttribute("aria-hidden", "true");
   el.style.cssText = [
     "position: absolute",
@@ -47,9 +70,31 @@ function createOverlay(): HTMLDivElement {
   return el;
 }
 
-function createLabelChip(): HTMLDivElement {
+function createRectOverlay(): HTMLDivElement {
   const el = document.createElement("div");
-  el.id = LABEL_ID;
+  el.id = RECT_OVERLAY_ID;
+  el.setAttribute("aria-hidden", "true");
+  el.style.cssText = [
+    "position: absolute",
+    "pointer-events: none",
+    "box-sizing: border-box",
+    "border: 2px dashed #F59E0B",
+    "background: rgba(245, 158, 11, 0.12)",
+    "border-radius: 2px",
+    `z-index: ${Z_INDEX}`,
+    "transform: translate(-9999px, -9999px)",
+    "width: 0",
+    "height: 0",
+    "top: 0",
+    "left: 0",
+    "will-change: transform, width, height",
+  ].join(";");
+  return el;
+}
+
+function createLabelChip(id: string, background: string): HTMLDivElement {
+  const el = document.createElement("div");
+  el.id = id;
   el.setAttribute("aria-hidden", "true");
   el.style.cssText = [
     "position: absolute",
@@ -59,7 +104,7 @@ function createLabelChip(): HTMLDivElement {
     "line-height: 1",
     "padding: 4px 6px",
     "color: #ffffff",
-    "background: #3B82F6",
+    `background: ${background}`,
     "border-radius: 3px",
     "white-space: nowrap",
     "box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25)",
@@ -74,7 +119,7 @@ function createLabelChip(): HTMLDivElement {
   return el;
 }
 
-function formatLabelText(preview: HoveredPreview): string {
+function formatElementLabelText(preview: HoveredPreview): string {
   const parts = [preview.tag.toUpperCase()];
   if (preview.classes[0]) parts.push(`.${preview.classes[0]}`);
   parts.push(`${Math.round(preview.dims.w)}×${Math.round(preview.dims.h)}`);
@@ -96,9 +141,10 @@ function previewFromElement(el: Element): HoveredPreview {
   };
 }
 
-function buildCapture(el: Element, preview: HoveredPreview): Capture {
+function buildElementCapture(el: Element, preview: HoveredPreview): ElementCapture {
   const rect = el.getBoundingClientRect();
   return {
+    kind: "element",
     selector: preview.selector,
     strategy: preview.strategy,
     domContext: buildDomContext(el),
@@ -118,105 +164,94 @@ function buildCapture(el: Element, preview: HoveredPreview): Capture {
   };
 }
 
-function positionOverlay(session: Session, el: Element) {
-  const rect = el.getBoundingClientRect();
-  const x = rect.left + window.scrollX;
-  const y = rect.top + window.scrollY;
-  session.overlay.style.transform = `translate(${x}px, ${y}px)`;
-  session.overlay.style.width = `${rect.width}px`;
-  session.overlay.style.height = `${rect.height}px`;
+function startElementSession(sidebarRoot: Node | null): ActiveSession {
+  const overlay = createElementOverlay();
+  const label = createLabelChip(ELEMENT_LABEL_ID, "#3B82F6");
+  document.body.appendChild(overlay);
+  document.body.appendChild(label);
+  document.body.classList.add(ELEMENT_BODY_ACTIVE_CLASS);
 
-  // Label chip: top-left, flip below if too close to viewport top.
-  const labelRect = session.label.getBoundingClientRect();
-  const labelHeight = labelRect.height || 20;
-  const labelY = rect.top < labelHeight + 4 ? y + rect.height + 4 : y - labelHeight - 4;
-  session.label.style.transform = `translate(${x}px, ${labelY}px)`;
-}
+  const abort = new AbortController();
+  const { signal } = abort;
 
-function setHoveredElement(session: Session, el: Element | null, sidebarRoot: Node | null) {
-  if (!el) {
-    session.hoveredElement = null;
-    session.overlay.style.transform = "translate(-9999px, -9999px)";
-    session.label.style.transform = "translate(-9999px, -9999px)";
-    pickerStore.getState().setHovered(null);
-    if (session.resizeObserver) session.resizeObserver.disconnect();
-    return;
-  }
+  let hoveredElement: Element | null = null;
+  let pinnedParent: Element | null = null;
+  let rafScheduled = false;
+  let lastPointer: { x: number; y: number } | null = null;
 
-  // Skip hovers inside the sidebar shadow root.
-  if (sidebarRoot && el.getRootNode() === sidebarRoot) {
-    return;
-  }
+  const resizeObserver =
+    typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => {
+          if (hoveredElement) positionOverlay(hoveredElement);
+        })
+      : null;
 
-  session.hoveredElement = el;
-  const preview = previewFromElement(el);
-  session.label.textContent = formatLabelText(preview);
-  positionOverlay(session, el);
-  pickerStore.getState().setHovered(preview);
+  const positionOverlay = (el: Element) => {
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + window.scrollX;
+    const y = rect.top + window.scrollY;
+    overlay.style.transform = `translate(${x}px, ${y}px)`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
 
-  if (session.resizeObserver) {
-    session.resizeObserver.disconnect();
-    if (el instanceof Element) {
+    const labelRect = label.getBoundingClientRect();
+    const labelHeight = labelRect.height || 20;
+    const labelY = rect.top < labelHeight + 4 ? y + rect.height + 4 : y - labelHeight - 4;
+    label.style.transform = `translate(${x}px, ${labelY}px)`;
+  };
+
+  const setHoveredElement = (el: Element | null) => {
+    if (!el) {
+      hoveredElement = null;
+      overlay.style.transform = "translate(-9999px, -9999px)";
+      label.style.transform = "translate(-9999px, -9999px)";
+      pickerStore.getState().setHovered(null);
+      resizeObserver?.disconnect();
+      return;
+    }
+    if (sidebarRoot && el.getRootNode() === sidebarRoot) return;
+
+    hoveredElement = el;
+    const preview = previewFromElement(el);
+    label.textContent = formatElementLabelText(preview);
+    positionOverlay(el);
+    pickerStore.getState().setHovered(preview);
+
+    if (resizeObserver) {
+      resizeObserver.disconnect();
       try {
-        session.resizeObserver.observe(el);
+        resizeObserver.observe(el);
       } catch {
         // SVG elements and detached nodes can't be observed; harmless.
       }
     }
-  }
-}
-
-function startSession(sidebarRoot: Node | null): Session {
-  const overlay = createOverlay();
-  const label = createLabelChip();
-  document.body.appendChild(overlay);
-  document.body.appendChild(label);
-  document.body.classList.add(BODY_ACTIVE_CLASS);
-
-  const session: Session = {
-    abort: new AbortController(),
-    overlay,
-    label,
-    hoveredElement: null,
-    pinnedParent: null,
-    resizeObserver: null,
-    rafScheduled: false,
-    lastPointer: null,
   };
 
-  if (typeof ResizeObserver !== "undefined") {
-    session.resizeObserver = new ResizeObserver(() => {
-      if (session.hoveredElement) positionOverlay(session, session.hoveredElement);
-    });
-  }
-
-  const { signal } = session.abort;
-
   const scheduleReposition = () => {
-    if (session.rafScheduled) return;
-    session.rafScheduled = true;
+    if (rafScheduled) return;
+    rafScheduled = true;
     requestAnimationFrame(() => {
-      session.rafScheduled = false;
-      if (session.hoveredElement) positionOverlay(session, session.hoveredElement);
+      rafScheduled = false;
+      if (hoveredElement) positionOverlay(hoveredElement);
     });
   };
 
   const onMouseMove = (event: MouseEvent) => {
-    session.lastPointer = { x: event.clientX, y: event.clientY };
-    session.pinnedParent = null;
-    if (session.rafScheduled) return;
-    session.rafScheduled = true;
+    lastPointer = { x: event.clientX, y: event.clientY };
+    pinnedParent = null;
+    if (rafScheduled) return;
+    rafScheduled = true;
     requestAnimationFrame(() => {
-      session.rafScheduled = false;
-      if (!session.lastPointer) return;
+      rafScheduled = false;
+      if (!lastPointer) return;
       if (isInSidebarUi(event, sidebarRoot)) {
-        setHoveredElement(session, null, sidebarRoot);
+        setHoveredElement(null);
         return;
       }
-      const hit = elementAtPoint(session.lastPointer.x, session.lastPointer.y);
+      const hit = elementAtPoint(lastPointer.x, lastPointer.y);
       if (!hit) return;
-      if (hit === session.overlay || hit === session.label) return;
-      setHoveredElement(session, hit, sidebarRoot);
+      if (hit === overlay || hit === label) return;
+      setHoveredElement(hit);
     });
   };
 
@@ -224,28 +259,27 @@ function startSession(sidebarRoot: Node | null): Session {
     if (isInSidebarUi(event, sidebarRoot)) return;
     event.preventDefault();
     event.stopPropagation();
-    const target = session.hoveredElement;
-    if (!target) return;
-    const preview = previewFromElement(target);
-    const capture = buildCapture(target, preview);
+    if (!hoveredElement) return;
+    const preview = previewFromElement(hoveredElement);
+    const capture = buildElementCapture(hoveredElement, preview);
     pickerStore.getState().commit(capture);
   };
 
   const stepToParent = () => {
-    const current = session.pinnedParent ?? session.hoveredElement;
+    const current = pinnedParent ?? hoveredElement;
     if (!current) return;
     const parent = current.parentElement;
     if (!parent || parent === document.body) return;
-    session.pinnedParent = parent;
-    setHoveredElement(session, parent, sidebarRoot);
+    pinnedParent = parent;
+    setHoveredElement(parent);
   };
 
   const stepToChild = () => {
-    if (!session.lastPointer || !session.pinnedParent) return;
-    const hit = elementAtPoint(session.lastPointer.x, session.lastPointer.y);
+    if (!lastPointer || !pinnedParent) return;
+    const hit = elementAtPoint(lastPointer.x, lastPointer.y);
     if (!hit) return;
-    session.pinnedParent = null;
-    setHoveredElement(session, hit, sidebarRoot);
+    pinnedParent = null;
+    setHoveredElement(hit);
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -271,15 +305,196 @@ function startSession(sidebarRoot: Node | null): Session {
   window.addEventListener("scroll", scheduleReposition, { passive: true, signal });
   window.addEventListener("resize", scheduleReposition, { passive: true, signal });
 
-  return session;
+  return {
+    end: () => {
+      abort.abort();
+      overlay.remove();
+      label.remove();
+      resizeObserver?.disconnect();
+      document.body.classList.remove(ELEMENT_BODY_ACTIVE_CLASS);
+    },
+  };
 }
 
-function endSession(session: Session) {
-  session.abort.abort();
-  session.overlay.remove();
-  session.label.remove();
-  session.resizeObserver?.disconnect();
-  document.body.classList.remove(BODY_ACTIVE_CLASS);
+function startRectSession(sidebarRoot: Node | null): ActiveSession {
+  const overlay = createRectOverlay();
+  const label = createLabelChip(RECT_LABEL_ID, "#F59E0B");
+  document.body.appendChild(overlay);
+  document.body.appendChild(label);
+  document.body.classList.add(RECT_BODY_ACTIVE_CLASS);
+
+  const abort = new AbortController();
+  const { signal } = abort;
+
+  let dragging = false;
+  let startDoc: { x: number; y: number } | null = null;
+  let lastPointer: { clientX: number; clientY: number } | null = null;
+  let currentRect: { x: number; y: number; width: number; height: number } | null = null;
+  let moveRafScheduled = false;
+  let scrollRafId: number | null = null;
+
+  const hideOverlay = () => {
+    overlay.style.transform = "translate(-9999px, -9999px)";
+    label.style.transform = "translate(-9999px, -9999px)";
+  };
+
+  const positionOverlay = () => {
+    if (!currentRect) {
+      hideOverlay();
+      return;
+    }
+    overlay.style.transform = `translate(${currentRect.x}px, ${currentRect.y}px)`;
+    overlay.style.width = `${currentRect.width}px`;
+    overlay.style.height = `${currentRect.height}px`;
+    label.textContent = `${Math.round(currentRect.width)} × ${Math.round(currentRect.height)}`;
+    const labelX = currentRect.x + currentRect.width + 4;
+    const labelY = currentRect.y + currentRect.height + 4;
+    label.style.transform = `translate(${labelX}px, ${labelY}px)`;
+  };
+
+  const recomputeRect = () => {
+    if (!startDoc || !lastPointer) return;
+    const currentDoc = {
+      x: lastPointer.clientX + window.scrollX,
+      y: lastPointer.clientY + window.scrollY,
+    };
+    currentRect = {
+      x: Math.min(startDoc.x, currentDoc.x),
+      y: Math.min(startDoc.y, currentDoc.y),
+      width: Math.abs(currentDoc.x - startDoc.x),
+      height: Math.abs(currentDoc.y - startDoc.y),
+    };
+    positionOverlay();
+  };
+
+  const cancelAutoScroll = () => {
+    if (scrollRafId !== null) {
+      cancelAnimationFrame(scrollRafId);
+      scrollRafId = null;
+    }
+  };
+
+  const tickAutoScroll = () => {
+    scrollRafId = null;
+    if (!dragging || !lastPointer) return;
+    const delta = computeAutoScrollDelta(lastPointer.clientY, window.innerHeight);
+    if (delta === 0) return;
+    window.scrollBy(0, delta);
+    recomputeRect();
+    scrollRafId = requestAnimationFrame(tickAutoScroll);
+  };
+
+  const maybeStartAutoScroll = () => {
+    if (scrollRafId !== null) return;
+    if (!dragging || !lastPointer) return;
+    const delta = computeAutoScrollDelta(lastPointer.clientY, window.innerHeight);
+    if (delta === 0) return;
+    scrollRafId = requestAnimationFrame(tickAutoScroll);
+  };
+
+  const resetDrag = () => {
+    dragging = false;
+    startDoc = null;
+    lastPointer = null;
+    currentRect = null;
+    cancelAutoScroll();
+    hideOverlay();
+  };
+
+  const onMouseDown = (event: MouseEvent) => {
+    if (event.button !== 0) return;
+    if (isInSidebarUi(event, sidebarRoot)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragging = true;
+    startDoc = {
+      x: event.clientX + window.scrollX,
+      y: event.clientY + window.scrollY,
+    };
+    lastPointer = { clientX: event.clientX, clientY: event.clientY };
+    currentRect = { x: startDoc.x, y: startDoc.y, width: 0, height: 0 };
+    positionOverlay();
+  };
+
+  const onMouseMove = (event: MouseEvent) => {
+    if (!dragging) return;
+    lastPointer = { clientX: event.clientX, clientY: event.clientY };
+    if (moveRafScheduled) return;
+    moveRafScheduled = true;
+    requestAnimationFrame(() => {
+      moveRafScheduled = false;
+      recomputeRect();
+      maybeStartAutoScroll();
+    });
+  };
+
+  const onMouseUp = (event: MouseEvent) => {
+    if (event.button !== 0 || !dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancelAutoScroll();
+    const finalRect = currentRect;
+    dragging = false;
+    if (!finalRect || finalRect.width < MIN_RECT_SIZE || finalRect.height < MIN_RECT_SIZE) {
+      resetDrag();
+      pickerStore.getState().cancel();
+      return;
+    }
+    const capture: RectCapture = {
+      kind: "rect",
+      rect: { ...finalRect },
+      url: window.location.href,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        dpr: window.devicePixelRatio,
+      },
+      capturedAt: Date.now(),
+    };
+    pickerStore.getState().commit(capture);
+  };
+
+  // Suppress the click that follows mouseup so a tiny drag never activates a
+  // page link or button.
+  const onClick = (event: MouseEvent) => {
+    if (isInSidebarUi(event, sidebarRoot)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      pickerStore.getState().cancel();
+    }
+  };
+
+  const onContextMenu = (event: MouseEvent) => {
+    event.preventDefault();
+    pickerStore.getState().cancel();
+  };
+
+  const onScroll = () => {
+    if (dragging) recomputeRect();
+  };
+
+  window.addEventListener("mousedown", onMouseDown, { capture: true, signal });
+  window.addEventListener("mousemove", onMouseMove, { passive: true, signal });
+  window.addEventListener("mouseup", onMouseUp, { capture: true, signal });
+  window.addEventListener("click", onClick, { capture: true, signal });
+  window.addEventListener("keydown", onKeyDown, { signal });
+  window.addEventListener("contextmenu", onContextMenu, { signal });
+  window.addEventListener("scroll", onScroll, { passive: true, signal });
+
+  return {
+    end: () => {
+      abort.abort();
+      cancelAutoScroll();
+      overlay.remove();
+      label.remove();
+      document.body.classList.remove(RECT_BODY_ACTIVE_CLASS);
+    },
+  };
 }
 
 export function initPickerController({
@@ -287,45 +502,54 @@ export function initPickerController({
 }: {
   sidebarRoot: Node | null;
 }): ControllerHandle {
-  let session: Session | null = null;
+  let active: ActiveSession | null = null;
+  let activeMode: PickerMode = "idle";
   let torn = false;
 
-  const handleModeChange = (mode: PickerState["mode"]) => {
-    if (mode === "element" && !session) {
-      session = startSession(sidebarRoot);
-    } else if (mode !== "element" && session) {
-      endSession(session);
-      session = null;
+  const ensureSessionFor = (mode: PickerMode) => {
+    if (mode === activeMode) return;
+    if (active) {
+      active.end();
+      active = null;
     }
+    activeMode = mode;
+    if (mode === "element") active = startElementSession(sidebarRoot);
+    else if (mode === "rect") active = startRectSession(sidebarRoot);
   };
 
-  // Global activator: listens for "C" regardless of mode.
   const onGlobalKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "c" && event.key !== "C") return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (isTypingTarget(document.activeElement)) return;
-    if (pickerStore.getState().mode !== "idle") return;
-    event.preventDefault();
-    pickerStore.getState().enterElementMode();
+
+    if (event.key === "c" || event.key === "C") {
+      if (pickerStore.getState().mode === "element") return;
+      event.preventDefault();
+      pickerStore.getState().enterElementMode();
+      return;
+    }
+    if (event.key === "r" || event.key === "R") {
+      if (pickerStore.getState().mode === "rect") return;
+      event.preventDefault();
+      pickerStore.getState().enterRectMode();
+    }
   };
 
   window.addEventListener("keydown", onGlobalKeyDown);
 
   const unsubscribe = pickerStore.subscribe((state, prev) => {
-    if (state.mode !== prev.mode) handleModeChange(state.mode);
+    if (state.mode !== prev.mode) ensureSessionFor(state.mode);
   });
 
-  // Enter session if we're already in element mode on mount.
-  handleModeChange(pickerStore.getState().mode);
+  ensureSessionFor(pickerStore.getState().mode);
 
   const teardown = () => {
     if (torn) return;
     torn = true;
     window.removeEventListener("keydown", onGlobalKeyDown);
     unsubscribe();
-    if (session) {
-      endSession(session);
-      session = null;
+    if (active) {
+      active.end();
+      active = null;
     }
   };
 
