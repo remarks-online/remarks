@@ -76,7 +76,7 @@ Then fill in the values that can't be checked in. The example files ship with se
 | `apps/extension/.env` | `WXT_CLERK_PUBLISHABLE_KEY` | Same `pk_test_…` as dashboard. WXT requires the `WXT_` prefix for env injection. |
 | `packages/db/.env` | `DATABASE_URL` | Same Neon direct endpoint as `apps/api/.env.local`. `drizzle-kit` reads this file for `db:generate` / `db:migrate` / `db:studio`. |
 
-Ports are pre-assigned in the examples to avoid the three-way collision on 3000: api is `4000`, mcp is `4001`, dashboard keeps `3000` (its `next dev -p 3000` is hardcoded). Change only if one of those ports is already in use on your machine.
+Ports are pre-assigned to avoid collisions on 3000: api is `4000`, mcp is `4001`, dashboard keeps `3000` (its `next dev -p 3000` is hardcoded), and extension's WXT dev server is pinned to `127.0.0.1:3030` via `apps/extension/wxt.config.ts` (WXT defaults to `localhost:3000`, which both collides with the dashboard and binds IPv6-only on macOS). Change only if one of those ports is already in use on your machine.
 
 ## 4. Run database migrations
 
