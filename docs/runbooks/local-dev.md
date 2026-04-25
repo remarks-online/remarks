@@ -52,17 +52,29 @@ Expected logs from `pnpm dev` (in any order — Turbo runs them in parallel):
 - **api** — `"server listening at http://0.0.0.0:4000"`. Crashes immediately if `DATABASE_URL` is wrong or Neon is unreachable.
 - **dashboard** — `- Local:        http://localhost:3000`.
 - **mcp** — one `{"msg":"mcp scaffold — Phase 2 implementation pending"}` line, then idle.
-- **extension** — WXT writes `apps/extension/.output/chrome-mv3-dev/` and watches.
+- **extension** — WXT builds `apps/extension/.output/chrome-mv3-dev/` (the unpacked extension you load into Chrome) and watches for changes.
 
-To run a single app: `pnpm --filter @remarks/{api|dashboard|mcp|extension} dev`. Note that the extension is **not useful in isolation** — see "Extension end-to-end" below.
+### Running just one app
+
+Each app has its own dev script and can be run on its own — useful when you're only iterating on the dashboard, or only on the extension popup, or want to keep noisy logs separated:
+
+```sh
+pnpm --filter @remarks/api dev          # → Fastify on :4000
+pnpm --filter @remarks/dashboard dev    # → Next on :3000
+pnpm --filter @remarks/mcp dev          # → mcp scaffold on :4001
+pnpm --filter @remarks/extension dev    # → WXT writes .output/chrome-mv3-dev/ on :3030
+```
+
+The extension's dev script is **the build step** — it's what populates `apps/extension/.output/chrome-mv3-dev/` (the directory you point Chrome at). There is no separate build/install command for local dev; `wxt` watches and rebuilds in place. Note that the extension is **not useful in isolation** — to actually sign in and exercise it you also need the dashboard and api running. See "Extension end-to-end" below.
 
 ## Loading the extension into Chrome
 
-One-time per machine:
+The unpacked build comes from the WXT dev server, so this only works once that's running.
 
-1. `chrome://extensions` → toggle **Developer mode** on.
-2. **Load unpacked** → select `apps/extension/.output/chrome-mv3-dev/`.
-3. The extension ID is deterministic (derived from `CRX_PUBLIC_KEY` in `apps/extension/wxt.config.ts`): **`baikikfefeheiildmfoaicbjbnbecgjd`**.
+1. Start the dev server: `pnpm --filter @remarks/extension dev` (or `pnpm dev` at the repo root). Wait until WXT logs `Opened DevTools` / a build summary — the directory `apps/extension/.output/chrome-mv3-dev/` now exists and contains the unpacked extension.
+2. `chrome://extensions` → toggle **Developer mode** on (top right).
+3. **Load unpacked** → select `apps/extension/.output/chrome-mv3-dev/`.
+4. The extension ID is deterministic (derived from `CRX_PUBLIC_KEY` in `apps/extension/wxt.config.ts`): **`baikikfefeheiildmfoaicbjbnbecgjd`**. It will be the same across every dev machine.
 
 WXT rebuilds on file changes; the loaded extension auto-reloads via the websocket on `127.0.0.1:3030`. If you ever see `[wxt] Failed to connect to dev server` in the popup console, the WXT process isn't running or you loaded a stale build — restart `pnpm --filter @remarks/extension dev` and click the reload icon next to **Remarks** in `chrome://extensions`.
 
