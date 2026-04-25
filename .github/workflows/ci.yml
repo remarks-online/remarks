@@ -80,3 +80,78 @@ jobs:
           # even for force-dynamic routes. The value is never dialed during
           # CI build; production builds on Vercel inject the real Fly URL.
           NEXT_PUBLIC_API_BASE_URL: http://api.placeholder.invalid
+
+  # Task 1.31: extension Playwright happy-path suite. Runs in parallel with
+  # `check` so a lint/test break doesn't gate the e2e signal (and vice versa).
+  # Requires real Clerk dev creds via repo secrets (`CLERK_SECRET_KEY`,
+  # `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`) — the fixture mints a sign-in ticket
+  # against the same dev instance used for the dashboard suite + the verify
+  # suite, and the dev instance must allowlist
+  # chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd (one-time, see
+  # docs/runbooks/extension-clerk-synchost.md).
+  extension-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Postgres service container above; same shape as the `check` job so the
+      # job is self-contained (no shared state between jobs).
+      DATABASE_URL: postgres://postgres:test@localhost:5432/test
+      # Real Clerk dev creds — fixture mints sign-in tickets against this
+      # instance, dashboard's ClerkProvider verifies them, popup's syncHost
+      # picks up the resulting session.
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      # Webhook secret — never invoked in this suite, but apps/api/src/env.ts
+      # requires it at boot. Placeholder satisfies the schema (whsec_ prefix).
+      CLERK_WEBHOOK_SECRET: whsec_ci_placeholder_not_invoked
+      # R2 placeholders — none of the happy-path specs trigger an upload, but
+      # apps/api/src/env-schema.ts requires these to be present.
+      R2_ACCOUNT_ID: ci
+      R2_ACCESS_KEY_ID: ci_placeholder
+      R2_SECRET_ACCESS_KEY: ci_placeholder
+      R2_BUCKET_SCREENSHOTS: remarks-screenshots-test
+      # WXT bakes these into the extension bundle at build time. SYNC_HOST and
+      # API_URL match the localhost ports the dashboard + api dev servers bind.
+      WXT_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      WXT_CLERK_SYNC_HOST: http://localhost:3000
+      WXT_API_URL: http://localhost:4000
+      # Dashboard reads NEXT_PUBLIC_API_BASE_URL for its tRPC client.
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Apply Drizzle migrations before the API starts. The dev API doesn't
+      # auto-migrate (per spec §9.4); the integration suite migrates inside its
+      # own harness, but e2e drives a long-running dev server, so we need an
+      # explicit migrate step.
+      - run: pnpm --filter @remarks/db db:migrate
+
+      - name: Install Playwright browsers + system deps
+        run: pnpm --filter @remarks/extension exec playwright install --with-deps chromium
+
+      # MV3 service workers don't register reliably in headless Chromium, so
+      # the fixture launches headed. xvfb-run gives the runner a virtual X
+      # display so the headed launch works without a real display.
+      - name: Run extension e2e
+        run: xvfb-run -a pnpm --filter @remarks/extension test:e2e

@@ -14,8 +14,9 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "typecheck": "node scripts/prepare-with-exit.cjs prepare && tsc --noEmit",
-    "lint": "biome check src",
+    "lint": "biome check src e2e",
     "test": "vitest run",
+    "test:e2e": "node scripts/prepare-with-exit.cjs build && playwright test --config e2e/playwright.config.ts",
     "verify:auth": "node scripts/prepare-with-exit.cjs build && playwright test --config verify/playwright.config.ts verify/auth-flow.spec.ts",
     "verify:screenshot": "node scripts/prepare-with-exit.cjs build && playwright test --config verify/playwright.config.ts verify/screenshot-preview.spec.ts",
     "verify": "node scripts/prepare-with-exit.cjs build && playwright test --config verify/playwright.config.ts"
