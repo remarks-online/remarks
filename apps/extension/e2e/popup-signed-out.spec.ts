@@ -4,20 +4,18 @@ test("popup shows sign-in CTAs when no Clerk session is present", async ({ exten
   const popup = await extensionContext.context.newPage();
   await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
 
-  // ClerkProvider's <Show> won't render either branch (signed-in or fallback)
-  // until Clerk's browser bundle has loaded. Cold CI runners take noticeably
-  // longer than local — wait explicitly so the visibility assertion below
-  // doesn't race with SDK init.
-  await popup.waitForFunction(
-    // @ts-expect-error - window.Clerk injected by ClerkProvider
-    () => Boolean(window.Clerk?.loaded),
-    null,
-    { timeout: 30_000 }
-  );
+  // The h1 renders outside any <Show>, so its presence proves the popup
+  // bundle parsed and React mounted. Once that's true, the auth-conditional
+  // content is just waiting on Clerk to commit a state.
+  await expect(popup.getByRole("heading", { name: "Remarks" })).toBeVisible({ timeout: 30_000 });
 
   // ClerkProvider's <Show when="signed-in" fallback={…}> renders the
   // signed-out copy from apps/extension/src/entrypoints/popup/App.tsx:65-77.
-  await expect(popup.getByText("Sign in to start annotating pages.")).toBeVisible();
+  // Generous timeout because the SDK fetches its browser bundle from the dev
+  // Clerk domain on first popup load — slow on cold CI runners.
+  await expect(popup.getByText("Sign in to start annotating pages.")).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(popup.getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(popup.getByRole("button", { name: "Create account" })).toBeVisible();
 });
