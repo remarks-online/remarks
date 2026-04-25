@@ -214,7 +214,8 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
       <SidebarBranchSelector />
       <SidebarStatusTabs compact={compact} />
       <div className="flex-1 overflow-y-auto">
-        <SidebarThreadList />
+        {/* TODO(task 1.30): thread selected branch from SidebarBranchSelector. */}
+        <SidebarThreadList projectId={projectId} branch="main" />
       </div>
       {mode !== "idle" && !capture ? (
         <div className="border-t border-border bg-muted/40 px-2 py-1.5">

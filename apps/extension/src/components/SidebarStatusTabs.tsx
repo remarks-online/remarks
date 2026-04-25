@@ -1,18 +1,18 @@
 import { type StatusFilter, sidebarStore, useSidebar } from "@/lib/sidebar-store";
+import { STATUS_DOT_CLASS } from "@/lib/status-ui";
 import { Badge, cn } from "@remarks/ui";
 
 interface TabDef {
   id: Exclude<StatusFilter, "all">;
   label: string;
   shortLabel: string;
-  dotClass: string;
 }
 
 const TABS: readonly TabDef[] = [
-  { id: "to_do", label: "To do", shortLabel: "Do", dotClass: "bg-amber-500" },
-  { id: "doing", label: "Doing", shortLabel: "Wip", dotClass: "bg-blue-500" },
-  { id: "done", label: "Done", shortLabel: "OK", dotClass: "bg-emerald-500" },
-  { id: "rejected", label: "Rejected", shortLabel: "No", dotClass: "bg-muted-foreground" },
+  { id: "to_do", label: "To do", shortLabel: "Do" },
+  { id: "doing", label: "Doing", shortLabel: "Wip" },
+  { id: "done", label: "Done", shortLabel: "OK" },
+  { id: "rejected", label: "Rejected", shortLabel: "No" },
 ] as const;
 
 interface Props {
@@ -56,7 +56,10 @@ export function SidebarStatusTabs({ counts = {}, compact }: Props) {
             )}
             aria-pressed={active}
           >
-            <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full", tab.dotClass)} />
+            <span
+              aria-hidden="true"
+              className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT_CLASS[tab.id])}
+            />
             <span>{compact ? tab.shortLabel : tab.label}</span>
             <Badge
               variant="secondary"

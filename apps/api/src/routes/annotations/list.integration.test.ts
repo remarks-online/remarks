@@ -344,6 +344,150 @@ describe("GET /projects/:projectId/annotations (integration)", () => {
     }
   });
 
+  test("filter: url=<exact match> returns only annotations with that URL", async () => {
+    const { orgClerkId, userClerkId, userId, projectId } = await seedProjectWithMember({
+      role: "viewer",
+    });
+    const db = await getIntegrationDb();
+    const [branch] = await db
+      .insert(schema.branches)
+      .values({ projectId, name: "main" })
+      .returning();
+    if (!branch) throw new Error("branch seed returned no rows");
+
+    const targetUrl = "https://staging.acme.com/checkout";
+    const otherUrl = "https://staging.acme.com/cart";
+    const rows = [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        projectId,
+        branchId: branch.id,
+        authorId: userId,
+        status: "to_do" as const,
+        targetType: "element" as const,
+        url: targetUrl,
+        targetSelector: `#match-${i}`,
+        viewport: { width: 1920, height: 1080, dpr: 2 },
+        commentText: `Match ${i}`,
+      })),
+      ...Array.from({ length: 4 }, (_, i) => ({
+        projectId,
+        branchId: branch.id,
+        authorId: userId,
+        status: "to_do" as const,
+        targetType: "element" as const,
+        url: otherUrl,
+        targetSelector: `#other-${i}`,
+        viewport: { width: 1920, height: 1080, dpr: 2 },
+        commentText: `Other ${i}`,
+      })),
+    ];
+    await db.insert(schema.annotations).values(rows);
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "GET",
+      url: `/projects/${projectId}/annotations?url=${encodeURIComponent(targetUrl)}`,
+      headers: { authorization: BEARER },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items).toHaveLength(3);
+    for (const item of body.items) expect(item.url).toBe(targetUrl);
+  });
+
+  test("filter: url=<no matches> returns empty page without erroring", async () => {
+    const { orgClerkId, userClerkId, userId, projectId } = await seedProjectWithMember({
+      role: "viewer",
+    });
+    const db = await getIntegrationDb();
+    const [branch] = await db
+      .insert(schema.branches)
+      .values({ projectId, name: "main" })
+      .returning();
+    if (!branch) throw new Error("branch seed returned no rows");
+    await db.insert(schema.annotations).values({
+      projectId,
+      branchId: branch.id,
+      authorId: userId,
+      status: "to_do",
+      targetType: "element",
+      url: "https://staging.acme.com/page",
+      targetSelector: "#el",
+      viewport: { width: 1920, height: 1080, dpr: 2 },
+      commentText: "Comment",
+    });
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "GET",
+      url: `/projects/${projectId}/annotations?url=${encodeURIComponent("https://staging.acme.com/no-match")}`,
+      headers: { authorization: BEARER },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ items: [], nextCursor: null });
+  });
+
+  test("combined filters: status=done AND branch=main AND url=<x>", async () => {
+    const { orgClerkId, userClerkId, userId, projectId } = await seedProjectWithMember({
+      role: "viewer",
+    });
+    const db = await getIntegrationDb();
+    const [main] = await db.insert(schema.branches).values({ projectId, name: "main" }).returning();
+    const [other] = await db
+      .insert(schema.branches)
+      .values({ projectId, name: "feature/triple" })
+      .returning();
+    if (!main || !other) throw new Error("branch seed returned no rows");
+
+    const targetUrl = "https://staging.acme.com/triple";
+    const otherUrl = "https://staging.acme.com/elsewhere";
+    type Variant = { branchId: string; status: "done" | "to_do"; url: string };
+    const variants: Variant[] = [
+      { branchId: main.id, status: "done", url: targetUrl }, // ✓ match
+      { branchId: main.id, status: "done", url: targetUrl }, // ✓ match
+      { branchId: main.id, status: "to_do", url: targetUrl }, // ✗ status
+      { branchId: main.id, status: "done", url: otherUrl }, // ✗ url
+      { branchId: other.id, status: "done", url: targetUrl }, // ✗ branch
+    ];
+    await db.insert(schema.annotations).values(
+      variants.map((v, i) => ({
+        projectId,
+        branchId: v.branchId,
+        authorId: userId,
+        status: v.status,
+        targetType: "element" as const,
+        url: v.url,
+        targetSelector: `#el-${i}`,
+        viewport: { width: 1920, height: 1080, dpr: 2 },
+        commentText: `Comment ${i}`,
+      }))
+    );
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "GET",
+      url: `/projects/${projectId}/annotations?status=done&branch=main&url=${encodeURIComponent(targetUrl)}`,
+      headers: { authorization: BEARER },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items).toHaveLength(2);
+    for (const item of body.items) {
+      expect(item.status).toBe("done");
+      expect(item.branchId).toBe(main.id);
+      expect(item.url).toBe(targetUrl);
+    }
+  });
+
   test("invalid cursor → 400 VALIDATION_ERROR", async () => {
     const { orgClerkId, userClerkId, projectId } = await seedProjectWithMember({ role: "viewer" });
     mockAuth({

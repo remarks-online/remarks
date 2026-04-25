@@ -118,6 +118,7 @@ export const listAnnotationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   status: annotationStatusSchema.optional(),
   branch: z.string().min(1).max(MAX_BRANCH_NAME_LENGTH).optional(),
+  url: z.string().url().optional(),
 });
 
 export type ListAnnotationsQuery = z.infer<typeof listAnnotationsQuerySchema>;

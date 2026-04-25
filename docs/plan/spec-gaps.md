@@ -261,3 +261,25 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: `in task 1.23` (bundled).
 - **Estimated size**: `xs`.
 - **Status**: `done in task 1.23` — CSS rename + spec edits landed in the element-picker PR.
+
+## A12 — `listAnnotations` is missing the URL filter required by §14 task 1.29
+
+| # | Done when | Complete |
+|---|---|---|
+| A12 ✓ | `listAnnotationsQuerySchema` accepts an optional `url` filter and the service uses it | [x] |
+
+- **Spec reference**: §5.2 / §5.5 / `listAnnotationsQuerySchema` (cursor + limit + status + branch only); §14 task 1.29 ("list of annotations for current URL/branch").
+- **Problem**: The Phase 1 list endpoint accepts `status` and `branch` filters but not `url`. Task 1.29 (sidebar thread view) is scoped per §6.4 to the page the user is currently looking at, so the sidebar needs to ask the API "give me the annotations for *this* `href`." Without a URL filter the sidebar would have to fetch every annotation on the project's branch and filter client-side, breaking pagination and leaking unrelated comments.
+- **Proposed deliverable**:
+  - Add `url: z.string().url().optional()` to `listAnnotationsQuerySchema` in `packages/shared/src/schemas/annotation.ts`. Both REST and tRPC consume the same schema, so both surfaces get the filter.
+  - Extend the `where` chain in `apps/api/src/services/annotation.service.ts` (`listAnnotations`) with `query.url ? eq(schema.annotations.url, query.url) : undefined`. Exact-href match — captured at annotation-creation time, so the comparison is symmetrical.
+  - Integration tests in `apps/api/src/routes/annotations/list.integration.test.ts`: URL match, URL with no matches, and combined `status + branch + url`.
+- **Done when**:
+  - Schema accepts `url`
+  - Service filters by exact match
+  - Integration tests cover the new filter
+- **Conflicts / overlaps with spec**: None — additive. §5.2's table doesn't enumerate query params per route; §5.5's pagination example is illustrative.
+- **Affected tasks / components**: Task 1.29 (extension sidebar thread view) consumes the filter directly.
+- **Dependencies**: Independent. Bundled into task 1.29.
+- **Estimated size**: `xs`.
+- **Status**: `done in task 1.29`.
