@@ -15,6 +15,15 @@ export default defineConfig({
   vite: () => ({
     plugins: [tailwindcss()],
   }),
+  // Pin host to 127.0.0.1: Node 18+ binds the literal "localhost" to IPv6
+  // only on macOS, but Chrome's WebSocket resolves to IPv4 → ERR_CONNECTION_REFUSED.
+  // Pin port off 3000 to avoid the collision with `next dev -p 3000` (dashboard).
+  dev: {
+    server: {
+      host: "127.0.0.1",
+      port: 3030,
+    },
+  },
   manifest: {
     name: "Remarks",
     description: "In-context feedback for websites.",
