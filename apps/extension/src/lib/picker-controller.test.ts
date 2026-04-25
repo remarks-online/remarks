@@ -21,7 +21,11 @@ function setScroll(x: number, y: number) {
 // callbacks bleed into later tests.
 const pendingTeardowns: Array<() => void> = [];
 
-function setupController(opts: { sidebarRoot: Node | null }) {
+function setupController(opts: {
+  sidebarRoot: Node | null;
+  isSignedIn?: () => boolean;
+  onActivateBlocked?: () => void;
+}) {
   const handle = initPickerController(opts);
   pendingTeardowns.push(handle.teardown);
   return handle;
@@ -297,6 +301,63 @@ describe("initPickerController — rect mode", () => {
     teardown();
     expect(document.getElementById("rmk-rect-overlay")).toBeNull();
     expect(document.body.classList.contains("rmk-rect-active")).toBe(false);
+  });
+});
+
+describe("initPickerController — auth gate", () => {
+  it("ignores C and R while signed out, and surfaces the sign-in CTA", () => {
+    const onActivateBlocked = vi.fn();
+    setupController({
+      sidebarRoot: null,
+      isSignedIn: () => false,
+      onActivateBlocked,
+    });
+
+    press("c");
+    expect(pickerStore.getState().mode).toBe("idle");
+    press("r");
+    expect(pickerStore.getState().mode).toBe("idle");
+
+    expect(onActivateBlocked).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounces direct pickerStore.enterElementMode calls back to idle while signed out", () => {
+    const onActivateBlocked = vi.fn();
+    setupController({
+      sidebarRoot: null,
+      isSignedIn: () => false,
+      onActivateBlocked,
+    });
+
+    pickerStore.getState().enterElementMode();
+    expect(pickerStore.getState().mode).toBe("idle");
+    expect(onActivateBlocked).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounces direct pickerStore.enterRectMode calls back to idle while signed out", () => {
+    const onActivateBlocked = vi.fn();
+    setupController({
+      sidebarRoot: null,
+      isSignedIn: () => false,
+      onActivateBlocked,
+    });
+
+    pickerStore.getState().enterRectMode();
+    expect(pickerStore.getState().mode).toBe("idle");
+    expect(onActivateBlocked).toHaveBeenCalledTimes(1);
+  });
+
+  it("permits C and R when signed in", () => {
+    const onActivateBlocked = vi.fn();
+    setupController({
+      sidebarRoot: null,
+      isSignedIn: () => true,
+      onActivateBlocked,
+    });
+
+    press("c");
+    expect(pickerStore.getState().mode).toBe("element");
+    expect(onActivateBlocked).not.toHaveBeenCalled();
   });
 });
 

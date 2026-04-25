@@ -6,8 +6,6 @@ import {
   ClerkProvider,
   OrganizationSwitcher,
   Show,
-  SignInButton,
-  SignUpButton,
   UserButton,
   useOrganization,
 } from "@clerk/chrome-extension";
@@ -41,6 +39,14 @@ async function pingBackground() {
   }
 }
 
+function openSignIn() {
+  void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/sign-in` });
+}
+
+function openSignUp() {
+  void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/sign-up` });
+}
+
 export function App() {
   return (
     <ClerkProvider
@@ -65,16 +71,12 @@ export function App() {
               <>
                 <p className="text-sm text-muted-foreground">Sign in to start annotating pages.</p>
                 <div className="flex gap-2">
-                  <SignInButton mode="modal">
-                    <Button size="sm" type="button">
-                      Sign in
-                    </Button>
-                  </SignInButton>
-                  <SignUpButton mode="modal">
-                    <Button size="sm" variant="outline" type="button">
-                      Create account
-                    </Button>
-                  </SignUpButton>
+                  <Button size="sm" type="button" onClick={openSignIn}>
+                    Sign in
+                  </Button>
+                  <Button size="sm" variant="outline" type="button" onClick={openSignUp}>
+                    Create account
+                  </Button>
                 </div>
               </>
             }

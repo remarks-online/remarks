@@ -1,3 +1,4 @@
+import { useAuthStatus } from "@/lib/auth-status";
 import { pickerStore } from "@/lib/picker-store";
 import { useShadowRootPortalContainer } from "@/lib/shadow-root-context";
 import {
@@ -18,6 +19,7 @@ interface Props {
 
 export function SidebarToolsMenu({ compact }: Props) {
   const container = useShadowRootPortalContainer();
+  const { signedIn } = useAuthStatus();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -34,12 +36,18 @@ export function SidebarToolsMenu({ compact }: Props) {
       <DropdownMenuContent align="end" container={container} className="w-56">
         <DropdownMenuLabel>Capture</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => pickerStore.getState().enterElementMode()}>
+        <DropdownMenuItem
+          disabled={!signedIn}
+          onSelect={() => pickerStore.getState().enterElementMode()}
+        >
           <MousePointer2 />
           Pick an element
           <DropdownMenuShortcut>C</DropdownMenuShortcut>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => pickerStore.getState().enterRectMode()}>
+        <DropdownMenuItem
+          disabled={!signedIn}
+          onSelect={() => pickerStore.getState().enterRectMode()}
+        >
           <SquareDashed />
           Draw a rectangle
           <DropdownMenuShortcut>R</DropdownMenuShortcut>
