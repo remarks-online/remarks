@@ -163,3 +163,13 @@ jobs:
       # display so the headed launch works without a real display.
       - name: Run extension e2e
         run: xvfb-run -a pnpm --filter @remarks/extension test:e2e
+
+      # Upload Playwright traces / videos / error context on failure so we
+      # can diagnose what the popup actually looked like inside CI Chromium.
+      - name: Upload Playwright test-results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-e2e-test-results
+          path: apps/extension/test-results/
+          retention-days: 7

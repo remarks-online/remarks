@@ -2,6 +2,14 @@ import { EXT_ID, expect, test } from "./fixtures";
 
 test("popup shows sign-in CTAs when no Clerk session is present", async ({ extensionContext }) => {
   const popup = await extensionContext.context.newPage();
+
+  // Capture console + page errors for CI diagnostics — both popup specs were
+  // failing on the always-rendered h1 in CI, suggesting the popup bundle
+  // wasn't executing. Stream events to the test output so the cause is in
+  // the workflow log, not just the trace artifact.
+  popup.on("console", (msg) => console.log(`[popup ${msg.type()}] ${msg.text()}`));
+  popup.on("pageerror", (err) => console.log(`[popup pageerror] ${err.message}`));
+
   await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
 
   // The h1 renders outside any <Show>, so its presence proves the popup
