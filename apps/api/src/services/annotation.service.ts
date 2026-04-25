@@ -210,6 +210,7 @@ export async function listAnnotations(
     eq(schema.annotations.projectId, projectId),
     query.status ? eq(schema.annotations.status, query.status) : undefined,
     branchFilterId ? eq(schema.annotations.branchId, branchFilterId) : undefined,
+    query.url ? eq(schema.annotations.url, query.url) : undefined,
     cursorPredicate
   );
 
