@@ -514,11 +514,29 @@ function startRectSession(sidebarRoot: Node | null): ActiveSession {
   };
 }
 
+interface InitPickerControllerOptions {
+  sidebarRoot: Node | null;
+  /**
+   * Returns whether the user is currently signed in. When this returns false,
+   * the picker refuses to enter element or rect mode — regardless of how the
+   * mode change was attempted (C/R shortcut, tools menu, or any direct
+   * `pickerStore.enterElementMode()` call). Defaults to always-true so
+   * pre-existing callers and tests stay green.
+   */
+  isSignedIn?: () => boolean;
+  /**
+   * Called when the picker refuses to activate because the user is signed
+   * out. The host wires this to surface the existing sign-in CTA (e.g., open
+   * the sidebar so `SidebarSignedOut` is visible).
+   */
+  onActivateBlocked?: () => void;
+}
+
 export function initPickerController({
   sidebarRoot,
-}: {
-  sidebarRoot: Node | null;
-}): ControllerHandle {
+  isSignedIn = () => true,
+  onActivateBlocked,
+}: InitPickerControllerOptions): ControllerHandle {
   let active: ActiveSession | null = null;
   let activeMode: PickerMode = "idle";
   let torn = false;
@@ -538,6 +556,18 @@ export function initPickerController({
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (isTypingTarget(document.activeElement)) return;
 
+    const isPickerKey =
+      event.key === "c" || event.key === "C" || event.key === "r" || event.key === "R";
+    if (!isPickerKey) return;
+
+    if (!isSignedIn()) {
+      // Eat the key so the user doesn't get a hidden no-op; surface the
+      // sign-in CTA instead.
+      event.preventDefault();
+      onActivateBlocked?.();
+      return;
+    }
+
     if (event.key === "c" || event.key === "C") {
       if (pickerStore.getState().mode === "element") return;
       event.preventDefault();
@@ -554,7 +584,16 @@ export function initPickerController({
   window.addEventListener("keydown", onGlobalKeyDown);
 
   const unsubscribe = pickerStore.subscribe((state, prev) => {
-    if (state.mode !== prev.mode) ensureSessionFor(state.mode);
+    if (state.mode === prev.mode) return;
+    // Defense-in-depth: if a non-idle mode was set while signed-out (e.g., a
+    // tools-menu click slipped through during a session refresh), immediately
+    // bounce back to idle and notify the host.
+    if (state.mode !== "idle" && !isSignedIn()) {
+      pickerStore.getState().cancel();
+      onActivateBlocked?.();
+      return;
+    }
+    ensureSessionFor(state.mode);
   });
 
   ensureSessionFor(pickerStore.getState().mode);

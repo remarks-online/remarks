@@ -1,3 +1,4 @@
+import { CapturePromptPopover } from "@/components/CapturePromptPopover";
 import { SidebarBranchSelector } from "@/components/SidebarBranchSelector";
 import { SidebarComposeBox, type SidebarComposeBoxHandle } from "@/components/SidebarComposeBox";
 import { SidebarHeader } from "@/components/SidebarHeader";
@@ -90,6 +91,16 @@ export function SidebarShell() {
     });
     return unwatch;
   }, []);
+
+  // When the user signs out, drop any in-flight capture and exit any active
+  // picker mode. Without this, a capture taken just before sign-out would
+  // resurrect when they sign back in (the picker store is module-singleton).
+  useEffect(() => {
+    if (auth.signedIn) return;
+    pickerStore.getState().cancel();
+    pickerStore.getState().clearCapture();
+    sidebarStore.getState().setDraftComment("");
+  }, [auth.signedIn]);
 
   // Track selected project for the current Clerk org.
   useEffect(() => {
@@ -267,6 +278,7 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
         capture={capture}
         onSubmit={capture ? onSubmit : undefined}
       />
+      <CapturePromptPopover onSubmit={onSubmit} />
     </>
   );
 }
