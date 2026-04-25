@@ -8,7 +8,10 @@
       "env": [
         "CLERK_SECRET_KEY",
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-        "NEXT_PUBLIC_API_BASE_URL"
+        "NEXT_PUBLIC_API_BASE_URL",
+        "WXT_CLERK_PUBLISHABLE_KEY",
+        "WXT_CLERK_SYNC_HOST",
+        "WXT_API_URL"
       ]
     },
     "lint": {},
