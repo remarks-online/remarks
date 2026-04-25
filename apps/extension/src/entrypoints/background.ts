@@ -31,16 +31,68 @@ function getClerk(): Promise<Clerk> {
   return clerkPromise;
 }
 
+// In `background: true` mode the Clerk SDK loads the session once at
+// construction (`clerk.load({ standardBrowser: false })`) and doesn't repoll
+// the syncHost cookie on its own. If the user signs in on the dashboard after
+// the SW has already booted, the cached client keeps reporting `session: null`.
+// Invalidate the cache so the next read constructs a fresh client that will
+// pick up the new cookie state.
+function resetClerk(): void {
+  clerkPromise = null;
+}
+
+function isJwtExpiredOrNearExpiry(token: string): boolean {
+  // Pure decode (not verify) of the JWT exp claim. We only need this to decide
+  // whether to bust the SW's cached Clerk client; verifyToken on the API side
+  // is the real source of truth.
+  const parts = token.split(".");
+  if (parts.length !== 3) return true;
+  try {
+    const payload = JSON.parse(atob(parts[1] ?? ""));
+    if (typeof payload.exp !== "number") return true;
+    const nowSec = Math.floor(Date.now() / 1000);
+    // 5s leeway so a request firing right at the boundary still has time to land.
+    return nowSec >= payload.exp - 5;
+  } catch {
+    return true;
+  }
+}
+
 async function readAuthStatus(): Promise<{
   signedIn: boolean;
   token: string | null;
   clerkOrgId: string | null;
 }> {
   try {
-    const clerk = await getClerk();
-    const session = clerk.session;
-    const token = session ? ((await session.getToken()) ?? null) : null;
-    const clerkOrgId = await getActiveClerkOrgId();
+    let clerk = await getClerk();
+    let session = clerk.session;
+    let token = session ? ((await session.getToken()) ?? null) : null;
+
+    // The headless Clerk SDK in `background: true` mode caches its session
+    // view at construction (`clerk.load({ standardBrowser: false })`) and
+    // doesn't poll for updates. After ~60s the cached token is past its exp
+    // claim and the API's verifyToken rejects it with "Invalid or expired
+    // token". Detect that, drop the cached client, and rebuild — the fresh
+    // client re-reads syncHost cookies and mints a current token.
+    if (token && isJwtExpiredOrNearExpiry(token)) {
+      resetClerk();
+      clerk = await getClerk();
+      session = clerk.session;
+      token = session ? ((await session.getToken()) ?? null) : null;
+    }
+    // Resolve the active org, in priority order:
+    //   1. popup-set active org id (the user's explicit OrganizationSwitcher pick)
+    //   2. Clerk's `clerk.organization` (set when the user has called setActive)
+    //   3. The first org membership on the user — covers the common case where
+    //      Clerk auto-created a personal org at signup and the user has never
+    //      explicitly "switched" to it. Without this, sidebar.clerkOrgId stays
+    //      null forever for any user who hasn't opened the popup, even though
+    //      they have exactly one org. (A10 in docs/plan/spec-gaps.md called
+    //      this the "popup-open-at-least-once dependency".)
+    const storedOrgId = await getActiveClerkOrgId();
+    const fallbackOrgId =
+      clerk.organization?.id ?? clerk.user?.organizationMemberships?.[0]?.organization?.id ?? null;
+    const clerkOrgId = storedOrgId ?? fallbackOrgId;
     return { signedIn: Boolean(session), token, clerkOrgId };
   } catch (err) {
     console.error("[remarks] readAuthStatus failed", err);
@@ -178,6 +230,24 @@ export default defineBackground(() => {
     clerk.addListener(() => {
       void broadcastAuthStatus();
     });
+  });
+
+  // Watch for cookie changes on the syncHost (dashboard) and on Clerk's
+  // frontend API (`*.clerk.accounts.dev`). Either domain can carry the session
+  // cookies that bridge dashboard↔extension. On change, drop the cached Clerk
+  // client and re-broadcast — the next readAuthStatus rebuilds the client and
+  // picks up the fresh session.
+  const syncHostHostname = new URL(env.WXT_CLERK_SYNC_HOST).hostname;
+  chrome.cookies.onChanged.addListener((change) => {
+    const domain = change.cookie.domain.replace(/^\./, "");
+    const matches =
+      domain === syncHostHostname ||
+      domain.endsWith(".clerk.accounts.dev") ||
+      domain === "clerk.accounts.dev";
+    if (matches) {
+      resetClerk();
+      void broadcastAuthStatus();
+    }
   });
 
   // Popup writes the active Clerk org id via `setActiveClerkOrgId`; re-broadcast

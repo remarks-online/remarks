@@ -11,12 +11,16 @@ import {
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
   getOrganizationMembershipList: vi.fn(),
+  getUser: vi.fn(),
 }));
 
 vi.mock("@clerk/backend", () => ({
   verifyToken: mocks.verifyToken,
   createClerkClient: () => ({
-    users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
+    users: {
+      getOrganizationMembershipList: mocks.getOrganizationMembershipList,
+      getUser: mocks.getUser,
+    },
   }),
 }));
 
@@ -32,7 +36,7 @@ function mockAuth(args: {
   mocks.getOrganizationMembershipList.mockResolvedValueOnce({
     data: args.memberships.map((m) => ({
       role: m.role,
-      organization: { id: m.clerkOrgId },
+      organization: { id: m.clerkOrgId, name: m.clerkOrgId, slug: m.clerkOrgId },
     })),
   });
 }
@@ -123,8 +127,35 @@ describe("tRPC me.getCurrentUser (integration)", () => {
     expect(res.json().error.code).toBe("UNAUTHORIZED");
   });
 
-  test("user not provisioned in db → 401 UNAUTHORIZED", async () => {
+  test("user missing from db but present in Clerk → lazy-provisioned, 200", async () => {
+    mocks.verifyToken.mockResolvedValueOnce({ sub: "user_lazy_provisioned" });
+    mocks.getUser.mockResolvedValueOnce({
+      id: "user_lazy_provisioned",
+      emailAddresses: [{ id: "idn_1", emailAddress: "lazy@example.com" }],
+      primaryEmailAddressId: "idn_1",
+      firstName: "Lazy",
+      lastName: "User",
+      imageUrl: "https://img.example.com/lazy.png",
+    });
+    mocks.getOrganizationMembershipList.mockResolvedValueOnce({ data: [] });
+
+    const res = await server.inject({
+      method: "GET",
+      url: "/trpc/me.getCurrentUser",
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data.user).toMatchObject({
+      clerkUserId: "user_lazy_provisioned",
+      email: "lazy@example.com",
+      name: "Lazy User",
+    });
+  });
+
+  test("user missing from db AND Clerk getUser fails → 401 UNAUTHORIZED", async () => {
     mocks.verifyToken.mockResolvedValueOnce({ sub: "user_does_not_exist" });
+    mocks.getUser.mockRejectedValueOnce(new Error("Clerk user not found"));
 
     const res = await server.inject({
       method: "GET",
