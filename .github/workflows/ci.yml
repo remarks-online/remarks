@@ -113,9 +113,12 @@ jobs:
       # picks up the resulting session.
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-      # Webhook secret — never invoked in this suite, but apps/api/src/env.ts
-      # requires it at boot. Placeholder satisfies the schema (whsec_ prefix).
-      CLERK_WEBHOOK_SECRET: whsec_ci_placeholder_not_invoked
+      # Webhook secret — never invoked in this suite, but the api initializes
+      # standardwebhooks' Webhook(secret) at module load (apps/api/src/routes/webhooks/clerk.ts),
+      # which base64-decodes the secret eagerly. The placeholder must be valid
+      # base64 after the whsec_ prefix; this string decodes to
+      # "placeholder-not-invoked-in-ci" (29 bytes).
+      CLERK_WEBHOOK_SECRET: whsec_cGxhY2Vob2xkZXItbm90LWludm9rZWQtaW4tY2k=
       # R2 placeholders — none of the happy-path specs trigger an upload, but
       # apps/api/src/env-schema.ts requires these to be present.
       R2_ACCOUNT_ID: ci
