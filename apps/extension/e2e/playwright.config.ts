@@ -34,14 +34,22 @@ export default defineConfig({
       command: "pnpm --filter @remarks/api dev",
       url: "http://localhost:4000/health",
       reuseExistingServer: true,
-      timeout: 60_000,
+      // 180s, not 60s: cold CI runners need ~30s for `tsx watch` to import
+      // the api graph and connect to Postgres, plus ~30-60s for `next dev` to
+      // bundle the dashboard's first route. Locally the servers are usually
+      // already up via reuseExistingServer.
+      timeout: 180_000,
       cwd: "../../..",
     },
     {
       command: "pnpm --filter @remarks/dashboard dev",
       url: "http://localhost:3000",
       reuseExistingServer: true,
-      timeout: 60_000,
+      // 180s, not 60s: cold CI runners need ~30s for `tsx watch` to import
+      // the api graph and connect to Postgres, plus ~30-60s for `next dev` to
+      // bundle the dashboard's first route. Locally the servers are usually
+      // already up via reuseExistingServer.
+      timeout: 180_000,
       cwd: "../../..",
     },
   ],
