@@ -13,6 +13,12 @@ import { env } from "@/env";
 import { useAuthStatus } from "@/lib/auth-status";
 import { enqueue as enqueueOutbox } from "@/lib/outbox-db";
 import { type Capture, pickerStore, usePicker } from "@/lib/picker-store";
+import {
+  DEFAULT_BRANCH,
+  getSelectedBranch,
+  setSelectedBranch,
+  watchSelectedBranch,
+} from "@/lib/selected-branch";
 import { getSelectedProjectId, watchSelectedProjectId } from "@/lib/selected-project";
 import { saveSidebarPrefs, watchSidebarPrefs } from "@/lib/sidebar-prefs";
 import { registerSidebarShortcuts } from "@/lib/sidebar-shortcuts";
@@ -156,6 +162,29 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
   const mode = usePicker((s) => s.mode);
   const queryClient = useQueryClient();
   const composeRef = useRef<SidebarComposeBoxHandle | null>(null);
+  const [branch, setBranch] = useState<string>(DEFAULT_BRANCH);
+
+  // Hydrate selected branch for the active project, then watch for cross-tab
+  // edits so a second tab editing the same project's branch reflects here.
+  useEffect(() => {
+    let cancelled = false;
+    void getSelectedBranch(projectId).then((b) => {
+      if (!cancelled) setBranch(b);
+    });
+    const unwatch = watchSelectedBranch(projectId, (b) => setBranch(b));
+    return () => {
+      cancelled = true;
+      unwatch();
+    };
+  }, [projectId]);
+
+  const onBranchChange = useCallback(
+    (next: string) => {
+      setBranch(next);
+      void setSelectedBranch(projectId, next);
+    },
+    [projectId]
+  );
 
   // Shortcut: F focuses the compose textarea. Lives here so the ref stays
   // colocated with the component that owns it.
@@ -186,8 +215,7 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
         clerkOrgId,
         projectId,
         payload: {
-          // TODO(task 1.30): thread selected branch from SidebarBranchSelector.
-          branch: "main",
+          branch,
           capture: cap,
           commentText: text,
         },
@@ -206,16 +234,15 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
         onSuccess: invalidateAnnotationsList,
       });
     },
-    [token, projectId, clerkOrgId, invalidateAnnotationsList]
+    [token, projectId, clerkOrgId, branch, invalidateAnnotationsList]
   );
 
   return (
     <>
-      <SidebarBranchSelector />
+      <SidebarBranchSelector value={branch} onChange={onBranchChange} />
       <SidebarStatusTabs compact={compact} />
       <div className="flex-1 overflow-y-auto">
-        {/* TODO(task 1.30): thread selected branch from SidebarBranchSelector. */}
-        <SidebarThreadList projectId={projectId} branch="main" />
+        <SidebarThreadList projectId={projectId} branch={branch} />
       </div>
       {mode !== "idle" && !capture ? (
         <div className="border-t border-border bg-muted/40 px-2 py-1.5">

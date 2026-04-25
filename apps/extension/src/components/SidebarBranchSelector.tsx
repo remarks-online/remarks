@@ -1,28 +1,72 @@
-import { useShadowRootPortalContainer } from "@/lib/shadow-root-context";
-import { Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@remarks/ui";
+import { DEFAULT_BRANCH } from "@/lib/selected-branch";
+import { MAX_BRANCH_NAME_LENGTH } from "@remarks/shared";
+import { Input, Label } from "@remarks/ui";
+import { type KeyboardEvent, useEffect, useState } from "react";
 
-// Placeholder. Task 1.30 replaces this with a free-text branch input (and
-// eventually a GitHub-backed list in Phase 3). For 1.25 we ship the disabled
-// shell so the layout is complete.
-export function SidebarBranchSelector() {
-  const container = useShadowRootPortalContainer();
+interface Props {
+  value: string;
+  onChange: (next: string) => void;
+}
+
+function commit(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return DEFAULT_BRANCH;
+  return trimmed.length > MAX_BRANCH_NAME_LENGTH
+    ? trimmed.slice(0, MAX_BRANCH_NAME_LENGTH)
+    : trimmed;
+}
+
+export function SidebarBranchSelector({ value, onChange }: Props) {
+  const [draft, setDraft] = useState(value);
+
+  // Sync draft when external value changes (e.g., another tab edited the
+  // stored branch). Ignore drafts that match the new value to avoid
+  // clobbering an in-progress edit on the current tab.
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  function commitDraft() {
+    const next = commit(draft);
+    if (next !== draft) setDraft(next);
+    if (next !== value) onChange(next);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitDraft();
+      event.currentTarget.blur();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setDraft(value);
+      event.currentTarget.blur();
+    }
+  }
+
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5">
+    <div className="flex items-center gap-2 border-b border-border px-2 py-1.5">
       <Label htmlFor="remarks-branch" className="text-xs text-muted-foreground">
         Branch
       </Label>
-      <Select disabled>
-        <SelectTrigger
-          id="remarks-branch"
-          className="h-7 w-full text-xs"
-          aria-label="Branch (coming soon)"
-        >
-          <SelectValue placeholder="main" />
-        </SelectTrigger>
-        <SelectContent container={container}>
-          <SelectItem value="main">main</SelectItem>
-        </SelectContent>
-      </Select>
+      <Input
+        id="remarks-branch"
+        type="text"
+        spellCheck={false}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        maxLength={MAX_BRANCH_NAME_LENGTH}
+        placeholder={DEFAULT_BRANCH}
+        aria-label="Branch"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={handleKeyDown}
+        className="h-7 flex-1 text-xs"
+      />
     </div>
   );
 }

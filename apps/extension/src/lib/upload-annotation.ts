@@ -52,7 +52,6 @@ export interface UploadAnnotationInput {
   // `env.WXT_API_URL`, no trailing slash.
   apiUrl: string;
   projectId: string;
-  // Task 1.27 hardcodes "main"; task 1.30 threads the free-text branch through.
   branch: string;
   // Caller guarantees non-null (button is disabled unless capture present).
   capture: Capture;
