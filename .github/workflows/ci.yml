@@ -108,6 +108,11 @@ jobs:
       # Postgres service container above; same shape as the `check` job so the
       # job is self-contained (no shared state between jobs).
       DATABASE_URL: postgres://postgres:test@localhost:5432/test
+      # apps/api/src/env-schema.ts defaults PORT to 3000, which collides with
+      # next dev's default 3000. Locally apps/api/.env.local overrides it; CI
+      # has no such file, so set it explicitly to match the playwright.config
+      # webServer URL (http://localhost:4000/health).
+      PORT: 4000
       # Real Clerk dev creds — fixture mints sign-in tickets against this
       # instance, dashboard's ClerkProvider verifies them, popup's syncHost
       # picks up the resulting session.
