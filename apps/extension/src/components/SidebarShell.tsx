@@ -20,6 +20,7 @@ import {
   watchSelectedBranch,
 } from "@/lib/selected-branch";
 import { getSelectedProjectId, watchSelectedProjectId } from "@/lib/selected-project";
+import { PopoverContainerProvider } from "@/lib/shadow-root-context";
 import { saveSidebarPrefs, watchSidebarPrefs } from "@/lib/sidebar-prefs";
 import { registerSidebarShortcuts } from "@/lib/sidebar-shortcuts";
 import { getPersistablePrefs, sidebarStore, useSidebar } from "@/lib/sidebar-store";
@@ -68,6 +69,9 @@ export function SidebarShell() {
 
   const auth = useAuthStatus();
   const [projectId, setProjectId] = useState<string | null>(null);
+  // Sibling of the panel frame; Radix overlays (DropdownMenu, future Select/
+  // Popover) portal here so they share `.rmk-root`'s stacking context.
+  const [popoverEl, setPopoverEl] = useState<HTMLDivElement | null>(null);
 
   // Persist prefs whenever anything persistable changes.
   useEffect(() => {
@@ -135,17 +139,20 @@ export function SidebarShell() {
       data-dock={dock}
       data-compact={compact ? "true" : "false"}
     >
-      <div
-        className={cn(
-          "pointer-events-auto relative flex flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-2xl",
-          styles.frame
-        )}
-        style={sizeStyle}
-      >
-        <SidebarHeader compact={compact} auth={auth} />
-        {body}
-        <SidebarResizeHandle />
-      </div>
+      <PopoverContainerProvider value={popoverEl}>
+        <div
+          className={cn(
+            "pointer-events-auto relative flex flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-2xl",
+            styles.frame
+          )}
+          style={sizeStyle}
+        >
+          <SidebarHeader compact={compact} auth={auth} />
+          {body}
+          <SidebarResizeHandle />
+        </div>
+        <div ref={setPopoverEl} />
+      </PopoverContainerProvider>
     </div>
   );
 }
