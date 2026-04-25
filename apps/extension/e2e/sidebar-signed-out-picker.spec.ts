@@ -28,8 +28,10 @@ test("picker is gated while signed out and surfaces the sign-in card", async ({
   // Pressing C / R while signed out must not activate either picker session.
   // Picker overlays are appended to document.body with these ids
   // (apps/extension/src/lib/picker-controller.ts:15-21), so their absence is a
-  // strong signal nothing fired.
-  await page.locator("body").click();
+  // strong signal nothing fired. Click the host-page <h1> (not body — Playwright
+  // pierces the sidebar's shadow root, so `body` matches two elements) to put
+  // focus on the host page before dispatching keys.
+  await page.getByRole("heading", { name: "host" }).click();
   await page.keyboard.press("c");
   await expect(page.locator("#rmk-picker-overlay")).toHaveCount(0);
   await expect(page.locator("body.rmk-picker-active")).toHaveCount(0);
