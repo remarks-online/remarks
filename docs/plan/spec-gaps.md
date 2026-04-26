@@ -284,6 +284,28 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Estimated size**: `xs`.
 - **Status**: `done in task 1.29`.
 
+## A14 — `ProjectResponse.myRole` for in-page admin gating
+
+| # | Done when | Complete |
+|---|---|---|
+| A14 ✓ | `projects.getBySlug` (and any other surface a settings page consumes) returns the caller's project_members.role; settings UI gates destructive actions on it | [x] |
+
+- **Spec reference**: §3.6 (project_members + roles); §5.2 ("User (project admin)" on PATCH/DELETE); §14 task 1.32 (settings page).
+- **Problem**: Task 1.32 ships a settings page that any project member can land on, but only project admins can rename or delete. The current `ProjectResponse` (`packages/shared/src/schemas/project.ts`) doesn't include the caller's role, so the dashboard can't render the form differently for editors/viewers. The mutations enforce the check correctly (FORBIDDEN from `assertProjectMember(..., { minRole: "admin" })`) and the form surfaces "Only project admins can edit settings" inline on the failed click — but the buttons are visible and enabled by default, which is a small but real UX papercut.
+- **Proposed deliverable**:
+  - Extend `projectResponseSchema` (or a sibling `projectDetailResponseSchema`) with `myRole: projectRoleSchema`. Read it from `project_members` joined on the caller's `userId` inside `getProjectBySlug` (and `getProjectById` if the REST surface needs it).
+  - Settings page: when `myRole !== "admin"`, render the form read-only (or disabled) with a "Only project admins can edit settings" banner, and hide the danger-zone delete card entirely.
+  - Mutations stay authoritative — server still enforces.
+- **Done when**:
+  - `ProjectResponse` includes `myRole`
+  - Settings page disables save + hides delete card for non-admin viewers
+  - Detail-page header could optionally hide the Settings link for viewers (cheap follow-up)
+- **Conflicts / overlaps with spec**: None — additive.
+- **Affected tasks / components**: Task 1.32 (UX nicety), task 1.16 (could use the same hint to gate annotation status changes if author check is removed), task 1.33 (invitations could surface "you're an editor" in UI).
+- **Dependencies**: `after task 1.32` (which lands the page that needs this).
+- **Estimated size**: `s`.
+- **Status**: `done` — bundled into the task 1.32 PR. Shape landed as `myRole: projectRoleSchema.nullable()` on `projectResponseSchema` (null = caller is org member but not a project member). All four read paths (`projects.list`, `projects.getBySlug`, `getProjectById` REST, `listProjectsByOrg` REST) were threaded with `callerUserId` and use a LEFT JOIN on `project_members`. Mutations (`update`, `create`) populate it from the asserted role rather than re-querying. Dashboard `EditProjectForm` disables inputs + shows a role-aware banner when `myRole !== "admin"`; `DeleteProjectForm` is conditionally rendered so non-admins never see the danger zone. Settings link in the detail header was left visible to all org members per the entry's "cheap follow-up" framing — viewers landing on settings see an inline explanation. Server enforcement (`assertProjectMember(..., { minRole: "admin" })`) stays the source of truth.
+
 ## A13 — Production database schema is never applied; no migrate step in deploy pipeline
 
 | # | Done when | Complete |
