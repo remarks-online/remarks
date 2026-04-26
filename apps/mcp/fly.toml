@@ -13,6 +13,10 @@ primary_region = "iad"
   NODE_ENV = "production"
   PORT = "3000"
   LOG_LEVEL = "info"
+  # Internal Fly DNS — the API reachable over the org's private VPC. Not a
+  # secret; secrets-only values (TOKEN_HASH_SALT, INTERNAL_API_TOKEN, the
+  # Upstash REST creds) ride on `fly secrets set`.
+  API_INTERNAL_URL = "http://remarks-api.internal:3000"
 
 [http_service]
   internal_port = 3000

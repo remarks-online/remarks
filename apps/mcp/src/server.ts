@@ -2,6 +2,7 @@ import sensible from "@fastify/sensible";
 import { RemarksError, ValidationError } from "@remarks/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./env.js";
+import mcpAuthPlugin from "./plugins/mcp-auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { mcpRoutes } from "./routes/mcp.js";
 
@@ -50,7 +51,11 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await server.register(sensible);
   await server.register(healthRoutes);
-  await server.register(mcpRoutes);
+
+  await server.register(async (authenticated) => {
+    await authenticated.register(mcpAuthPlugin);
+    await authenticated.register(mcpRoutes);
+  });
 
   return server;
 }

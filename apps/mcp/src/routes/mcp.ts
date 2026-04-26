@@ -19,9 +19,10 @@ export async function mcpRoutes(fastify: FastifyInstance): Promise<void> {
       reply.hijack();
 
       // Stateless mode: fresh Server + Transport per HTTP request, no
-      // session store. Task 2.4 plugs bearer-token auth in as a Fastify
-      // preHandler above this route; tasks 2.6+ register tool handlers on
-      // the Server via setRequestHandler before connect (Phase 2 spec §8.3).
+      // session store. Bearer-token auth runs as a Fastify onRequest hook
+      // above this route (apps/mcp/src/plugins/mcp-auth.ts); tasks 2.6+
+      // register tool handlers on the Server via setRequestHandler before
+      // connect (Phase 2 spec §8.3).
       const server = new Server(
         { name: SERVER_NAME, version: SERVER_VERSION },
         { capabilities: { tools: {}, resources: {} } }
