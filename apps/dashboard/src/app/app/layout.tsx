@@ -1,3 +1,4 @@
+import { PostHogProvider } from "@/components/posthog-provider";
 import { TRPCProvider } from "@/lib/trpc-provider";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
@@ -8,23 +9,25 @@ export const dynamic = "force-dynamic";
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <TRPCProvider>
-      <div className="flex min-h-screen flex-col bg-background text-foreground">
-        <header className="flex items-center justify-between border-b border-border px-6 py-3">
-          <Link href="/app/projects" className="text-lg font-semibold">
-            Remarks
-          </Link>
-          <div className="flex items-center gap-4">
-            <OrganizationSwitcher
-              hidePersonal
-              afterSelectOrganizationUrl="/app/projects"
-              afterCreateOrganizationUrl="/app/projects"
-              afterLeaveOrganizationUrl="/app/projects"
-            />
-            <UserButton />
-          </div>
-        </header>
-        <div className="flex-1 px-6 py-8">{children}</div>
-      </div>
+      <PostHogProvider>
+        <div className="flex min-h-screen flex-col bg-background text-foreground">
+          <header className="flex items-center justify-between border-b border-border px-6 py-3">
+            <Link href="/app/projects" className="text-lg font-semibold">
+              Remarks
+            </Link>
+            <div className="flex items-center gap-4">
+              <OrganizationSwitcher
+                hidePersonal
+                afterSelectOrganizationUrl="/app/projects"
+                afterCreateOrganizationUrl="/app/projects"
+                afterLeaveOrganizationUrl="/app/projects"
+              />
+              <UserButton />
+            </div>
+          </header>
+          <div className="flex-1 px-6 py-8">{children}</div>
+        </div>
+      </PostHogProvider>
     </TRPCProvider>
   );
 }

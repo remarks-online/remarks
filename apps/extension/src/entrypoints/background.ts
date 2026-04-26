@@ -183,7 +183,60 @@ globalThis.__remarksCaptureScreenshot = async (
   return captureScreenshot({ tab } as chrome.runtime.MessageSender, viewportRect, dpr);
 };
 
+// Origin allowlist for external (dashboard) pings. Mirrors the manifest's
+// externally_connectable.matches so only the dashboard origins can pull a
+// signed-in flag out of the SW. Web Store ID change won't affect this — the
+// dashboard side identifies the extension by ID, not the other way around.
+const EXTERNAL_PING_ALLOWED_ORIGINS = new Set([
+  "https://app.remarks.online",
+  "http://localhost:3000",
+]);
+
 export default defineBackground(() => {
+  // Spec §7.5 — `extension_installed` and `extension_signed_in` are detected
+  // by the dashboard pinging us. Manifest's `externally_connectable.matches`
+  // gates which web origins can sendMessage at all; this handler still does
+  // an explicit origin check as defense-in-depth.
+  chrome.runtime.onMessageExternal.addListener(
+    (
+      message: unknown,
+      sender: chrome.runtime.MessageSender,
+      sendResponse: (response: unknown) => void
+    ) => {
+      const origin = sender.origin ?? sender.url;
+      if (!origin || !EXTERNAL_PING_ALLOWED_ORIGINS.has(new URL(origin).origin)) {
+        sendResponse({ kind: "denied" });
+        return true;
+      }
+      if (
+        message &&
+        typeof message === "object" &&
+        (message as { kind?: string }).kind === "ping"
+      ) {
+        readAuthStatus()
+          .then((status) =>
+            sendResponse({
+              kind: "pong",
+              version: chrome.runtime.getManifest().version,
+              signedIn: status.signedIn,
+            })
+          )
+          .catch(() => {
+            // Even if the SDK throws, we still want to confirm install. Treat
+            // signed-in as unknown rather than blocking the ack.
+            sendResponse({
+              kind: "pong",
+              version: chrome.runtime.getManifest().version,
+              signedIn: false,
+            });
+          });
+        return true;
+      }
+      sendResponse({ kind: "unknown" });
+      return true;
+    }
+  );
+
   chrome.runtime.onMessage.addListener(
     (message: BackgroundRequest, sender, sendResponse: (response: BackgroundResponse) => void) => {
       if (message.kind === "ping") {

@@ -21,6 +21,12 @@ export async function ProjectList({ orgId }: { orgId: string }) {
         <Button asChild className="mt-6">
           <Link href="/app/projects/new">Create your first project</Link>
         </Button>
+        <Link
+          href="/app/onboarding"
+          className="mt-3 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          Or walk through onboarding →
+        </Link>
       </div>
     );
   }

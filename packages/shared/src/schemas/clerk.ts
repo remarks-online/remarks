@@ -20,6 +20,9 @@ const clerkOrgData = z.object({
   id: z.string(),
   name: z.string(),
   slug: z.string(),
+  // Present on `organization.created` webhooks (Clerk user id of the creator).
+  // Optional because `organization.updated` and historical events may omit it.
+  created_by: z.string().optional(),
 });
 
 const clerkOrgDeletedData = z.object({ id: z.string() });

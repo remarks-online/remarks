@@ -97,11 +97,25 @@ Repeat steps 2 and 3 against the prod Clerk instance:
 - Run the allowlist script with `CLERK_SECRET_KEY=sk_live_…`.
 - For Chrome Web Store distribution, **the extension ID changes** — the Web Store's signing key supersedes the `key` field in your manifest. After the first Web Store upload, note the assigned ID from the developer dashboard and re-run the allowlist script with that ID against the prod Clerk instance.
 
+## 6. Onboarding install detection (`externally_connectable`)
+
+Task 1.34's onboarding wizard pings the extension from the dashboard to auto-advance step 2 ("Install the Remarks extension"). Wiring lives in:
+
+- `apps/extension/wxt.config.ts` → `manifest.externally_connectable.matches: ["https://app.remarks.online/*", "http://localhost:3000/*"]`
+- `apps/extension/src/entrypoints/background.ts` → `chrome.runtime.onMessageExternal` handler responding to `{ kind: "ping" }` with `{ kind: "pong", version, signedIn }`. Origin re-checked inside the handler as defense in depth.
+- `apps/dashboard/src/lib/extension-detect.ts` → 1s-timeout wrapper around `chrome.runtime.sendMessage(<extensionId>, ...)`.
+- `apps/dashboard/src/env.ts` → `NEXT_PUBLIC_EXTENSION_ID` (defaults to the load-unpacked dev ID `baikikfefeheiildmfoaicbjbnbecgjd`).
+
+ADR 0014 captures the design decision and the alternatives considered.
+
+**Production handoff.** When the Chrome Web Store assigns a different ID after first upload, update `NEXT_PUBLIC_EXTENSION_ID` in Vercel Production *and* re-run the Clerk allowlist script (step 5 above) — both surfaces target the extension by ID.
+
 ## References
 
 - `tools/scripts/clerk-allowlist-extension.ts` — the script
-- `apps/extension/wxt.config.ts` — where `CRX_PUBLIC_KEY` and `host_permissions` live
+- `apps/extension/wxt.config.ts` — where `CRX_PUBLIC_KEY`, `host_permissions`, and `externally_connectable.matches` live
 - `apps/extension/src/entrypoints/popup/App.tsx` — the `ClerkProvider syncHost` wiring
+- `docs/adr/0014-extension-externally-connectable.md` — install-detection design decision
 - Clerk docs: [Sync auth status between your Chrome Extension and web app](https://clerk.com/docs/guides/sessions/sync-host)
 - Clerk docs: [Deploy a Chrome Extension to production](https://clerk.com/docs/guides/development/deployment/chrome-extension)
 - Clerk Backend API: [Instance Settings](https://clerk.com/docs/reference/backend-api/tag/Instance-Settings)

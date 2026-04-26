@@ -41,6 +41,13 @@ export default defineConfig({
       "https://app.remarks.online/*",
       "https://*.clerk.accounts.dev/*",
     ],
+    // Lets the dashboard origin call `chrome.runtime.sendMessage(<id>, ...)`
+    // to detect a successful install during onboarding (spec §7.5,
+    // ADR 0014). Scoped to the dashboard origins only — narrowest matches
+    // CLAUDE.md §12 ("minimum needed").
+    externally_connectable: {
+      matches: ["https://app.remarks.online/*", "http://localhost:3000/*"],
+    },
     action: {
       default_title: "Remarks",
     },
