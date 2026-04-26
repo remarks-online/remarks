@@ -66,6 +66,10 @@ jobs:
           R2_ACCESS_KEY_ID: minioadmin
           R2_SECRET_ACCESS_KEY: minioadmin
           R2_BUCKET_SCREENSHOTS: remarks-screenshots-test
+          # Throwaway value — the /internal/* integration test (task 2.5)
+          # constructs `x-internal-auth` from this same env, so any 32+ char
+          # string works as long as both sides see the same one.
+          INTERNAL_API_TOKEN: ci-internal-api-token-not-for-prod-32chars
 
       - run: pnpm turbo run build
         env:
@@ -130,6 +134,10 @@ jobs:
       R2_ACCESS_KEY_ID: ci_placeholder
       R2_SECRET_ACCESS_KEY: ci_placeholder
       R2_BUCKET_SCREENSHOTS: remarks-screenshots-test
+      # Required by env-schema (task 2.5) — none of the e2e specs hit
+      # /internal/*, but env.ts validates at module load when Playwright
+      # spins up the API webServer.
+      INTERNAL_API_TOKEN: ci-internal-api-token-not-for-prod-32chars
       # WXT bakes these into the extension bundle at build time. SYNC_HOST and
       # API_URL match the localhost ports the dashboard + api dev servers bind.
       WXT_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
