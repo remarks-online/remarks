@@ -1,8 +1,23 @@
 import { env } from "./env.js";
+import { buildServer } from "./server.js";
 
-console.log(
-  JSON.stringify({
-    msg: "mcp scaffold — Phase 2 implementation pending",
-    env: env.NODE_ENV,
-  })
-);
+const server = await buildServer();
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    server.log.info({ signal }, "shutdown signal received");
+    Promise.resolve(server.close())
+      .then(() => process.exit(0))
+      .catch((err) => {
+        server.log.error({ err }, "error during shutdown");
+        process.exit(1);
+      });
+  });
+}
+
+try {
+  await server.listen({ port: env.PORT, host: env.HOST });
+} catch (err) {
+  server.log.error({ err }, "failed to start server");
+  process.exit(1);
+}

@@ -1,0 +1,43 @@
+name: Deploy MCP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mcp/**"
+      - "packages/mcp-schema/**"
+      - "packages/shared/**"
+      - ".github/workflows/deploy-mcp.yml"
+
+concurrency:
+  group: deploy-mcp-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # No db:migrate step: the MCP server doesn't own schema; per Phase 2
+      # spec §5.4 it reaches Postgres only through apps/api over Fly's private
+      # network (wired in tasks 2.4/2.5).
+      #
+      # No check-fly-secrets step yet: the current envSchema only has
+      # NODE_ENV/PORT/HOST/LOG_LEVEL, all set in fly.toml [env]. Add the
+      # script + step in task 2.4 when API_INTERNAL_URL and any
+      # service-to-service token become required secrets.
+      - run: flyctl deploy --config apps/mcp/fly.toml --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
