@@ -62,6 +62,8 @@ flyctl secrets set \
 
 The `--stage` flag applies the secret on the next deploy instead of restarting immediately.
 
+**Production migrations.** Drizzle migrations are applied by `.github/workflows/deploy-api.yml`, gated **before** `flyctl deploy` — not by a Fly `release_command` and not at API boot (spec §9.4). The migrate step uses a separate GitHub Actions repository secret `PROD_DATABASE_URL` pointing at Neon's `main` branch **direct** (non-pooler) endpoint, because the Fly runtime `DATABASE_URL` is the pooled endpoint and pgbouncer can't run DDL. Set the secret once via GitHub UI (Settings → Secrets and variables → Actions) using the connection string from `neonctl connection-string main --project-id fragrant-mode-48800997` (no `--pooled`). One-off manual migration from a workstation: `DATABASE_URL='<prod direct url>' pnpm --filter @remarks/db db:migrate`.
+
 **Vercel Production.** `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` set to the `remarks-prod` live keys. Vercel CLI gotcha: `vercel env rm NAME preview` removes the variable record **across all environments** if one record covers multiple targets — use the REST API (`POST /v10/projects/{id}/env?upsert=true`) for per-target writes so you don't have to re-add Production after each rotation.
 
 ## How to rotate a secret

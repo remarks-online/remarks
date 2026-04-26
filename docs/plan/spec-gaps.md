@@ -283,3 +283,29 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: Independent. Bundled into task 1.29.
 - **Estimated size**: `xs`.
 - **Status**: `done in task 1.29`.
+
+## A13 — Production database schema is never applied; no migrate step in deploy pipeline
+
+| # | Done when | Complete |
+|---|---|---|
+| A13 | `deploy-api.yml` applies pending Drizzle migrations against the prod direct endpoint before `flyctl deploy`; current prod DB seeded; runbook documents the wiring | [ ] |
+
+- **Spec reference**: §9 (deployment); ADR 0004 (`docs/adr/0004-neon-postgres-and-drizzle.md`) says migrations "are applied with `drizzle-kit migrate`" but doesn't say where/when on prod.
+- **Problem**: Neon prod (`main` branch) has zero application tables — the four migrations in `packages/db/drizzle/` (`0000`–`0003`) have never been applied to it. Root cause: nothing in the path from `git push origin main` → running prod app ever invokes `db:migrate`. `apps/api/src/index.ts` doesn't call `migrate()` on boot (intentional, §9.4); `apps/api/fly.toml` has no `[deploy] release_command`; `.github/workflows/deploy-api.yml` runs only `check-fly-secrets` → `flyctl deploy`. The dashboard on Vercel and the API on Fly both connect to that empty DB and silently 500 on schema-dependent endpoints. Compounding wrinkle: the runtime `DATABASE_URL` Fly secret is Neon's pooled (pgbouncer) endpoint, which can't run DDL — migrations have to use the direct endpoint, so the migrator can't reuse the Fly secret as-is.
+- **Proposed deliverable**:
+  - Add a `pnpm --filter @remarks/db db:migrate` step to `.github/workflows/deploy-api.yml`, gated **before** `flyctl deploy`, with `DATABASE_URL` populated from a new GitHub Actions repo secret `PROD_DATABASE_URL` (Neon `main` direct endpoint).
+  - Add `PROD_DATABASE_URL` to the repo's GitHub Actions secrets pre-merge so the first run on `main` doesn't fail.
+  - One-time bootstrap of the current empty prod DB: from a workstation, `DATABASE_URL='<prod direct url>' pnpm --filter @remarks/db db:migrate` (or let the first post-merge workflow run do it).
+  - Document the wiring in `docs/runbooks/environments.md` under the "Production" section: where prod migrations run, which secret they use, and how to apply manually in an incident.
+  - Rejected alternatives: Fly `release_command` (would need migration files copied into the runtime image and a separate Fly secret for the direct URL — heavier for no benefit while all prod deploys go through Actions); auto-migrating from API boot (excluded by spec §9.4 and races with multi-machine deploys).
+- **Done when**:
+  - `.github/workflows/deploy-api.yml` runs `db:migrate` against `secrets.PROD_DATABASE_URL` ahead of `flyctl deploy`
+  - `PROD_DATABASE_URL` GitHub Actions secret is set to Neon `main` direct endpoint
+  - Current prod DB has all four migrations applied (`__drizzle_migrations` populated; `\dt` returns the application tables)
+  - `docs/runbooks/environments.md` documents the migrate-on-deploy wiring under the prod tier
+  - A subsequent deploy run shows the migrate step as "No migrations to apply" (idempotent)
+- **Conflicts / overlaps with spec**: None directly. §9 doesn't pin a migration trigger; ADR 0004 is silent on the production runner. Folding the trigger into the deploy workflow doesn't contradict either.
+- **Affected tasks / components**: `.github/workflows/deploy-api.yml`; `docs/runbooks/environments.md`; the prod Neon `main` branch state; indirectly every dashboard/API surface that 500s today against the empty schema.
+- **Dependencies**: Independent. Should be picked up immediately — Phase 1 prod is currently broken on any schema-dependent path.
+- **Estimated size**: `s`.
+- **Status**: `open`.
