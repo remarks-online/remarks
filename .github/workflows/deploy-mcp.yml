@@ -34,6 +34,13 @@ jobs:
       # spec §5.4 it reaches Postgres only through apps/api over Fly's private
       # network.
 
+      # The preflight imports env-check helpers from @remarks/shared, whose
+      # workspace package.json points "main" at dist/index.js. pnpm install
+      # doesn't compile workspace packages, so build it explicitly before the
+      # preflight runs (the Docker build below builds it again inside its
+      # own multistage; this is just for the host-side check).
+      - run: pnpm --filter @remarks/shared build
+
       # Preflight: fail fast if envSchema requires an env var that isn't
       # provided by fly.toml [env] or fly secrets. Prevents the class of
       # regression where a new required var ships to main but the
