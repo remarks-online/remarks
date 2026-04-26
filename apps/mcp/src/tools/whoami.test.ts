@@ -1,5 +1,6 @@
 import { whoamiOutputSchema } from "@remarks/mcp-schema";
 import { describe, expect, it, vi } from "vitest";
+import type { IdempotencyCache } from "../lib/idempotency.js";
 import { McpToolError } from "../lib/mcp-error.js";
 import type { AuthContext } from "../types/auth.js";
 import type { ApiClient } from "./types.js";
@@ -17,8 +18,14 @@ function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
     fetchAnnotation: vi.fn(),
+    updateAnnotationStatus: vi.fn(),
+    addAnnotationComment: vi.fn(),
     ...overrides,
   } as ApiClient;
+}
+
+function makeIdempotency(): IdempotencyCache {
+  return { check: vi.fn(), store: vi.fn() } as IdempotencyCache;
 }
 
 describe("whoamiHandler", () => {
@@ -29,7 +36,10 @@ describe("whoamiHandler", () => {
     });
     const api = makeApi({ fetchWhoami });
 
-    const result = await whoamiHandler({}, { auth: STUB_AUTH, api, requestId: "req_test" });
+    const result = await whoamiHandler(
+      {},
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+    );
 
     expect(fetchWhoami).toHaveBeenCalledWith(STUB_AUTH.tokenId);
     const parsed = whoamiOutputSchema.parse(result.structuredContent);
@@ -47,7 +57,10 @@ describe("whoamiHandler", () => {
   it("throws NOT_FOUND when api returns null", async () => {
     const api = makeApi({ fetchWhoami: vi.fn().mockResolvedValue(null) });
     await expect(
-      whoamiHandler({}, { auth: STUB_AUTH, api, requestId: "req_test" })
+      whoamiHandler(
+        {},
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+      )
     ).rejects.toBeInstanceOf(McpToolError);
   });
 });

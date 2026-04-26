@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type * as apiClient from "../lib/api-client.js";
+import type { IdempotencyCache } from "../lib/idempotency.js";
 import type { AuthContext } from "../types/auth.js";
 
 // Module-level api-client surface as a typed handle. Each tool reaches for
@@ -10,13 +11,18 @@ export interface ApiClient {
   fetchProjectContext: typeof apiClient.fetchProjectContext;
   fetchListAnnotations: typeof apiClient.fetchListAnnotations;
   fetchAnnotation: typeof apiClient.fetchAnnotation;
+  updateAnnotationStatus: typeof apiClient.updateAnnotationStatus;
+  addAnnotationComment: typeof apiClient.addAnnotationComment;
 }
 
 // Per-request context threaded into every tool handler. Built once in
-// routes/mcp.ts after the auth plugin populates `request.auth`.
+// routes/mcp.ts after the auth plugin populates `request.auth`. The
+// idempotency cache is shared (a Redis-backed instance) but treated as an
+// injectable so tests can pass an in-memory fake.
 export interface ToolHandlerContext {
   auth: AuthContext;
   api: ApiClient;
+  idempotency: IdempotencyCache;
   requestId: string;
 }
 

@@ -1,5 +1,6 @@
 import { listTasksOutputSchema } from "@remarks/mcp-schema";
 import { describe, expect, it, vi } from "vitest";
+import type { IdempotencyCache } from "../lib/idempotency.js";
 import { McpToolError } from "../lib/mcp-error.js";
 import type { AuthContext } from "../types/auth.js";
 import { listTasksHandler } from "./list-tasks.js";
@@ -20,8 +21,14 @@ function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
     fetchAnnotation: vi.fn(),
+    updateAnnotationStatus: vi.fn(),
+    addAnnotationComment: vi.fn(),
     ...overrides,
   } as ApiClient;
+}
+
+function makeIdempotency(): IdempotencyCache {
+  return { check: vi.fn(), store: vi.fn() } as IdempotencyCache;
 }
 
 const SAMPLE_ROW = {
@@ -63,7 +70,7 @@ describe("listTasksHandler", () => {
 
     const result = await listTasksHandler(
       { project_id: PROJECT_ID },
-      { auth: STUB_AUTH, api, requestId: "req_test" }
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
     );
 
     expect(fetchListAnnotations).toHaveBeenCalledWith(PROJECT_ID, {
@@ -101,7 +108,7 @@ describe("listTasksHandler", () => {
         limit: 5,
         cursor: "abc",
       },
-      { auth: STUB_AUTH, api, requestId: "req_test" }
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
     );
 
     expect(fetchListAnnotations).toHaveBeenCalledWith(PROJECT_ID, {
@@ -118,7 +125,7 @@ describe("listTasksHandler", () => {
 
     await listTasksHandler(
       { project_id: PROJECT_ID, status: [] },
-      { auth: STUB_AUTH, api, requestId: "req_test" }
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
     );
     const call = fetchListAnnotations.mock.calls[0];
     expect(call?.[1].statuses).toBeUndefined();
@@ -131,7 +138,7 @@ describe("listTasksHandler", () => {
     await expect(
       listTasksHandler(
         { project_id: "99999999-9999-4999-8999-999999999999" },
-        { auth: STUB_AUTH, api, requestId: "req_test" }
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
       )
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(fetchListAnnotations).not.toHaveBeenCalled();
@@ -145,6 +152,7 @@ describe("listTasksHandler", () => {
         {
           auth: STUB_AUTH,
           api,
+          idempotency: makeIdempotency(),
           requestId: "req_test",
         }
       )
@@ -159,6 +167,7 @@ describe("listTasksHandler", () => {
         {
           auth: STUB_AUTH,
           api,
+          idempotency: makeIdempotency(),
           requestId: "req_test",
         }
       )
@@ -179,7 +188,7 @@ describe("listTasksHandler", () => {
 
     const result = await listTasksHandler(
       { project_id: PROJECT_ID },
-      { auth: STUB_AUTH, api, requestId: "req_test" }
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
     );
     const parsed = listTasksOutputSchema.parse(result.structuredContent);
     const author = parsed.tasks[0]?.author;

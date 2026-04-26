@@ -1,4 +1,5 @@
 import { schema } from "@remarks/db";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -52,6 +53,26 @@ async function seedProjectAndUser(db: Db): Promise<{
   return { project, user, branch };
 }
 
+async function seedProjectToken(
+  db: Db,
+  args: { projectId: string; userId: string }
+): Promise<typeof schema.projectApiTokens.$inferSelect> {
+  const [row] = await db
+    .insert(schema.projectApiTokens)
+    .values({
+      projectId: args.projectId,
+      name: `agent-${rand()}`,
+      tokenHash: `hash_${rand()}_${rand()}`,
+      tokenPrefix: "rmk_live_xxx",
+      tokenLast4: "abcd",
+      scopes: ["tasks:read", "tasks:write", "project:read"],
+      createdById: args.userId,
+    })
+    .returning();
+  if (!row) throw new Error("seed: project_api_tokens insert returned no rows");
+  return row;
+}
+
 async function seedAnnotation(
   db: Db,
   args: {
@@ -62,6 +83,7 @@ async function seedAnnotation(
     targetSelector?: string | null;
     commentText?: string;
     createdAt?: Date;
+    status?: typeof schema.annotations.$inferSelect.status;
   }
 ): Promise<typeof schema.annotations.$inferSelect> {
   const [row] = await db
@@ -70,7 +92,7 @@ async function seedAnnotation(
       projectId: args.projectId,
       branchId: args.branchId,
       authorId: args.authorId,
-      status: "to_do",
+      status: args.status ?? "to_do",
       targetType: "element",
       url: args.url ?? "https://example.test/page",
       // Distinguish "caller passed null" (rectangle/route mode) from "caller
@@ -254,5 +276,350 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
     });
 
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("POST /internal/mcp/annotations/:annotationId/status (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  test("happy path: updates status, writes agent_updated_status event with correct actor fields", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        projectId: project.id,
+        tokenId: token.id,
+        status: "doing",
+        note: "starting work",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({ id: annotation.id, status: "doing" });
+    expect(typeof body.updatedAt).toBe("string");
+
+    const updated = await db.query.annotations.findFirst({
+      where: eq(schema.annotations.id, annotation.id),
+    });
+    expect(updated?.status).toBe("doing");
+
+    const events = await db.query.annotationEvents.findMany({
+      where: eq(schema.annotationEvents.annotationId, annotation.id),
+    });
+    const agentEvent = events.find((e) => e.type === "agent_updated_status");
+    expect(agentEvent).toBeDefined();
+    expect(agentEvent?.actorType).toBe("agent");
+    expect(agentEvent?.actorId).toBeNull();
+    expect(agentEvent?.actorTokenId).toBe(token.id);
+    expect(agentEvent?.payload).toEqual({ from: "to_do", to: "doing", note: "starting work" });
+  });
+
+  test("note omitted → payload has no note key", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: { projectId: project.id, tokenId: token.id, status: "done" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const events = await db.query.annotationEvents.findMany({
+      where: and(
+        eq(schema.annotationEvents.annotationId, annotation.id),
+        eq(schema.annotationEvents.type, "agent_updated_status")
+      ),
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.payload).toEqual({ from: "to_do", to: "done" });
+  });
+
+  test("no-op (same status) → 200 without writing a new event row", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+      status: "doing",
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: { projectId: project.id, tokenId: token.id, status: "doing" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const events = await db.query.annotationEvents.findMany({
+      where: and(
+        eq(schema.annotationEvents.annotationId, annotation.id),
+        eq(schema.annotationEvents.type, "agent_updated_status")
+      ),
+    });
+    expect(events).toHaveLength(0);
+  });
+
+  test("cross-project → 404 NOT_FOUND", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        projectId: "00000000-0000-0000-0000-000000000000",
+        tokenId: token.id,
+        status: "doing",
+      },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe("NOT_FOUND");
+  });
+
+  test("missing annotation → 404", async () => {
+    const db = await getIntegrationDb();
+    const { project, user } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/internal/mcp/annotations/00000000-0000-0000-0000-000000000000/status",
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: { projectId: project.id, tokenId: token.id, status: "doing" },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  test("missing x-internal-auth → 401", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      payload: { projectId: project.id, tokenId: token.id, status: "doing" },
+    });
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  test("invalid status (to_do) → 400 VALIDATION_ERROR", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: { projectId: project.id, tokenId: token.id, status: "to_do" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  test("happy path: writes agent_commented event with correct payload + actor fields", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/comments`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        projectId: project.id,
+        tokenId: token.id,
+        comment: "Need clarification on which shade of blue.",
+        kind: "clarification_request",
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(typeof body.eventId).toBe("string");
+    expect(typeof body.createdAt).toBe("string");
+
+    const event = await db.query.annotationEvents.findFirst({
+      where: eq(schema.annotationEvents.id, body.eventId),
+    });
+    expect(event?.type).toBe("agent_commented");
+    expect(event?.actorType).toBe("agent");
+    expect(event?.actorId).toBeNull();
+    expect(event?.actorTokenId).toBe(token.id);
+    expect(event?.payload).toEqual({
+      comment: "Need clarification on which shade of blue.",
+      kind: "clarification_request",
+    });
+  });
+
+  test("kind omitted → payload has only comment", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/comments`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: { projectId: project.id, tokenId: token.id, comment: "done" },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const event = await db.query.annotationEvents.findFirst({
+      where: eq(schema.annotationEvents.id, res.json().eventId),
+    });
+    expect(event?.payload).toEqual({ comment: "done" });
+  });
+
+  test("cross-project → 404", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/comments`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        projectId: "00000000-0000-0000-0000-000000000000",
+        tokenId: token.id,
+        comment: "x",
+      },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  test("missing x-internal-auth → 401", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/comments`,
+      payload: { projectId: project.id, tokenId: token.id, comment: "x" },
+    });
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  test("comment over MAX_COMMENT_LENGTH → 400", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectAndUser(db);
+    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/comments`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: { projectId: project.id, tokenId: token.id, comment: "x".repeat(5001) },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
   });
 });

@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ZodType } from "zod";
 import { McpToolError } from "../lib/mcp-error.js";
+import type { AuthContext } from "../types/auth.js";
 
 // Spec §3.2 list_tasks comment_preview: "first 120 chars". Same length is
 // reused for `related_tasks.comment_preview` in get_task — both are summaries
@@ -37,6 +38,15 @@ export function parseToolInput<T>(schema: ZodType<T>, args: unknown, context: st
     });
   }
   return result.data;
+}
+
+// Phase 2 spec §5.2: every Phase 2 token has all three scopes today. Enforcing
+// per-tool now means fine-grained scopes can ship later without touching
+// handlers — only the token-creation flow.
+export function requireScope(auth: AuthContext, scope: string, tool: string): void {
+  if (!auth.scopes.includes(scope)) {
+    throw new McpToolError("FORBIDDEN", `Tool ${tool} requires scope ${scope}`);
+  }
 }
 
 // Wrap a structured payload into the SDK's CallToolResult envelope. Modern
