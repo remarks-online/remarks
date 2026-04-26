@@ -127,6 +127,14 @@ describe("tRPC projects.list (integration)", () => {
       .where(eq(schema.projects.id, older.id));
     const newer = await insertProject(db, { orgId: org.id, name: "Newer", slug: "newer" });
 
+    // Make the caller a project admin on `newer`, leave `older` with no
+    // membership so we exercise the LEFT-JOIN myRole=null branch.
+    await db.insert(schema.projectMembers).values({
+      projectId: newer.id,
+      userId: user.id,
+      role: "admin",
+    });
+
     mockAuth({
       clerkUserId: user.clerkUserId,
       memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
@@ -149,7 +157,9 @@ describe("tRPC projects.list (integration)", () => {
       slug: "newer",
       primaryBranch: "main",
       gitRepoUrl: null,
+      myRole: "admin",
     });
+    expect(items[1].myRole).toBeNull();
   });
 
   test("member of org with zero projects → 200, empty list", async () => {
@@ -242,11 +252,16 @@ describe("tRPC projects.getBySlug (integration)", () => {
     await truncateAll();
   });
 
-  test("member of org → 200, returns project by slug", async () => {
+  test("member of org → 200, returns project by slug with myRole", async () => {
     const db = await getIntegrationDb();
     const org = await seedOrg(db, { clerkOrgId: "org_slug_happy" });
     const user = await seedUser(db, { clerkUserId: "user_slug_happy" });
     const project = await insertProject(db, { orgId: org.id, name: "Demo", slug: "demo" });
+    await db.insert(schema.projectMembers).values({
+      projectId: project.id,
+      userId: user.id,
+      role: "editor",
+    });
 
     mockAuth({
       clerkUserId: user.clerkUserId,
@@ -266,7 +281,29 @@ describe("tRPC projects.getBySlug (integration)", () => {
       name: "Demo",
       slug: "demo",
       primaryBranch: "main",
+      myRole: "editor",
     });
+  });
+
+  test("org member who isn't a project member → 200, myRole=null", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_slug_orgonly" });
+    const user = await seedUser(db, { clerkUserId: "user_slug_orgonly" });
+    await insertProject(db, { orgId: org.id, name: "Demo", slug: "orgonly" });
+
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: getBySlugUrl(org.clerkOrgId, "orgonly"),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data.myRole).toBeNull();
   });
 
   test("unknown slug in member's org → NOT_FOUND", async () => {
@@ -372,6 +409,8 @@ describe("tRPC projects.create (integration)", () => {
       slug: "acme-web",
       gitRepoUrl: null,
       primaryBranch: "main",
+      // Creator is always admin of the new project (A14).
+      myRole: "admin",
     });
     expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -488,5 +527,251 @@ describe("tRPC projects.create (integration)", () => {
 
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("UNAUTHORIZED");
+  });
+});
+
+interface SeededProjectMember {
+  org: typeof schema.organizations.$inferSelect;
+  user: typeof schema.users.$inferSelect;
+  project: typeof schema.projects.$inferSelect;
+}
+
+async function seedProjectMember(
+  db: Awaited<ReturnType<typeof getIntegrationDb>>,
+  args: { role: "admin" | "editor" | "viewer"; clerkSuffix: string }
+): Promise<SeededProjectMember> {
+  const org = await seedOrg(db, { clerkOrgId: `org_${args.clerkSuffix}` });
+  const user = await seedUser(db, { clerkUserId: `user_${args.clerkSuffix}` });
+  const project = await insertProject(db, {
+    orgId: org.id,
+    name: "Original",
+    slug: `slug-${args.clerkSuffix}`,
+  });
+  await db.insert(schema.projectMembers).values({
+    projectId: project.id,
+    userId: user.id,
+    role: args.role,
+  });
+  return { org, user, project };
+}
+
+describe("tRPC projects.update (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    await truncateAll();
+  });
+
+  test("project admin → 200, name and slug updated", async () => {
+    const db = await getIntegrationDb();
+    const { org, user, project } = await seedProjectMember(db, {
+      role: "admin",
+      clerkSuffix: "update_admin",
+    });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.update",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, input: { name: "Renamed", slug: "renamed" } },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json().result.data;
+    expect(body).toMatchObject({
+      id: project.id,
+      name: "Renamed",
+      slug: "renamed",
+      // Caller is admin (asserted by the procedure); response carries it (A14).
+      myRole: "admin",
+    });
+  });
+
+  test("project editor → FORBIDDEN", async () => {
+    const db = await getIntegrationDb();
+    const { org, user, project } = await seedProjectMember(db, {
+      role: "editor",
+      clerkSuffix: "update_editor",
+    });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.update",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, input: { name: "Renamed" } },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+  });
+
+  test("non-member → NOT_FOUND, project existence not leaked", async () => {
+    const db = await getIntegrationDb();
+    const { project } = await seedProjectMember(db, {
+      role: "admin",
+      clerkSuffix: "update_target",
+    });
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_update_outsider" });
+    const outsider = await seedUser(db, { clerkUserId: "user_update_outsider" });
+    mockAuth({
+      clerkUserId: outsider.clerkUserId,
+      memberships: [{ clerkOrgId: otherOrg.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.update",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, input: { name: "Sneaky" } },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.data.code).toBe("NOT_FOUND");
+  });
+
+  test("slug already taken → CONFLICT", async () => {
+    const db = await getIntegrationDb();
+    const { org, user, project } = await seedProjectMember(db, {
+      role: "admin",
+      clerkSuffix: "update_conflict",
+    });
+    await insertProject(db, { orgId: org.id, name: "Other", slug: "taken" });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.update",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, input: { slug: "taken" } },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.data.code).toBe("CONFLICT");
+  });
+});
+
+describe("tRPC projects.delete (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    await truncateAll();
+  });
+
+  test("project admin → 200, project row gone", async () => {
+    const db = await getIntegrationDb();
+    const { org, user, project } = await seedProjectMember(db, {
+      role: "admin",
+      clerkSuffix: "delete_admin",
+    });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.delete",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data).toEqual({ id: project.id });
+
+    const remaining = await db.query.projects.findMany({
+      where: eq(schema.projects.id, project.id),
+    });
+    expect(remaining).toHaveLength(0);
+  });
+
+  test("project editor → FORBIDDEN, project still present", async () => {
+    const db = await getIntegrationDb();
+    const { org, user, project } = await seedProjectMember(db, {
+      role: "editor",
+      clerkSuffix: "delete_editor",
+    });
+    mockAuth({
+      clerkUserId: user.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.delete",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+
+    const remaining = await db.query.projects.findMany({
+      where: eq(schema.projects.id, project.id),
+    });
+    expect(remaining).toHaveLength(1);
+  });
+
+  test("non-member → NOT_FOUND, project still present", async () => {
+    const db = await getIntegrationDb();
+    const { project } = await seedProjectMember(db, {
+      role: "admin",
+      clerkSuffix: "delete_target",
+    });
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_delete_outsider" });
+    const outsider = await seedUser(db, { clerkUserId: "user_delete_outsider" });
+    mockAuth({
+      clerkUserId: outsider.clerkUserId,
+      memberships: [{ clerkOrgId: otherOrg.clerkOrgId, role: "org:admin" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.delete",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.data.code).toBe("NOT_FOUND");
+
+    const remaining = await db.query.projects.findMany({
+      where: eq(schema.projects.id, project.id),
+    });
+    expect(remaining).toHaveLength(1);
   });
 });

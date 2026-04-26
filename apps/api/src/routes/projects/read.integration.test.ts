@@ -266,6 +266,7 @@ describe("GET /projects/:projectId (integration)", () => {
       slug: "detail",
       gitRepoUrl: "https://github.com/acme/detail",
       primaryBranch: "develop",
+      myRole: "viewer",
     });
   });
 

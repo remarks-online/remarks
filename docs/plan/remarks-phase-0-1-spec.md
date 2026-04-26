@@ -1776,7 +1776,7 @@ Each task is sized to fit in a single Claude Code session. Order matters — lat
 
 | # | Task | Done when |
 |---|---|---|
-| 1.32 | Settings page: delete project, rename project | All functional |
+| 1.32 ✓ | Settings page: delete project, rename project | All functional |
 | 1.33 | Email invitation flow (Clerk Orgs default UI is fine) | Teammate accepts invite and sees projects |
 | 1.34 | Onboarding: first-project wizard with "install extension" CTA | Walks new user through first annotation |
 | 1.35 | Marketing home page (static, one page, explains product, CTA to sign up) | Lives at `remarks.online` |

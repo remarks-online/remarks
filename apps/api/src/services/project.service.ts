@@ -4,8 +4,10 @@ import {
   type CreateProjectRequest,
   NotFoundError,
   type ProjectResponse,
+  type ProjectRole,
+  type UpdateProjectRequest,
 } from "@remarks/shared";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { isUniqueViolation } from "../lib/db-errors.js";
 
 export interface CreateProjectArgs {
@@ -14,7 +16,16 @@ export interface CreateProjectArgs {
   input: CreateProjectRequest;
 }
 
-function toProjectResponse(row: typeof schema.projects.$inferSelect): ProjectResponse {
+export interface UpdateProjectArgs {
+  projectId: string;
+  callerUserId: string;
+  input: UpdateProjectRequest;
+}
+
+function toProjectResponse(
+  row: typeof schema.projects.$inferSelect,
+  myRole: ProjectRole | null
+): ProjectResponse {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -22,6 +33,7 @@ function toProjectResponse(row: typeof schema.projects.$inferSelect): ProjectRes
     slug: row.slug,
     gitRepoUrl: row.gitRepoUrl,
     primaryBranch: row.primaryBranch,
+    myRole,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -66,11 +78,16 @@ export async function createProject(db: DB, args: CreateProjectArgs): Promise<Pr
       role: "admin",
     });
 
-    return toProjectResponse(inserted);
+    // Creator is always admin of the new project.
+    return toProjectResponse(inserted, "admin");
   });
 }
 
-export async function listProjectsByOrg(db: DB, clerkOrgId: string): Promise<ProjectResponse[]> {
+export async function listProjectsByOrg(
+  db: DB,
+  clerkOrgId: string,
+  callerUserId: string
+): Promise<ProjectResponse[]> {
   const org = await db.query.organizations.findFirst({
     where: eq(schema.organizations.clerkOrgId, clerkOrgId),
     columns: { id: true },
@@ -79,27 +96,112 @@ export async function listProjectsByOrg(db: DB, clerkOrgId: string): Promise<Pro
     throw new NotFoundError("Organization");
   }
 
-  const rows = await db.query.projects.findMany({
-    where: eq(schema.projects.orgId, org.id),
-    orderBy: (projects, { desc }) => [desc(projects.createdAt)],
-  });
-  return rows.map(toProjectResponse);
+  // LEFT JOIN project_members so org members who aren't yet on a project still
+  // see the project row with myRole=null. The callerUserId join condition keeps
+  // it to one row per project.
+  const rows = await db
+    .select({ project: schema.projects, role: schema.projectMembers.role })
+    .from(schema.projects)
+    .leftJoin(
+      schema.projectMembers,
+      and(
+        eq(schema.projectMembers.projectId, schema.projects.id),
+        eq(schema.projectMembers.userId, callerUserId)
+      )
+    )
+    .where(eq(schema.projects.orgId, org.id))
+    .orderBy(desc(schema.projects.createdAt));
+  return rows.map((r) => toProjectResponse(r.project, r.role));
 }
 
-export async function getProjectById(db: DB, projectId: string): Promise<ProjectResponse> {
-  const row = await db.query.projects.findFirst({
-    where: eq(schema.projects.id, projectId),
-  });
+export async function getProjectById(
+  db: DB,
+  projectId: string,
+  callerUserId: string
+): Promise<ProjectResponse> {
+  const [row] = await db
+    .select({ project: schema.projects, role: schema.projectMembers.role })
+    .from(schema.projects)
+    .leftJoin(
+      schema.projectMembers,
+      and(
+        eq(schema.projectMembers.projectId, schema.projects.id),
+        eq(schema.projectMembers.userId, callerUserId)
+      )
+    )
+    .where(eq(schema.projects.id, projectId))
+    .limit(1);
   if (!row) {
     throw new NotFoundError("Project");
   }
-  return toProjectResponse(row);
+  return toProjectResponse(row.project, row.role);
+}
+
+export async function updateProject(db: DB, args: UpdateProjectArgs): Promise<ProjectResponse> {
+  const { projectId, callerUserId, input } = args;
+
+  // Distinguish absent keys from explicit nulls so callers can clear gitRepoUrl
+  // by passing `null` while leaving other fields untouched.
+  const set: Partial<typeof schema.projects.$inferInsert> & { updatedAt: Date } = {
+    updatedAt: new Date(),
+  };
+  if (input.name !== undefined) set.name = input.name;
+  if (input.slug !== undefined) set.slug = input.slug;
+  if ("gitRepoUrl" in input) set.gitRepoUrl = input.gitRepoUrl ?? null;
+  if (input.primaryBranch !== undefined) set.primaryBranch = input.primaryBranch;
+
+  try {
+    const [row] = await db
+      .update(schema.projects)
+      .set(set)
+      .where(eq(schema.projects.id, projectId))
+      .returning();
+    if (!row) {
+      throw new NotFoundError("Project");
+    }
+    // Caller is asserted as admin upstream; we don't re-query project_members here.
+    return toProjectResponse(row, await fetchCallerRole(db, projectId, callerUserId));
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw new ConflictError("Project slug already exists in this organization");
+    }
+    throw err;
+  }
+}
+
+async function fetchCallerRole(
+  db: DB,
+  projectId: string,
+  callerUserId: string
+): Promise<ProjectRole | null> {
+  const row = await db.query.projectMembers.findFirst({
+    where: and(
+      eq(schema.projectMembers.projectId, projectId),
+      eq(schema.projectMembers.userId, callerUserId)
+    ),
+    columns: { role: true },
+  });
+  return row?.role ?? null;
+}
+
+export async function deleteProject(db: DB, projectId: string): Promise<void> {
+  // FK cascades on project_members, branches, annotations, annotation_assets,
+  // annotation_events, project_api_tokens handle children.
+  // TODO(phase-2 task 2.30): publish to Inngest for R2 object cleanup.
+  const deleted = await db
+    .delete(schema.projects)
+    .where(eq(schema.projects.id, projectId))
+    .returning({ id: schema.projects.id });
+  if (deleted.length === 0) {
+    throw new NotFoundError("Project");
+  }
 }
 
 export async function getProjectBySlug(
   db: DB,
   clerkOrgId: string,
-  slug: string
+  slug: string,
+  callerUserId: string
 ): Promise<ProjectResponse> {
   // Slugs are unique per-org (see projects_org_slug_idx). Resolving through the
   // clerk org id keeps the lookup scoped so cross-org slug collisions never leak.
@@ -110,11 +212,20 @@ export async function getProjectBySlug(
   if (!org) {
     throw new NotFoundError("Project");
   }
-  const row = await db.query.projects.findFirst({
-    where: and(eq(schema.projects.orgId, org.id), eq(schema.projects.slug, slug)),
-  });
+  const [row] = await db
+    .select({ project: schema.projects, role: schema.projectMembers.role })
+    .from(schema.projects)
+    .leftJoin(
+      schema.projectMembers,
+      and(
+        eq(schema.projectMembers.projectId, schema.projects.id),
+        eq(schema.projectMembers.userId, callerUserId)
+      )
+    )
+    .where(and(eq(schema.projects.orgId, org.id), eq(schema.projects.slug, slug)))
+    .limit(1);
   if (!row) {
     throw new NotFoundError("Project");
   }
-  return toProjectResponse(row);
+  return toProjectResponse(row.project, row.role);
 }
