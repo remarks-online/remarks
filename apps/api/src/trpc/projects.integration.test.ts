@@ -12,13 +12,25 @@ import {
 
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
+  // users.getOrganizationMembershipList → "what orgs is *this user* a member of?"
+  // Called by the auth plugin on every authenticated request.
   getOrganizationMembershipList: vi.fn(),
+  // organizations.getOrganizationMembershipList → "who are *this org's* members?"
+  // Called by createProject to fan out project_members rows to current members.
+  getOrgMembershipList: vi.fn(),
+  getUser: vi.fn(),
 }));
 
 vi.mock("@clerk/backend", () => ({
   verifyToken: mocks.verifyToken,
   createClerkClient: () => ({
-    users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
+    users: {
+      getOrganizationMembershipList: mocks.getOrganizationMembershipList,
+      getUser: mocks.getUser,
+    },
+    organizations: {
+      getOrganizationMembershipList: mocks.getOrgMembershipList,
+    },
   }),
 }));
 
@@ -128,7 +140,9 @@ describe("tRPC projects.list (integration)", () => {
     const newer = await insertProject(db, { orgId: org.id, name: "Newer", slug: "newer" });
 
     // Make the caller a project admin on `newer`, leave `older` with no
-    // membership so we exercise the LEFT-JOIN myRole=null branch.
+    // explicit membership. Pre-1.33, the LEFT JOIN produced myRole=null on
+    // `older`. Post-1.33, the auth-plugin backstop fans out an `editor` row
+    // before the procedure runs, so org members are always project members.
     await db.insert(schema.projectMembers).values({
       projectId: newer.id,
       userId: user.id,
@@ -159,7 +173,9 @@ describe("tRPC projects.list (integration)", () => {
       gitRepoUrl: null,
       myRole: "admin",
     });
-    expect(items[1].myRole).toBeNull();
+    // ON CONFLICT DO NOTHING preserves the explicit admin row above; the
+    // backstop only mints the missing `older` membership as editor.
+    expect(items[1].myRole).toBe("editor");
   });
 
   test("member of org with zero projects → 200, empty list", async () => {
@@ -285,7 +301,10 @@ describe("tRPC projects.getBySlug (integration)", () => {
     });
   });
 
-  test("org member who isn't a project member → 200, myRole=null", async () => {
+  test("org member with no explicit project_members row → 200, backstop mints editor", async () => {
+    // Pre-1.33 this returned myRole=null via LEFT JOIN; post-1.33 the auth
+    // plugin's project_members backstop fans out an editor row on the first
+    // authenticated request so invited teammates can see annotations.
     const db = await getIntegrationDb();
     const org = await seedOrg(db, { clerkOrgId: "org_slug_orgonly" });
     const user = await seedUser(db, { clerkUserId: "user_slug_orgonly" });
@@ -303,7 +322,7 @@ describe("tRPC projects.getBySlug (integration)", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().result.data.myRole).toBeNull();
+    expect(res.json().result.data.myRole).toBe("editor");
   });
 
   test("unknown slug in member's org → NOT_FOUND", async () => {
@@ -383,6 +402,10 @@ describe("tRPC projects.create (integration)", () => {
 
   beforeEach(async () => {
     for (const fn of Object.values(mocks)) fn.mockReset();
+    // Default: fan-out finds no other members, so the creator's `admin` row is
+    // the only project_members write. Tests that want to exercise the fan-out
+    // override with their own clerkUserId list.
+    mocks.getOrgMembershipList.mockResolvedValue({ data: [] });
     await truncateAll();
   });
 
@@ -527,6 +550,49 @@ describe("tRPC projects.create (integration)", () => {
 
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("UNAUTHORIZED");
+  });
+
+  // Covers task 1.33: when a project is created in an org that already has
+  // teammates, every current Clerk org member ends up in project_members so
+  // the new project is immediately visible (and editable) to them — not just
+  // on their next webhook-driven sync.
+  test("fans out editor rows to all other current Clerk org members", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_create_fanout" });
+    const creator = await seedUser(db, { clerkUserId: "user_fanout_creator" });
+    const teammate = await seedUser(db, { clerkUserId: "user_fanout_teammate" });
+
+    // Creator is the auth caller; teammate is an existing org member who
+    // didn't initiate the create. Clerk's org membership list returns both,
+    // and createProject's fan-out skips the creator (admin row wins) and
+    // inserts an `editor` row for the teammate.
+    mockAuth({
+      clerkUserId: creator.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+    mocks.getOrgMembershipList.mockReset();
+    mocks.getOrgMembershipList.mockResolvedValueOnce({
+      data: [
+        { publicUserData: { userId: creator.clerkUserId } },
+        { publicUserData: { userId: teammate.clerkUserId } },
+      ],
+    });
+
+    const res = await invokeCreate(
+      server,
+      { orgId: org.clerkOrgId, input: { name: "Shared", slug: "shared" } },
+      true
+    );
+    expect(res.statusCode).toBe(200);
+    const projectId = res.json().result.data.id as string;
+
+    const rows = await db.query.projectMembers.findMany({
+      where: eq(schema.projectMembers.projectId, projectId),
+    });
+    const byUserId = new Map(rows.map((r) => [r.userId, r.role]));
+    expect(byUserId.get(creator.id)).toBe("admin");
+    expect(byUserId.get(teammate.id)).toBe("editor");
+    expect(byUserId.size).toBe(2);
   });
 });
 

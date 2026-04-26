@@ -13,12 +13,23 @@ import {
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
   getOrganizationMembershipList: vi.fn(),
+  // organizations.getOrganizationMembershipList feeds createProject's
+  // fan-out (task 1.33). Default empty so single-member create tests still
+  // exercise only the creator's `admin` row.
+  getOrgMembershipList: vi.fn(async () => ({ data: [] })),
+  getUser: vi.fn(),
 }));
 
 vi.mock("@clerk/backend", () => ({
   verifyToken: mocks.verifyToken,
   createClerkClient: () => ({
-    users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
+    users: {
+      getOrganizationMembershipList: mocks.getOrganizationMembershipList,
+      getUser: mocks.getUser,
+    },
+    organizations: {
+      getOrganizationMembershipList: mocks.getOrgMembershipList,
+    },
   }),
 }));
 
@@ -55,6 +66,8 @@ describe("POST /orgs/:orgId/projects (integration)", () => {
 
   beforeEach(async () => {
     for (const fn of Object.values(mocks)) fn.mockReset();
+    // Re-establish the "no other org members to fan out to" default each test.
+    mocks.getOrgMembershipList.mockResolvedValue({ data: [] });
     await truncateAll();
   });
 

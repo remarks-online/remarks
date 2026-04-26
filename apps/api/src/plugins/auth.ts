@@ -1,4 +1,4 @@
-import { type ClerkClient, createClerkClient, verifyToken } from "@clerk/backend";
+import { verifyToken } from "@clerk/backend";
 import { schema } from "@remarks/db";
 import { UnauthorizedError } from "@remarks/shared";
 import { and, eq, isNull } from "drizzle-orm";
@@ -7,6 +7,7 @@ import fp from "fastify-plugin";
 import { env } from "../env.js";
 import {
   provisionOrgsFromMemberships,
+  provisionProjectMembersFromOrgMemberships,
   provisionUserFromClerk,
 } from "../services/clerk-sync.service.js";
 
@@ -23,14 +24,10 @@ declare module "fastify" {
   }
 }
 
-export interface AuthPluginOptions {
-  clerk?: ClerkClient;
-}
-
 const BEARER_PREFIX = "Bearer ";
 
-const authPlugin: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opts) => {
-  const clerk = opts.clerk ?? createClerkClient({ secretKey: env.CLERK_SECRET_KEY });
+const authPlugin: FastifyPluginAsync = async (fastify) => {
+  const clerk = fastify.clerk;
 
   // Pre-declare the `auth` property so Fastify preserves V8's hidden class
   // across requests. The actual value is assigned by the onRequest hook below.
@@ -84,6 +81,13 @@ const authPlugin: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opts) 
         clerkOrgId: m.organization.id,
         role: m.role,
       }));
+      // Sibling backstop for organizationMembership.* webhooks: ensures the
+      // caller has a project_members row on every project in their orgs so
+      // assertProjectMember-gated procedures (annotations.list/get/update,
+      // upload presigning, project edit) succeed for invited teammates the
+      // moment they sign in. Idempotent NOT EXISTS anti-join — no inserts
+      // fire on warm requests where membership is already in sync.
+      await provisionProjectMembersFromOrgMemberships(fastify.db, userRow.id, memberships);
     } catch (err) {
       request.log.error({ err }, "failed to fetch clerk org memberships");
       throw new UnauthorizedError("Failed to load org memberships");

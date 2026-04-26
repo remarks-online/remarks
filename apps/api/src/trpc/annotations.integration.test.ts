@@ -257,6 +257,43 @@ describe("tRPC annotations.list (integration)", () => {
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("UNAUTHORIZED");
   });
+
+  // Covers the §15 exit criterion path for task 1.33: an invited teammate is
+  // a Clerk org member but has no project_members row (Clerk webhook hasn't
+  // landed locally yet, e.g. dev without ngrok). The auth-plugin backstop
+  // mints `editor` rows on first authenticated request, after which
+  // annotations.list — which routes through assertProjectMember — succeeds.
+  test("invited org member with no project_members row → 200 after auth backstop", async () => {
+    const db = await getIntegrationDb();
+    const { orgClerkId, userId, projectId } = await seedProjectWithMember({ role: "admin" });
+    await seedAnnotationOnProject(projectId, userId);
+
+    const invitee = await seedUser(db, { clerkUserId: "user_invited_teammate" });
+    // Sanity: the invitee starts with no project_members row anywhere.
+    const before = await db.query.projectMembers.findMany({
+      where: (pm, { eq }) => eq(pm.userId, invitee.id),
+    });
+    expect(before).toHaveLength(0);
+
+    mockAuth({
+      clerkUserId: invitee.clerkUserId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "GET",
+      url: listUrl({ projectId, limit: 50 }),
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data.items).toHaveLength(1);
+
+    // Backstop wrote the missing row as editor (matches sync-service default).
+    const after = await db.query.projectMembers.findFirst({
+      where: (pm, { and, eq }) => and(eq(pm.userId, invitee.id), eq(pm.projectId, projectId)),
+    });
+    expect(after?.role).toBe("editor");
+  });
 });
 
 async function seedAnnotationOnProject(

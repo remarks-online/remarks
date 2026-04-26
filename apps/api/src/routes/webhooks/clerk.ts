@@ -4,7 +4,9 @@ import { Webhook } from "svix";
 import { env } from "../../env.js";
 import {
   deleteOrg,
+  removeProjectMembersForOrgMember,
   softDeleteUser,
+  syncProjectMembersForOrgMember,
   upsertOrg,
   upsertUser,
 } from "../../services/clerk-sync.service.js";
@@ -59,6 +61,22 @@ export const clerkWebhookRoutes: FastifyPluginAsync = async (fastify) => {
         break;
       case "organization.deleted":
         await deleteOrg(fastify.db, event.data.id);
+        break;
+      case "organizationMembership.created":
+      case "organizationMembership.updated":
+        await syncProjectMembersForOrgMember(
+          fastify.db,
+          event.data.organization.id,
+          event.data.public_user_data.user_id,
+          { clerk: fastify.clerk }
+        );
+        break;
+      case "organizationMembership.deleted":
+        await removeProjectMembersForOrgMember(
+          fastify.db,
+          event.data.organization.id,
+          event.data.public_user_data.user_id
+        );
         break;
     }
 

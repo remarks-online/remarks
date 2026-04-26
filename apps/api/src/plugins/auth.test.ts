@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
   provisionUserFromClerk: vi.fn(),
   provisionOrgsFromMemberships: vi.fn(),
+  provisionProjectMembersFromOrgMemberships: vi.fn(),
 }));
 
 vi.mock("@clerk/backend", () => ({
@@ -25,6 +26,7 @@ vi.mock("@clerk/backend", () => ({
 vi.mock("../services/clerk-sync.service.js", () => ({
   provisionUserFromClerk: mocks.provisionUserFromClerk,
   provisionOrgsFromMemberships: mocks.provisionOrgsFromMemberships,
+  provisionProjectMembersFromOrgMemberships: mocks.provisionProjectMembersFromOrgMemberships,
 }));
 
 const { default: authPlugin } = await import("./auth.js");
@@ -66,9 +68,10 @@ const fakeClerk = {
 } as unknown as ClerkClient;
 
 async function registerAuthedScope(server: FastifyInstance): Promise<void> {
+  server.decorate("clerk", fakeClerk);
   server.get("/_public", async () => ({ ok: true }));
   await server.register(async (authed) => {
-    await authed.register(authPlugin, { clerk: fakeClerk });
+    await authed.register(authPlugin);
     authed.get("/_protected", async (req) => ({ auth: req.auth }));
   });
 }

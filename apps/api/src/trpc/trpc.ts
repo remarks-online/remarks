@@ -1,3 +1,4 @@
+import type { ClerkClient } from "@clerk/backend";
 import type { DB } from "@remarks/db";
 import { RemarksError, UnauthorizedError, ValidationError } from "@remarks/shared";
 import { TRPCError, initTRPC } from "@trpc/server";
@@ -25,6 +26,7 @@ export interface Context {
   orgMemberships: OrgMembership[];
   db: DB;
   r2: R2Client;
+  clerk: ClerkClient;
   requestId: string;
 }
 

@@ -3,6 +3,8 @@ import { type DB, schema } from "@remarks/db";
 import type { ClerkOrgData, ClerkUserData } from "@remarks/shared";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
+import type { OrgMembership } from "../trpc/trpc.js";
+
 function pickEmail(data: ClerkUserData): string | null {
   const primary = data.email_addresses.find((e) => e.id === data.primary_email_address_id);
   return primary?.email_address ?? data.email_addresses[0]?.email_address ?? null;
@@ -131,4 +133,137 @@ export async function provisionOrgsFromMemberships(
       slug: m.organization.slug,
     });
   }
+}
+
+// Resolves the local user.id for a Clerk user id, optionally provisioning a
+// missing row from Clerk. Used by the membership-sync helpers below.
+async function resolveLocalUserId(
+  db: DB,
+  clerkUserId: string,
+  opts: { clerk?: ClerkClient } = {}
+): Promise<string | null> {
+  const existing = await db.query.users.findFirst({
+    where: and(eq(schema.users.clerkUserId, clerkUserId), isNull(schema.users.deletedAt)),
+    columns: { id: true },
+  });
+  if (existing) return existing.id;
+  if (!opts.clerk) return null;
+  const provisioned = await provisionUserFromClerk(db, opts.clerk, clerkUserId);
+  return provisioned?.id ?? null;
+}
+
+// Adds (or no-ops) an `editor` project_members row for `clerkUserId` on every
+// existing project in `clerkOrgId`. Idempotent: ON CONFLICT preserves any
+// existing role (e.g. the project creator's `admin`). If the local org or
+// user row doesn't exist yet, this is a no-op — the auth-plugin backstop will
+// re-run the same fan-out on the user's next authenticated request once
+// upstream webhooks have caught up.
+export async function syncProjectMembersForOrgMember(
+  db: DB,
+  clerkOrgId: string,
+  clerkUserId: string,
+  opts: { clerk?: ClerkClient } = {}
+): Promise<void> {
+  const org = await db.query.organizations.findFirst({
+    where: eq(schema.organizations.clerkOrgId, clerkOrgId),
+    columns: { id: true },
+  });
+  if (!org) return;
+  const userId = await resolveLocalUserId(db, clerkUserId, opts);
+  if (!userId) return;
+
+  const projects = await db.query.projects.findMany({
+    where: eq(schema.projects.orgId, org.id),
+    columns: { id: true },
+  });
+  if (projects.length === 0) return;
+
+  await db
+    .insert(schema.projectMembers)
+    .values(
+      projects.map((p) => ({
+        projectId: p.id,
+        userId,
+        role: "editor" as const,
+      }))
+    )
+    .onConflictDoNothing();
+}
+
+// Removes all project_members rows for the user across every project in the
+// given Clerk org. Idempotent.
+export async function removeProjectMembersForOrgMember(
+  db: DB,
+  clerkOrgId: string,
+  clerkUserId: string
+): Promise<void> {
+  const org = await db.query.organizations.findFirst({
+    where: eq(schema.organizations.clerkOrgId, clerkOrgId),
+    columns: { id: true },
+  });
+  if (!org) return;
+  const userId = await resolveLocalUserId(db, clerkUserId);
+  if (!userId) return;
+
+  const projects = await db.query.projects.findMany({
+    where: eq(schema.projects.orgId, org.id),
+    columns: { id: true },
+  });
+  if (projects.length === 0) return;
+
+  await db.delete(schema.projectMembers).where(
+    and(
+      eq(schema.projectMembers.userId, userId),
+      inArray(
+        schema.projectMembers.projectId,
+        projects.map((p) => p.id)
+      )
+    )
+  );
+}
+
+// Auth-plugin backstop: ensures the caller has a project_members row on every
+// project in their Clerk-confirmed orgs. Two queries per request: a SELECT
+// that finds projects where the user has no membership yet, and (only if any
+// were found) one batch INSERT. Warm requests where state is already in sync
+// pay only the SELECT. Webhook-driven sync is the primary path; this catches
+// webhook lag and the "local dev runs without ngrok" case (docs/runbooks/setup.md).
+export async function provisionProjectMembersFromOrgMemberships(
+  db: DB,
+  userId: string,
+  memberships: ReadonlyArray<Pick<OrgMembership, "clerkOrgId">>
+): Promise<void> {
+  if (memberships.length === 0) return;
+  const clerkOrgIds = memberships.map((m) => m.clerkOrgId);
+
+  const missing = await db
+    .select({ projectId: schema.projects.id })
+    .from(schema.projects)
+    .innerJoin(schema.organizations, eq(schema.organizations.id, schema.projects.orgId))
+    .leftJoin(
+      schema.projectMembers,
+      and(
+        eq(schema.projectMembers.projectId, schema.projects.id),
+        eq(schema.projectMembers.userId, userId)
+      )
+    )
+    .where(
+      and(
+        inArray(schema.organizations.clerkOrgId, clerkOrgIds),
+        isNull(schema.projectMembers.userId)
+      )
+    );
+
+  if (missing.length === 0) return;
+
+  await db
+    .insert(schema.projectMembers)
+    .values(
+      missing.map((m) => ({
+        projectId: m.projectId,
+        userId,
+        role: "editor" as const,
+      }))
+    )
+    .onConflictDoNothing();
 }
