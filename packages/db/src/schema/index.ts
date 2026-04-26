@@ -4,7 +4,6 @@ export * from "./annotation-events.js";
 export * from "./annotations.js";
 export * from "./branches.js";
 export * from "./organizations.js";
-export * from "./project-api-tokens.js";
 export * from "./project-members.js";
 export * from "./projects.js";
 export * from "./users.js";

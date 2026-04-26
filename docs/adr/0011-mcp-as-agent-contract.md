@@ -1,7 +1,7 @@
 # 0011. MCP as the agent contract
 
 Date: 2026-04-21
-Status: Accepted
+Status: Accepted (auth model superseded by [ADR-0015](./0015-mcp-oauth-via-clerk.md) on 2026-04-26)
 
 ## Context
 

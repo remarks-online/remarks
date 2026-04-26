@@ -21,6 +21,7 @@ vi.mock("@clerk/backend", () => ({
 const { buildServer } = await import("../../server.js");
 
 const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN as string;
+const OAUTH_CLIENT_NAME = "Claude Code";
 
 type Db = Awaited<ReturnType<typeof getIntegrationDb>>;
 
@@ -28,7 +29,11 @@ function rand(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-async function seedProjectAndUser(db: Db): Promise<{
+// Phase 2 ADR-0015: agents authenticate via Clerk OAuth and authorization is
+// per-call against project_members. Tests seed a member-of-project user, then
+// pass clerkUserId + oauthClientName on every internal request — same shape
+// the MCP server's auth plugin produces after JWT verification.
+async function seedProjectMember(db: Db): Promise<{
   project: typeof schema.projects.$inferSelect;
   user: typeof schema.users.$inferSelect;
   branch: typeof schema.branches.$inferSelect;
@@ -50,27 +55,10 @@ async function seedProjectAndUser(db: Db): Promise<{
     .values({ projectId: project.id, name: "main" })
     .returning();
   if (!branch) throw new Error("seed: branch insert returned no rows");
+  await db
+    .insert(schema.projectMembers)
+    .values({ projectId: project.id, userId: user.id, role: "editor" });
   return { project, user, branch };
-}
-
-async function seedProjectToken(
-  db: Db,
-  args: { projectId: string; userId: string }
-): Promise<typeof schema.projectApiTokens.$inferSelect> {
-  const [row] = await db
-    .insert(schema.projectApiTokens)
-    .values({
-      projectId: args.projectId,
-      name: `agent-${rand()}`,
-      tokenHash: `hash_${rand()}_${rand()}`,
-      tokenPrefix: "rmk_live_xxx",
-      tokenLast4: "abcd",
-      scopes: ["tasks:read", "tasks:write", "project:read"],
-      createdById: args.userId,
-    })
-    .returning();
-  if (!row) throw new Error("seed: project_api_tokens insert returned no rows");
-  return row;
 }
 
 async function seedAnnotation(
@@ -95,8 +83,6 @@ async function seedAnnotation(
       status: args.status ?? "to_do",
       targetType: "element",
       url: args.url ?? "https://example.test/page",
-      // Distinguish "caller passed null" (rectangle/route mode) from "caller
-      // omitted the key" (default to a stable selector for element-mode tests).
       targetSelector: args.targetSelector === undefined ? "button.primary" : args.targetSelector,
       targetCoords: null,
       viewport: { width: 1280, height: 720, dpr: 1 },
@@ -130,7 +116,7 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
 
   test("returns annotation + URL- and selector-related tasks ordered by createdAt ASC", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
+    const { project, user, branch } = await seedProjectMember(db);
 
     const target = await seedAnnotation(db, {
       projectId: project.id,
@@ -169,7 +155,7 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
 
     const res = await server.inject({
       method: "GET",
-      url: `/internal/mcp/annotations/${target.id}?projectId=${project.id}`,
+      url: `/internal/mcp/annotations/${target.id}?clerkUserId=${encodeURIComponent(user.clerkUserId)}`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
     });
 
@@ -183,23 +169,24 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
     expect(relatedIds).toContain(sameSelector.id);
     expect(relatedIds).not.toContain(unrelated.id);
     expect(relatedIds).not.toContain(target.id);
-    // Ordered by createdAt ASC
     expect(relatedIds.indexOf(sameUrl.id)).toBeLessThan(relatedIds.indexOf(sameSelector.id));
   });
 
-  test("cross-project access → 404 NOT_FOUND", async () => {
+  test("non-member user → 404 NOT_FOUND (existence not leaked)", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
       authorId: user.id,
     });
 
-    // Use a different (random) project id in the query string.
+    // Different user, no membership in this project.
+    const outsider = await seedUser(db);
+
     const res = await server.inject({
       method: "GET",
-      url: `/internal/mcp/annotations/${annotation.id}?projectId=00000000-0000-0000-0000-000000000000`,
+      url: `/internal/mcp/annotations/${annotation.id}?clerkUserId=${encodeURIComponent(outsider.clerkUserId)}`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
     });
 
@@ -209,11 +196,11 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
 
   test("missing annotation → 404 NOT_FOUND", async () => {
     const db = await getIntegrationDb();
-    const { project } = await seedProjectAndUser(db);
+    const { user } = await seedProjectMember(db);
 
     const res = await server.inject({
       method: "GET",
-      url: `/internal/mcp/annotations/00000000-0000-0000-0000-000000000000?projectId=${project.id}`,
+      url: `/internal/mcp/annotations/00000000-0000-0000-0000-000000000000?clerkUserId=${encodeURIComponent(user.clerkUserId)}`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
     });
 
@@ -223,7 +210,7 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
 
   test("rectangle annotation (null selector) only matches by URL", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
+    const { project, user, branch } = await seedProjectMember(db);
 
     const target = await seedAnnotation(db, {
       projectId: project.id,
@@ -239,8 +226,6 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
       url: "https://example.test/page",
       targetSelector: "button.x",
     });
-    // Another null-selector on a different URL — must NOT match (we'd otherwise
-    // pull every selector-less annotation on the project).
     const otherNull = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -251,7 +236,7 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
 
     const res = await server.inject({
       method: "GET",
-      url: `/internal/mcp/annotations/${target.id}?projectId=${project.id}`,
+      url: `/internal/mcp/annotations/${target.id}?clerkUserId=${encodeURIComponent(user.clerkUserId)}`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
     });
 
@@ -263,7 +248,7 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
 
   test("missing x-internal-auth → 401", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -272,7 +257,7 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
 
     const res = await server.inject({
       method: "GET",
-      url: `/internal/mcp/annotations/${annotation.id}?projectId=${project.id}`,
+      url: `/internal/mcp/annotations/${annotation.id}?clerkUserId=${encodeURIComponent(user.clerkUserId)}`,
     });
 
     expect(res.statusCode).toBe(401);
@@ -299,8 +284,7 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
 
   test("happy path: updates status, writes agent_updated_status event with correct actor fields", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -312,8 +296,8 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
       url: `/internal/mcp/annotations/${annotation.id}/status`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
       payload: {
-        projectId: project.id,
-        tokenId: token.id,
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
         status: "doing",
         note: "starting work",
       },
@@ -335,15 +319,16 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
     const agentEvent = events.find((e) => e.type === "agent_updated_status");
     expect(agentEvent).toBeDefined();
     expect(agentEvent?.actorType).toBe("agent");
-    expect(agentEvent?.actorId).toBeNull();
-    expect(agentEvent?.actorTokenId).toBe(token.id);
+    // ADR-0015: actor_id is the Clerk user, actor_oauth_client_id is the
+    // OAuth client name from DCR.
+    expect(agentEvent?.actorId).toBe(user.id);
+    expect(agentEvent?.actorOauthClientId).toBe(OAUTH_CLIENT_NAME);
     expect(agentEvent?.payload).toEqual({ from: "to_do", to: "doing", note: "starting work" });
   });
 
   test("note omitted → payload has no note key", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -354,7 +339,11 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
       method: "POST",
       url: `/internal/mcp/annotations/${annotation.id}/status`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
-      payload: { projectId: project.id, tokenId: token.id, status: "done" },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "done",
+      },
     });
 
     expect(res.statusCode).toBe(200);
@@ -370,8 +359,7 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
 
   test("no-op (same status) → 200 without writing a new event row", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -383,7 +371,11 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
       method: "POST",
       url: `/internal/mcp/annotations/${annotation.id}/status`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
-      payload: { projectId: project.id, tokenId: token.id, status: "doing" },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "doing",
+      },
     });
 
     expect(res.statusCode).toBe(200);
@@ -396,10 +388,74 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
     expect(events).toHaveLength(0);
   });
 
-  test("cross-project → 404 NOT_FOUND", async () => {
+  test("non-member user → 404 NOT_FOUND", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+    const outsider = await seedUser(db);
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        clerkUserId: outsider.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "doing",
+      },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe("NOT_FOUND");
+  });
+
+  test("missing annotation → 404", async () => {
+    const db = await getIntegrationDb();
+    const { user } = await seedProjectMember(db);
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/internal/mcp/annotations/00000000-0000-0000-0000-000000000000/status",
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "doing",
+      },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  test("missing x-internal-auth → 401", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "doing",
+      },
+    });
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  test("invalid status (to_do) → 400 VALIDATION_ERROR", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -411,65 +467,10 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
       url: `/internal/mcp/annotations/${annotation.id}/status`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
       payload: {
-        projectId: "00000000-0000-0000-0000-000000000000",
-        tokenId: token.id,
-        status: "doing",
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "to_do",
       },
-    });
-
-    expect(res.statusCode).toBe(404);
-    expect(res.json().error.code).toBe("NOT_FOUND");
-  });
-
-  test("missing annotation → 404", async () => {
-    const db = await getIntegrationDb();
-    const { project, user } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
-
-    const res = await server.inject({
-      method: "POST",
-      url: "/internal/mcp/annotations/00000000-0000-0000-0000-000000000000/status",
-      headers: { "x-internal-auth": INTERNAL_TOKEN },
-      payload: { projectId: project.id, tokenId: token.id, status: "doing" },
-    });
-
-    expect(res.statusCode).toBe(404);
-  });
-
-  test("missing x-internal-auth → 401", async () => {
-    const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
-    const annotation = await seedAnnotation(db, {
-      projectId: project.id,
-      branchId: branch.id,
-      authorId: user.id,
-    });
-
-    const res = await server.inject({
-      method: "POST",
-      url: `/internal/mcp/annotations/${annotation.id}/status`,
-      payload: { projectId: project.id, tokenId: token.id, status: "doing" },
-    });
-
-    expect(res.statusCode).toBe(401);
-  });
-
-  test("invalid status (to_do) → 400 VALIDATION_ERROR", async () => {
-    const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
-    const annotation = await seedAnnotation(db, {
-      projectId: project.id,
-      branchId: branch.id,
-      authorId: user.id,
-    });
-
-    const res = await server.inject({
-      method: "POST",
-      url: `/internal/mcp/annotations/${annotation.id}/status`,
-      headers: { "x-internal-auth": INTERNAL_TOKEN },
-      payload: { projectId: project.id, tokenId: token.id, status: "to_do" },
     });
 
     expect(res.statusCode).toBe(400);
@@ -497,8 +498,7 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
 
   test("happy path: writes agent_commented event with correct payload + actor fields", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -510,8 +510,8 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
       url: `/internal/mcp/annotations/${annotation.id}/comments`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
       payload: {
-        projectId: project.id,
-        tokenId: token.id,
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
         comment: "Need clarification on which shade of blue.",
         kind: "clarification_request",
       },
@@ -527,8 +527,8 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
     });
     expect(event?.type).toBe("agent_commented");
     expect(event?.actorType).toBe("agent");
-    expect(event?.actorId).toBeNull();
-    expect(event?.actorTokenId).toBe(token.id);
+    expect(event?.actorId).toBe(user.id);
+    expect(event?.actorOauthClientId).toBe(OAUTH_CLIENT_NAME);
     expect(event?.payload).toEqual({
       comment: "Need clarification on which shade of blue.",
       kind: "clarification_request",
@@ -537,32 +537,7 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
 
   test("kind omitted → payload has only comment", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
-    const annotation = await seedAnnotation(db, {
-      projectId: project.id,
-      branchId: branch.id,
-      authorId: user.id,
-    });
-
-    const res = await server.inject({
-      method: "POST",
-      url: `/internal/mcp/annotations/${annotation.id}/comments`,
-      headers: { "x-internal-auth": INTERNAL_TOKEN },
-      payload: { projectId: project.id, tokenId: token.id, comment: "done" },
-    });
-
-    expect(res.statusCode).toBe(201);
-    const event = await db.query.annotationEvents.findFirst({
-      where: eq(schema.annotationEvents.id, res.json().eventId),
-    });
-    expect(event?.payload).toEqual({ comment: "done" });
-  });
-
-  test("cross-project → 404", async () => {
-    const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -574,8 +549,36 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
       url: `/internal/mcp/annotations/${annotation.id}/comments`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
       payload: {
-        projectId: "00000000-0000-0000-0000-000000000000",
-        tokenId: token.id,
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        comment: "done",
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const event = await db.query.annotationEvents.findFirst({
+      where: eq(schema.annotationEvents.id, res.json().eventId),
+    });
+    expect(event?.payload).toEqual({ comment: "done" });
+  });
+
+  test("non-member user → 404", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+    const outsider = await seedUser(db);
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/comments`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        clerkUserId: outsider.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
         comment: "x",
       },
     });
@@ -585,8 +588,7 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
 
   test("missing x-internal-auth → 401", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -596,7 +598,11 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
     const res = await server.inject({
       method: "POST",
       url: `/internal/mcp/annotations/${annotation.id}/comments`,
-      payload: { projectId: project.id, tokenId: token.id, comment: "x" },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        comment: "x",
+      },
     });
 
     expect(res.statusCode).toBe(401);
@@ -604,8 +610,7 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
 
   test("comment over MAX_COMMENT_LENGTH → 400", async () => {
     const db = await getIntegrationDb();
-    const { project, user, branch } = await seedProjectAndUser(db);
-    const token = await seedProjectToken(db, { projectId: project.id, userId: user.id });
+    const { project, user, branch } = await seedProjectMember(db);
     const annotation = await seedAnnotation(db, {
       projectId: project.id,
       branchId: branch.id,
@@ -616,7 +621,11 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
       method: "POST",
       url: `/internal/mcp/annotations/${annotation.id}/comments`,
       headers: { "x-internal-auth": INTERNAL_TOKEN },
-      payload: { projectId: project.id, tokenId: token.id, comment: "x".repeat(5001) },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        comment: "x".repeat(5001),
+      },
     });
 
     expect(res.statusCode).toBe(400);

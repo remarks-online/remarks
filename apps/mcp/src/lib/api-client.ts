@@ -6,39 +6,8 @@ import {
   InternalError,
 } from "@remarks/shared";
 import { env } from "../env.js";
-import type { AuthContext } from "../types/auth.js";
 
-const RESOLVE_PATH = "/internal/mcp/tokens/resolve";
-
-// Calls the API's internal token-resolution endpoint (task 2.5). Returns the
-// resolved auth context on a 200, `null` on a 404 (unknown / expired /
-// revoked — the API decides which qualifies). Anything else is a transport or
-// upstream bug; the auth plugin lets it bubble out as a 500.
-export async function resolveToken(tokenHash: string): Promise<AuthContext | null> {
-  let response: Response;
-  try {
-    response = await fetch(`${env.API_INTERNAL_URL}${RESOLVE_PATH}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-internal-auth": env.INTERNAL_API_TOKEN,
-      },
-      body: JSON.stringify({ tokenHash }),
-    });
-  } catch (cause) {
-    throw new InternalError("Failed to reach Remarks API for token resolution", cause);
-  }
-
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new InternalError(`Token resolution failed with status ${response.status}`);
-  }
-
-  const body = (await response.json()) as AuthContext;
-  return body;
-}
-
-// --- Read-tool fetchers (Phase 2 tasks 2.6–2.9) ---
+// --- Internal API helpers ---
 //
 // Each maps 1:1 to a `/internal/mcp/...` endpoint defined in apps/api. They
 // return `null` on 404 so the calling tool handler can throw a tagged
@@ -63,13 +32,68 @@ async function getJson<T>(path: string, label: string): Promise<T | null> {
   return (await response.json()) as T;
 }
 
-export interface WhoamiPayload {
-  token: { id: string; name: string; scopes: string[] };
-  project: { id: string; name: string; slug: string };
+// --- Membership / authorization (ADR-0015) ---
+//
+// Replaces the old token-resolve mechanism. Auth is "you are this Clerk user;
+// can you see this project?" — answered against project_members.
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  slug: string;
 }
 
-export async function fetchWhoami(tokenId: string): Promise<WhoamiPayload | null> {
-  return getJson<WhoamiPayload>(`/internal/mcp/whoami/${tokenId}`, "whoami lookup");
+// Lists every project the Clerk user can see. Backs `remarks_whoami` and
+// warms the per-user membership cache.
+export async function listAccessibleProjects(clerkUserId: string): Promise<ProjectSummary[]> {
+  const result = await getJson<{ projects: ProjectSummary[] }>(
+    `/internal/users/${encodeURIComponent(clerkUserId)}/projects`,
+    "accessible projects"
+  );
+  return result?.projects ?? [];
+}
+
+// Returns true iff the user is a member of the project. Used as the
+// per-tool-call authorization gate for any tool that takes a project_id (or
+// resolves to one via task_id). 404 → false.
+export async function assertProjectAccess(
+  clerkUserId: string,
+  projectId: string
+): Promise<boolean> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${env.API_INTERNAL_URL}/internal/users/${encodeURIComponent(clerkUserId)}/projects/${encodeURIComponent(projectId)}`,
+      { method: "GET", headers: { "x-internal-auth": env.INTERNAL_API_TOKEN } }
+    );
+  } catch (cause) {
+    throw new InternalError("Failed to reach Remarks API for project access check", cause);
+  }
+  if (response.status === 404) return false;
+  if (!response.ok) {
+    throw new InternalError(`project access check failed with status ${response.status}`);
+  }
+  return true;
+}
+
+// --- Whoami / project context / annotation reads ---
+
+export interface UserSummary {
+  id: string;
+  email: string | null;
+  name: string | null;
+}
+
+export interface WhoamiPayload {
+  user: UserSummary;
+  projects: ProjectSummary[];
+}
+
+export async function fetchWhoami(clerkUserId: string): Promise<WhoamiPayload | null> {
+  return getJson<WhoamiPayload>(
+    `/internal/mcp/whoami/${encodeURIComponent(clerkUserId)}`,
+    "whoami lookup"
+  );
 }
 
 export interface ProjectContextPayload {
@@ -129,9 +153,6 @@ export interface McpDomContextRow {
   ancestors?: Array<{ tagName: string; classes?: string[] }>;
 }
 
-// MCP-specific annotation shape: the dashboard's AnnotationResponse omits
-// domContext + frameworkHint (they're only useful to agents); the internal
-// /internal/mcp/annotations/:id endpoint returns this extended shape.
 export interface McpAnnotationRow extends AnnotationResponse {
   domContext: McpDomContextRow | null;
   frameworkHint: string | null;
@@ -148,19 +169,19 @@ export interface McpAnnotationPayload {
 
 export async function fetchAnnotation(
   annotationId: string,
-  projectId: string
+  clerkUserId: string
 ): Promise<McpAnnotationPayload | null> {
   return getJson<McpAnnotationPayload>(
-    `/internal/mcp/annotations/${annotationId}?projectId=${projectId}`,
+    `/internal/mcp/annotations/${annotationId}?clerkUserId=${encodeURIComponent(clerkUserId)}`,
     "annotation lookup"
   );
 }
 
-// --- Mutation fetchers (Phase 2 tasks 2.10–2.11) ---
+// --- Mutation fetchers (Phase 2 tasks 2.10–2.11; ADR-0015 attribution model) ---
 //
-// Same null-on-404 / throw-on-other-non-2xx contract as `getJson`. The 2xx
-// surface is split: 200 for status updates (UPDATE then read), 201 for new
-// comment events. Both succeed-shapes are accepted; anything else throws.
+// Auth-context attribution moves from token id → (Clerk user id, OAuth client
+// name). The API records actor_id (FK → users) and actor_oauth_client_id
+// (text) on the annotation_events row.
 
 async function postJson<TReq, TRes>(path: string, body: TReq, label: string): Promise<TRes | null> {
   let response: Response;
@@ -191,17 +212,27 @@ export interface UpdateAnnotationStatusPayload {
 
 export async function updateAnnotationStatus(
   annotationId: string,
-  projectId: string,
-  tokenId: string,
+  clerkUserId: string,
+  oauthClientName: string,
   status: AgentUpdateStatus,
   note: string | undefined
 ): Promise<UpdateAnnotationStatusPayload | null> {
   return postJson<
-    { projectId: string; tokenId: string; status: AgentUpdateStatus; note?: string },
+    {
+      clerkUserId: string;
+      oauthClientName: string;
+      status: AgentUpdateStatus;
+      note?: string;
+    },
     UpdateAnnotationStatusPayload
   >(
     `/internal/mcp/annotations/${annotationId}/status`,
-    { projectId, tokenId, status, ...(note !== undefined ? { note } : {}) },
+    {
+      clerkUserId,
+      oauthClientName,
+      status,
+      ...(note !== undefined ? { note } : {}),
+    },
     "agent status update"
   );
 }
@@ -213,17 +244,27 @@ export interface AddAnnotationCommentPayload {
 
 export async function addAnnotationComment(
   annotationId: string,
-  projectId: string,
-  tokenId: string,
+  clerkUserId: string,
+  oauthClientName: string,
   comment: string,
   kind: McpCommentKind | undefined
 ): Promise<AddAnnotationCommentPayload | null> {
   return postJson<
-    { projectId: string; tokenId: string; comment: string; kind?: McpCommentKind },
+    {
+      clerkUserId: string;
+      oauthClientName: string;
+      comment: string;
+      kind?: McpCommentKind;
+    },
     AddAnnotationCommentPayload
   >(
     `/internal/mcp/annotations/${annotationId}/comments`,
-    { projectId, tokenId, comment, ...(kind !== undefined ? { kind } : {}) },
+    {
+      clerkUserId,
+      oauthClientName,
+      comment,
+      ...(kind !== undefined ? { kind } : {}),
+    },
     "agent comment"
   );
 }

@@ -139,7 +139,7 @@ export async function createAnnotation(
       annotationId: insertedAnnotation.id,
       actorType: "user",
       actorId: author.id,
-      actorTokenId: null,
+      actorOauthClientId: null,
       type: "created",
       payload: {},
     });
@@ -403,7 +403,7 @@ export async function updateAnnotation(
         annotationId,
         actorType: "user",
         actorId,
-        actorTokenId: null,
+        actorOauthClientId: null,
         type: "status_changed",
         payload: { from: current.status, to: input.status },
       });
@@ -413,7 +413,7 @@ export async function updateAnnotation(
         annotationId,
         actorType: "user",
         actorId,
-        actorTokenId: null,
+        actorOauthClientId: null,
         type: "comment_edited",
         payload: { previousLength: current.commentText.length },
       });

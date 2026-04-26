@@ -250,13 +250,20 @@ export const whoamiInputSchema = z.object({});
 export type WhoamiInput = z.infer<typeof whoamiInputSchema>;
 
 export const whoamiOutputSchema = z.object({
-  project: z.object({
+  user: z.object({
     id: z.string().uuid(),
-    name: z.string(),
-    slug: z.string(),
+    email: z.string().nullable(),
+    name: z.string().nullable(),
   }),
-  token_name: z.string(),
-  token_scopes: z.array(z.string()),
+  projects: z.array(
+    z.object({
+      id: z.string().uuid(),
+      name: z.string(),
+      slug: z.string(),
+    })
+  ),
+  oauth_client_name: z.string(),
+  granted_scopes: z.array(z.string()),
   server_version: z.string(),
   skill_version: z.string(),
 });
@@ -266,7 +273,7 @@ export type WhoamiOutput = z.infer<typeof whoamiOutputSchema>;
 const whoamiTool = {
   name: "remarks_whoami",
   description:
-    "Returns information about the current Remarks connection. Use this to verify connectivity and see which project this token accesses.",
+    "Returns information about the current Remarks connection. Use this to verify connectivity and see which projects the authenticated user has access to. Tokens are scoped to a Clerk user (ADR-0015); one grant covers every project the user is a member of.",
   input: whoamiInputSchema,
   output: whoamiOutputSchema,
 } as const;

@@ -1,6 +1,10 @@
 import { openPrInputSchema, openPrOutputSchema } from "@remarks/mcp-schema";
-import { McpToolError } from "../lib/mcp-error.js";
-import { parseToolInput, requireScope, structuredToolResult } from "./shared.js";
+import {
+  parseToolInput,
+  requireProjectAccess,
+  requireScope,
+  structuredToolResult,
+} from "./shared.js";
 import type { ToolHandler } from "./types.js";
 
 const TOOL_NAME = "remarks_open_pr" as const;
@@ -19,9 +23,7 @@ export const openPrHandler: ToolHandler = async (args, ctx) => {
   requireScope(ctx.auth, "tasks:write", TOOL_NAME);
 
   // Cross-project access is 404 (existence not leaked, same as get_task).
-  if (input.project_id !== ctx.auth.projectId) {
-    throw new McpToolError("NOT_FOUND", "Project not found");
-  }
+  await requireProjectAccess(ctx.auth, ctx.api, input.project_id);
 
   const output = openPrOutputSchema.parse({
     status: "pending_github_integration",

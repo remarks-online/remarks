@@ -5,10 +5,11 @@ import type { AuthContext } from "../types/auth.js";
 import { addTaskCommentHandler } from "./add-task-comment.js";
 import type { ApiClient } from "./types.js";
 
+const CLERK_USER_ID = "user_2abc123";
 const STUB_AUTH: AuthContext = {
-  tokenId: "11111111-1111-4111-8111-111111111111",
-  projectId: "22222222-2222-4222-8222-222222222222",
+  clerkUserId: CLERK_USER_ID,
   scopes: ["tasks:read", "tasks:write", "project:read"],
+  oauthClientName: "Claude Code",
 };
 
 const TASK_ID = "33333333-3333-4333-8333-333333333333";
@@ -17,6 +18,8 @@ const IDEMPOTENCY_KEY = "44444444-4444-4444-8444-444444444444";
 
 function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    assertProjectAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleProjects: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
@@ -50,8 +53,8 @@ describe("addTaskCommentHandler", () => {
 
     expect(addAnnotationComment).toHaveBeenCalledWith(
       TASK_ID,
-      STUB_AUTH.projectId,
-      STUB_AUTH.tokenId,
+      CLERK_USER_ID,
+      STUB_AUTH.oauthClientName,
       "Need clarification.",
       "clarification_request"
     );

@@ -1,7 +1,13 @@
 import { type GetTaskOutput, getTaskInputSchema, getTaskOutputSchema } from "@remarks/mcp-schema";
 import type { McpDomContextRow } from "../lib/api-client.js";
 import { McpToolError } from "../lib/mcp-error.js";
-import { commentPreview, parseToolInput, projectAuthor, structuredToolResult } from "./shared.js";
+import {
+  commentPreview,
+  parseToolInput,
+  projectAuthor,
+  requireScope,
+  structuredToolResult,
+} from "./shared.js";
 import type { ToolHandler } from "./types.js";
 
 // Spec §3.2 get_task `dom_context` is snake_case; the API returns the
@@ -28,8 +34,12 @@ function projectDomContext(value: McpDomContextRow | null): GetTaskOutput["dom_c
 
 export const getTaskHandler: ToolHandler = async (args, ctx) => {
   const input = parseToolInput(getTaskInputSchema, args, "remarks_get_task");
+  requireScope(ctx.auth, "tasks:read", "remarks_get_task");
 
-  const result = await ctx.api.fetchAnnotation(input.task_id, ctx.auth.projectId);
+  // ADR-0015: the API resolves the annotation's project and checks
+  // membership for the Clerk user. Cross-project access surfaces as
+  // NOT_FOUND so existence isn't leaked.
+  const result = await ctx.api.fetchAnnotation(input.task_id, ctx.auth.clerkUserId);
   if (!result) {
     throw new McpToolError("NOT_FOUND", "Task not found");
   }

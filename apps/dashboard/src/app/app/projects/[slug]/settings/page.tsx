@@ -50,6 +50,21 @@ export default async function ProjectSettingsPage({ params }: { params: Params }
       </div>
 
       <EditProjectForm orgId={orgId} project={project} />
+
+      <div className="rounded-md border p-4">
+        <h2 className="text-base font-medium">Connect an agent</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Set up Claude Code, Cursor, or any MCP-compatible client to read tasks and update them on
+          your behalf.
+        </p>
+        <Link
+          href={`/app/projects/${project.slug}/settings/connect-agent`}
+          className="mt-3 inline-flex items-center text-sm font-medium underline"
+        >
+          Open the install guide →
+        </Link>
+      </div>
+
       {project.myRole === "admin" ? (
         <DeleteProjectForm projectId={project.id} projectSlug={project.slug} />
       ) : null}

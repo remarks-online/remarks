@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
-import { check, jsonb, pgEnum, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { annotations } from "./annotations.js";
-import { projectApiTokens } from "./project-api-tokens.js";
 import { users } from "./users.js";
 
 export const annotationEventTypeEnum = pgEnum("annotation_event_type", [
@@ -25,12 +24,17 @@ export const annotationEvents = pgTable(
   "annotation_events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // For 'user' and 'agent' actors, references the Clerk-mapped user. For
+    // 'agent' the user is the Clerk identity that authorized the OAuth grant
+    // the agent is using (see ADR-0015).
+    actorId: uuid("actor_id").references(() => users.id),
+    actorType: eventActorTypeEnum("actor_type").notNull().default("user"),
+    // OAuth client name captured at DCR time, e.g. "Claude Code", "Cursor".
+    // Only set when actor_type = 'agent'.
+    actorOauthClientId: text("actor_oauth_client_id"),
     annotationId: uuid("annotation_id")
       .notNull()
       .references(() => annotations.id, { onDelete: "cascade" }),
-    actorId: uuid("actor_id").references(() => users.id), // null when actor_type is 'agent' or 'system'
-    actorType: eventActorTypeEnum("actor_type").notNull().default("user"),
-    actorTokenId: uuid("actor_token_id").references(() => projectApiTokens.id),
     type: annotationEventTypeEnum("type").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -39,9 +43,9 @@ export const annotationEvents = pgTable(
     actorConsistency: check(
       "annotation_events_actor_consistency",
       sql`
-        (${table.actorType} = 'user' AND ${table.actorId} IS NOT NULL AND ${table.actorTokenId} IS NULL) OR
-        (${table.actorType} = 'agent' AND ${table.actorId} IS NULL AND ${table.actorTokenId} IS NOT NULL) OR
-        (${table.actorType} = 'system' AND ${table.actorId} IS NULL AND ${table.actorTokenId} IS NULL)
+        (${table.actorType} = 'user' AND ${table.actorId} IS NOT NULL AND ${table.actorOauthClientId} IS NULL) OR
+        (${table.actorType} = 'agent' AND ${table.actorId} IS NOT NULL AND ${table.actorOauthClientId} IS NOT NULL) OR
+        (${table.actorType} = 'system' AND ${table.actorId} IS NULL AND ${table.actorOauthClientId} IS NULL)
       `
     ),
   })

@@ -1,15 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthContext } from "../types/auth.js";
 
-// Bypass the auth plugin's network calls: hand it a cached AuthContext on
-// every redis.get so the request reaches the MCP route without needing a
-// real Upstash or API. The plugin's own behavior is covered in
-// apps/mcp/src/plugins/mcp-auth.test.ts.
+// Mock the JWT verifier and the api-client surface so tests don't reach
+// Clerk's network or our internal API. Auth plugin behavior (challenge
+// header shape, missing-token branch) is covered in unit tests; here we
+// just need a happy-path verifier to push past the auth hook so we can
+// exercise the route + tool wiring end-to-end.
 const mocks = vi.hoisted(() => ({
+  verifyOAuthToken: vi.fn(),
   redisGet: vi.fn(),
   redisSet: vi.fn(),
-  resolveToken: vi.fn(),
+  assertProjectAccess: vi.fn(),
+  listAccessibleProjects: vi.fn(),
   fetchWhoami: vi.fn(),
   fetchProjectContext: vi.fn(),
   fetchListAnnotations: vi.fn(),
@@ -18,12 +20,17 @@ const mocks = vi.hoisted(() => ({
   addAnnotationComment: vi.fn(),
 }));
 
+vi.mock("../lib/jwt.js", () => ({
+  verifyOAuthToken: mocks.verifyOAuthToken,
+}));
+
 vi.mock("../lib/redis.js", () => ({
   redis: { get: mocks.redisGet, set: mocks.redisSet },
 }));
 
 vi.mock("../lib/api-client.js", () => ({
-  resolveToken: mocks.resolveToken,
+  assertProjectAccess: mocks.assertProjectAccess,
+  listAccessibleProjects: mocks.listAccessibleProjects,
   fetchWhoami: mocks.fetchWhoami,
   fetchProjectContext: mocks.fetchProjectContext,
   fetchListAnnotations: mocks.fetchListAnnotations,
@@ -34,20 +41,18 @@ vi.mock("../lib/api-client.js", () => ({
 
 const { buildServer } = await import("../server.js");
 
-// Real-shape v4 UUIDs (Zod 4's uuid validator is stricter than v3 — version
-// nibble must be 1-8, variant 8-b — so the test fixture mirrors the format
-// of values actually issued by `gen_random_uuid()` in Postgres.)
-const STUB_AUTH: AuthContext = {
-  tokenId: "11111111-1111-4111-8111-111111111111",
-  projectId: "22222222-2222-4222-8222-222222222222",
+const CLERK_USER_ID = "user_2abc123";
+const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+const STUB_VERIFIED = {
+  clerkUserId: CLERK_USER_ID,
   scopes: ["tasks:read", "tasks:write", "project:read"],
+  oauthClientName: "Claude Code",
 };
 
 // Streamable HTTP either returns plain JSON or text/event-stream encoding the
 // JSON-RPC envelope. Both paths put the result on the same logical message;
 // this helper extracts it.
 function parseJsonRpcResponse(body: string): { result?: unknown; error?: unknown } {
-  // Plain JSON happy path.
   try {
     const parsed = JSON.parse(body);
     if (parsed && typeof parsed === "object" && ("result" in parsed || "error" in parsed)) {
@@ -56,8 +61,6 @@ function parseJsonRpcResponse(body: string): { result?: unknown; error?: unknown
   } catch {
     // Fall through to SSE parsing.
   }
-  // SSE path: lines like `data: {...}` for each event; the JSON-RPC envelope
-  // is the last data line.
   const dataLines = body
     .split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
@@ -81,7 +84,6 @@ describe("POST /mcp", () => {
   let server: FastifyInstance;
 
   beforeAll(async () => {
-    mocks.redisGet.mockResolvedValue(STUB_AUTH);
     server = await buildServer();
   });
 
@@ -90,15 +92,21 @@ describe("POST /mcp", () => {
   });
 
   beforeEach(() => {
+    mocks.verifyOAuthToken.mockReset();
+    mocks.assertProjectAccess.mockReset();
+    mocks.listAccessibleProjects.mockReset();
     mocks.fetchWhoami.mockReset();
     mocks.fetchProjectContext.mockReset();
     mocks.fetchListAnnotations.mockReset();
     mocks.fetchAnnotation.mockReset();
     mocks.updateAnnotationStatus.mockReset();
     mocks.addAnnotationComment.mockReset();
-    // Idempotency cache reads pass through to the mocked redis.get; reset
-    // it per-test so a tests-shared mock doesn't accidentally serve a hit.
-    mocks.redisGet.mockResolvedValue(STUB_AUTH);
+    mocks.redisGet.mockResolvedValue(null);
+
+    // Default: every authenticated request resolves to the stub user with
+    // access to PROJECT_ID. Individual tests can override.
+    mocks.verifyOAuthToken.mockResolvedValue(STUB_VERIFIED);
+    mocks.assertProjectAccess.mockResolvedValue(true);
   });
 
   it("responds to MCP initialize with serverInfo.name === 'remarks'", async () => {
@@ -108,7 +116,7 @@ describe("POST /mcp", () => {
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        authorization: "Bearer rmk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        authorization: "Bearer eyJfake.jwt.value",
       },
       payload: {
         jsonrpc: "2.0",
@@ -123,14 +131,11 @@ describe("POST /mcp", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    // The transport may respond with text/event-stream or application/json
-    // depending on Accept negotiation; both encode a JSON-RPC envelope that
-    // contains the same serverInfo. Substring-check tolerates either.
     expect(response.body).toContain('"serverInfo"');
     expect(response.body).toContain('"name":"remarks"');
   });
 
-  it("rejects /mcp requests without a bearer token", async () => {
+  it("rejects /mcp requests without a bearer token (challenge advertises PRM)", async () => {
     const response = await server.inject({
       method: "POST",
       url: "/mcp",
@@ -151,6 +156,8 @@ describe("POST /mcp", () => {
     });
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe("UNAUTHORIZED");
+    expect(response.headers["www-authenticate"]).toContain("resource_metadata=");
+    expect(response.headers["www-authenticate"]).toContain("oauth-protected-resource");
   });
 
   it("tools/list returns all 8 Remarks tools with their names", async () => {
@@ -160,7 +167,7 @@ describe("POST /mcp", () => {
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        authorization: "Bearer rmk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        authorization: "Bearer eyJfake.jwt.value",
       },
       payload: {
         jsonrpc: "2.0",
@@ -190,8 +197,12 @@ describe("POST /mcp", () => {
 
   it("tools/call remarks_whoami routes through the handler", async () => {
     mocks.fetchWhoami.mockResolvedValueOnce({
-      token: { id: STUB_AUTH.tokenId, name: "Cursor on laptop", scopes: STUB_AUTH.scopes },
-      project: { id: STUB_AUTH.projectId, name: "Acme", slug: "acme" },
+      user: {
+        id: "11111111-1111-4111-8111-111111111111",
+        email: "alice@example.com",
+        name: "Alice",
+      },
+      projects: [{ id: PROJECT_ID, name: "Acme", slug: "acme" }],
     });
 
     const response = await server.inject({
@@ -200,7 +211,7 @@ describe("POST /mcp", () => {
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        authorization: "Bearer rmk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        authorization: "Bearer eyJfake.jwt.value",
       },
       payload: {
         jsonrpc: "2.0",
@@ -211,15 +222,19 @@ describe("POST /mcp", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mocks.fetchWhoami).toHaveBeenCalledWith(STUB_AUTH.tokenId);
+    expect(mocks.fetchWhoami).toHaveBeenCalledWith(CLERK_USER_ID);
     const envelope = parseJsonRpcResponse(response.body);
     const result = envelope.result as {
-      structuredContent: { project: { name: string }; token_name: string };
+      structuredContent: {
+        user: { name: string };
+        projects: Array<{ name: string }>;
+        oauth_client_name: string;
+      };
       isError?: boolean;
     };
     expect(result.isError).not.toBe(true);
-    expect(result.structuredContent.project.name).toBe("Acme");
-    expect(result.structuredContent.token_name).toBe("Cursor on laptop");
+    expect(result.structuredContent.projects[0]?.name).toBe("Acme");
+    expect(result.structuredContent.oauth_client_name).toBe("Claude Code");
   });
 
   it("tools/call remarks_update_task_status routes through the handler", async () => {
@@ -235,7 +250,7 @@ describe("POST /mcp", () => {
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        authorization: "Bearer rmk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        authorization: "Bearer eyJfake.jwt.value",
       },
       payload: {
         jsonrpc: "2.0",
@@ -254,8 +269,8 @@ describe("POST /mcp", () => {
     expect(response.statusCode).toBe(200);
     expect(mocks.updateAnnotationStatus).toHaveBeenCalledWith(
       "33333333-3333-4333-8333-333333333333",
-      STUB_AUTH.projectId,
-      STUB_AUTH.tokenId,
+      CLERK_USER_ID,
+      "Claude Code",
       "doing",
       undefined
     );
@@ -275,7 +290,7 @@ describe("POST /mcp", () => {
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        authorization: "Bearer rmk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        authorization: "Bearer eyJfake.jwt.value",
       },
       payload: {
         jsonrpc: "2.0",
@@ -284,7 +299,7 @@ describe("POST /mcp", () => {
         params: {
           name: "remarks_open_pr",
           arguments: {
-            project_id: STUB_AUTH.projectId,
+            project_id: PROJECT_ID,
             task_ids: ["33333333-3333-4333-8333-333333333333"],
             branch: "feat/x",
           },
@@ -301,5 +316,17 @@ describe("POST /mcp", () => {
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent.status).toBe("pending_github_integration");
     expect(result.structuredContent.pr_url).toBeNull();
+  });
+
+  it("publishes Protected Resource Metadata at /.well-known/oauth-protected-resource/mcp", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: "/.well-known/oauth-protected-resource/mcp",
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.resource).toBe("http://localhost:3000/mcp");
+    expect(Array.isArray(body.authorization_servers)).toBe(true);
+    expect(body.scopes_supported).toEqual(["tasks:read", "tasks:write", "project:read"]);
   });
 });

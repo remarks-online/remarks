@@ -5,6 +5,7 @@ import { env } from "./env.js";
 import mcpAuthPlugin from "./plugins/mcp-auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { mcpRoutes } from "./routes/mcp.js";
+import { wellKnownRoutes } from "./routes/well-known.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const server = Fastify({
@@ -51,6 +52,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await server.register(sensible);
   await server.register(healthRoutes);
+  await server.register(wellKnownRoutes);
 
   await server.register(async (authenticated) => {
     await authenticated.register(mcpAuthPlugin);

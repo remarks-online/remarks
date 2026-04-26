@@ -4,7 +4,14 @@ import {
   listTasksOutputSchema,
 } from "@remarks/mcp-schema";
 import { McpToolError } from "../lib/mcp-error.js";
-import { commentPreview, parseToolInput, projectAuthor, structuredToolResult } from "./shared.js";
+import {
+  commentPreview,
+  parseToolInput,
+  projectAuthor,
+  requireProjectAccess,
+  requireScope,
+  structuredToolResult,
+} from "./shared.js";
 import type { ToolHandler } from "./types.js";
 
 // Phase 2 spec §3.2 list_tasks: "Default filter returns open (to_do) and
@@ -17,13 +24,13 @@ const DEFAULT_STATUSES = ["to_do", "doing"] as const;
 
 export const listTasksHandler: ToolHandler = async (args, ctx) => {
   const input = parseToolInput(listTasksInputSchema, args, "remarks_list_tasks");
+  requireScope(ctx.auth, "tasks:read", "remarks_list_tasks");
 
-  // Token is project-scoped (Phase 2 spec §5.1). Cross-project access surfaces
-  // as NOT_FOUND so existence isn't leaked across projects, mirroring the
-  // user-auth REST path's `requireProjectMember`.
-  if (input.project_id !== ctx.auth.projectId) {
-    throw new McpToolError("NOT_FOUND", "Project not found");
-  }
+  // ADR-0015: per-call project membership check. One token covers every
+  // project the user can see, but each tool call still has to verify the
+  // user is a member of the *requested* project. Cross-project access
+  // surfaces as NOT_FOUND, never 403, so existence isn't leaked.
+  await requireProjectAccess(ctx.auth, ctx.api, input.project_id);
 
   const statuses =
     input.status === undefined
