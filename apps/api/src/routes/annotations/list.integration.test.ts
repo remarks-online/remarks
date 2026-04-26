@@ -533,9 +533,12 @@ describe("GET /projects/:projectId/annotations (integration)", () => {
     expect(res.json().error.code).toBe("VALIDATION_ERROR");
   });
 
-  test("non-member → 404 NOT_FOUND", async () => {
+  test("user from a different org → 404 NOT_FOUND", async () => {
+    // Post-1.33 org membership implies project membership via the auth-plugin
+    // backstop, so we exercise the guard from a wholly separate org.
     const db = await getIntegrationDb();
     const org = await seedOrg(db);
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_anno_list_other" });
     const [project] = await db
       .insert(schema.projects)
       .values({
@@ -551,7 +554,7 @@ describe("GET /projects/:projectId/annotations (integration)", () => {
 
     mockAuth({
       clerkUserId: outsider.clerkUserId,
-      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+      memberships: [{ clerkOrgId: otherOrg.clerkOrgId, role: "org:admin" }],
     });
     const res = await server.inject({
       method: "GET",

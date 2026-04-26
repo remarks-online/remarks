@@ -331,3 +331,37 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: Independent. Should be picked up immediately — Phase 1 prod is currently broken on any schema-dependent path.
 - **Estimated size**: `s`.
 - **Status**: `done` — workflow change landed in PR #50 (commit `d74b1b1`). Bootstrap was run from a workstation against the Neon `main` direct endpoint before merge, so the first post-merge `Deploy API` workflow run hit the migrate step as a no-op and proceeded into `flyctl deploy` cleanly. Subsequent deploys will pick up new migrations automatically as they're added under `packages/db/drizzle/`.
+
+## A15 — `project_members` auto-sync from Clerk org membership
+
+| # | Done when | Complete |
+|---|---|---|
+| A15 ✓ | An invited Clerk org member can list and open every project in that org without a manual `project_members` row | [x] |
+
+- **Spec reference**: §3.6 (`project_members` is the auth source of truth); §14 task 1.33 ("Teammate accepts invite and sees projects"); §15 exit criterion ("A teammate can be invited to the org and see the same annotations"). A14 introduced `myRole: projectRoleSchema.nullable()` with the explicit semantic *null = caller is org member but not a project member*.
+- **Problem**: Phase 1 has no project-level invitation UI — invitations happen at the Clerk org tier via `<OrganizationProfile />`. Pre-1.33, an invited teammate became a Clerk org member but had no `project_members` row, so:
+  - `projects.list` / `getBySlug` showed projects with `myRole=null` via LEFT JOIN, but
+  - any procedure gated on `assertProjectMember` (annotations.list/get/listEvents/update, REST `requireProjectMember` callers) returned **404 NotFoundError** to avoid leaking project existence.
+  - Net effect: invited teammates saw project rows but couldn't open any annotation, blocking the §15 exit criterion.
+- **Proposed deliverable**:
+  - Webhook-driven sync: handle `organizationMembership.created`, `organizationMembership.updated`, `organizationMembership.deleted` in `apps/api/src/routes/webhooks/clerk.ts` and the matching Zod variants in `packages/shared/src/schemas/clerk.ts`. New service exports in `apps/api/src/services/clerk-sync.service.ts`: `syncProjectMembersForOrgMember`, `removeProjectMembersForOrgMember`, `provisionProjectMembersFromOrgMemberships`. Role default is **`editor`** for every fan-out — project-level admin remains assigned only to the project creator at `project.service.ts:75`. `ON CONFLICT DO NOTHING` everywhere preserves the creator's `admin` row.
+  - Project-creation fan-out: `createProject` calls `clerk.organizations.getOrganizationMembershipList` and inserts an `editor` row per current org member alongside the creator's `admin` row. Local `users` rows for newly-invited members are lazily provisioned via `provisionUserFromClerk` when the user.created webhook hasn't yet landed.
+  - Auth-plugin backstop: after `provisionOrgsFromMemberships` in `apps/api/src/plugins/auth.ts`, run `provisionProjectMembersFromOrgMemberships` to mint missing `editor` rows for the caller across every project in their Clerk-confirmed orgs. Two queries per request (anti-join SELECT + batch INSERT only when missing); zero inserts on warm requests where state is already in sync. Mirrors the existing user/org backstops; covers webhook lag and `docs/runbooks/setup.md:124` (local dev runs without ngrok).
+  - Clerk client decoration: extracted to a new `apps/api/src/plugins/clerk.ts` so the webhook handler, the auth plugin, and tRPC procedures all share one `fastify.clerk` instance. tRPC `Context` gains `clerk: ClerkClient` so `projects.create` can pass it into the service layer.
+- **Done when**:
+  - Webhook handler + service helpers ship and are unit-tested
+  - `createProject` fans out to all current Clerk org members (covered by `tRPC projects.create > fans out editor rows to all other current Clerk org members`)
+  - Auth-plugin backstop covered by `tRPC annotations.list > invited org member with no project_members row → 200 after auth backstop`
+  - E2E spec `apps/dashboard/e2e/team-invite.spec.ts` provisions a second Clerk user, adds them as `org:member`, signs in via `mintSignInToken`, and asserts the seeded project is listed and its detail page renders without 404
+  - `docs/runbooks/environments.md` enumerates the new event subscriptions for the Clerk-prod webhook config
+- **Conflicts / overlaps with spec**:
+  - Reframes A14's nullable `myRole` semantic. After A15, `myRole` for an org member is effectively never `null` once they've made one authenticated request — the backstop fans out an `editor` row first. The schema stays nullable because the column on the wire still describes "no project_members row in DB at the moment of the read", and a non-org caller (extension API token) can still legitimately surface as `null`.
+  - Several "non-member" integration tests pre-1.33 expressed the gap as "org member without project_members row → 404". Those scenarios are no longer reachable through the auth path; the tests were rewritten to "user from a different org → 404", which is the only way the existence-leak guard now fires.
+- **Affected tasks / components**:
+  - Tasks 1.32 (settings page — A14's gating still works because the gate is on `myRole !== "admin"`, not on null)
+  - Task 1.27 (extension upload flow — invited teammates can now presign uploads as editors)
+  - Task 1.29 (sidebar thread view — same, annotations.list now returns 200 for invited teammates)
+  - `apps/api/src/{plugins/clerk.ts,plugins/auth.ts,routes/webhooks/clerk.ts,services/clerk-sync.service.ts,services/project.service.ts,trpc/{trpc.ts,context.ts,procedures/projects.ts}}`, `packages/shared/src/schemas/clerk.ts`, `apps/api/src/{routes/projects/index.ts,routes/uploads,routes/annotations}/*.integration.test.ts`, `apps/api/src/trpc/{projects,annotations}.integration.test.ts`, `apps/dashboard/e2e/team-invite.spec.ts`, `docs/runbooks/environments.md`.
+- **Dependencies**: `in task 1.33` (this is the implementation of that task — bundled).
+- **Estimated size**: `m`.
+- **Status**: `done in task 1.33`. Webhook sync + create-time fan-out + auth-plugin backstop all landed together. Role-mapping question (whether `org:admin` should imply project `admin`) was deliberately deferred — Phase 1's project-admin role still tracks the project creator, and there's no UI to escalate. Revisit if a beta partner asks for "all org admins manage all projects".

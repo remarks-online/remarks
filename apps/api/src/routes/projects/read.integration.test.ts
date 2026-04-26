@@ -270,9 +270,13 @@ describe("GET /projects/:projectId (integration)", () => {
     });
   });
 
-  test("non-member of existing project → 404 NOT_FOUND (existence not leaked)", async () => {
+  test("user from a different org → 404 NOT_FOUND (existence not leaked)", async () => {
+    // Post-1.33, org membership implies project membership via the auth-plugin
+    // backstop. So the existence-leak guard can only be exercised from outside
+    // the project's org entirely.
     const db = await getIntegrationDb();
     const org = await seedOrg(db, { clerkOrgId: "org_detail_outsider" });
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_detail_outsider_other" });
     const owner = await seedUser(db, { clerkUserId: "user_detail_owner" });
     const outsider = await seedUser(db, { clerkUserId: "user_detail_outsider" });
     const project = await insertProject(db, {
@@ -288,7 +292,7 @@ describe("GET /projects/:projectId (integration)", () => {
 
     mockAuth({
       clerkUserId: outsider.clerkUserId,
-      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+      memberships: [{ clerkOrgId: otherOrg.clerkOrgId, role: "org:member" }],
     });
 
     const res = await server.inject({

@@ -199,7 +199,7 @@ describe("POST /uploads/presign (integration)", () => {
     expect(res.json().error.code).toBe("FORBIDDEN");
   });
 
-  test("non-member → 404 NOT_FOUND (project existence not leaked)", async () => {
+  test("user from a different org → 404 NOT_FOUND (project existence not leaked)", async () => {
     const db = await getIntegrationDb();
     const org = await seedOrg(db);
     const [project] = await db
@@ -213,11 +213,15 @@ describe("POST /uploads/presign (integration)", () => {
       })
       .returning();
     if (!project) throw new Error("project insert returned no rows");
-    // Outsider: user has no projectMembers row for this project.
+    // Truly external caller: not a Clerk member of the project's org. Post-1.33
+    // org-member-not-project-member is impossible (auth backstop fans out
+    // project_members rows for every org the caller belongs to), so the only
+    // way to test the existence-leak guard is from outside the org entirely.
     const outsider = await seedUser(db);
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_presign_outsider_other" });
     mockAuth({
       clerkUserId: outsider.clerkUserId,
-      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+      memberships: [{ clerkOrgId: otherOrg.clerkOrgId, role: "org:admin" }],
     });
 
     const res = await server.inject({

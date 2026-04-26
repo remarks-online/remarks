@@ -286,9 +286,13 @@ describe("POST /projects/:projectId/annotations (integration)", () => {
     expect(res.json().error.code).toBe("FORBIDDEN");
   });
 
-  test("non-member → 404 NOT_FOUND (project existence not leaked)", async () => {
+  test("user from a different org → 404 NOT_FOUND (project existence not leaked)", async () => {
+    // Post-1.33 the auth-plugin backstop fans out project_members rows for
+    // every project in the caller's Clerk orgs, so the existence-leak guard
+    // is only exercised when the caller has no Clerk overlap with the org.
     const db = await getIntegrationDb();
     const org = await seedOrg(db);
+    const otherOrg = await seedOrg(db, { clerkOrgId: "org_anno_create_other" });
     const [project] = await db
       .insert(schema.projects)
       .values({
@@ -303,7 +307,7 @@ describe("POST /projects/:projectId/annotations (integration)", () => {
     const outsider = await seedUser(db);
     mockAuth({
       clerkUserId: outsider.clerkUserId,
-      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+      memberships: [{ clerkOrgId: otherOrg.clerkOrgId, role: "org:admin" }],
     });
 
     const res = await server.inject({

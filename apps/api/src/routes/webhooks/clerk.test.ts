@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   softDeleteUser: vi.fn(async () => {}),
   upsertOrg: vi.fn(async () => {}),
   deleteOrg: vi.fn(async () => {}),
+  syncProjectMembersForOrgMember: vi.fn(async () => {}),
+  removeProjectMembersForOrgMember: vi.fn(async () => {}),
 }));
 
 vi.mock("../../services/clerk-sync.service.js", () => mocks);
@@ -41,6 +43,9 @@ function buildTestServer(): FastifyInstance {
     });
   });
   server.decorate("db", {} as never);
+  // Webhook handler reads fastify.clerk to forward into the membership-sync
+  // service; tests don't exercise the SDK so a stub is sufficient.
+  server.decorate("clerk", {} as never);
   return server;
 }
 
@@ -157,6 +162,81 @@ describe("POST /webhooks/clerk", () => {
     expect(mocks.deleteOrg).toHaveBeenCalledWith(expect.anything(), "org_123");
   });
 
+  test("organizationMembership.created syncs project_members for the new member", async () => {
+    const { body, headers } = signedRequest({
+      type: "organizationMembership.created",
+      data: {
+        id: "orgmem_1",
+        role: "org:member",
+        organization: { id: "org_xyz" },
+        public_user_data: { user_id: "user_new" },
+      },
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: "/webhooks/clerk",
+      headers,
+      payload: body,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.syncProjectMembersForOrgMember).toHaveBeenCalledWith(
+      expect.anything(),
+      "org_xyz",
+      "user_new",
+      expect.objectContaining({ clerk: expect.anything() })
+    );
+  });
+
+  test("organizationMembership.updated also syncs project_members (e.g. role change)", async () => {
+    const { body, headers } = signedRequest({
+      type: "organizationMembership.updated",
+      data: {
+        id: "orgmem_2",
+        role: "org:admin",
+        organization: { id: "org_xyz" },
+        public_user_data: { user_id: "user_promoted" },
+      },
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: "/webhooks/clerk",
+      headers,
+      payload: body,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.syncProjectMembersForOrgMember).toHaveBeenCalledWith(
+      expect.anything(),
+      "org_xyz",
+      "user_promoted",
+      expect.objectContaining({ clerk: expect.anything() })
+    );
+  });
+
+  test("organizationMembership.deleted removes project_members for the user × org", async () => {
+    const { body, headers } = signedRequest({
+      type: "organizationMembership.deleted",
+      data: {
+        id: "orgmem_3",
+        role: "org:member",
+        organization: { id: "org_xyz" },
+        public_user_data: { user_id: "user_left" },
+      },
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: "/webhooks/clerk",
+      headers,
+      payload: body,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.removeProjectMembersForOrgMember).toHaveBeenCalledWith(
+      expect.anything(),
+      "org_xyz",
+      "user_left"
+    );
+    expect(mocks.syncProjectMembersForOrgMember).not.toHaveBeenCalled();
+  });
+
   test("unhandled event type returns 200 ignored and dispatches nothing", async () => {
     const { body, headers } = signedRequest({
       type: "session.created",
@@ -174,6 +254,8 @@ describe("POST /webhooks/clerk", () => {
     expect(mocks.upsertOrg).not.toHaveBeenCalled();
     expect(mocks.softDeleteUser).not.toHaveBeenCalled();
     expect(mocks.deleteOrg).not.toHaveBeenCalled();
+    expect(mocks.syncProjectMembersForOrgMember).not.toHaveBeenCalled();
+    expect(mocks.removeProjectMembersForOrgMember).not.toHaveBeenCalled();
   });
 
   test("replaying user.created is safely idempotent at the dispatch layer", async () => {

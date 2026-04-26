@@ -95,6 +95,7 @@ export const projectsRouter = router({
         clerkOrgId: input.orgId,
         authorUserId: ctx.user.id,
         input: input.input,
+        clerk: ctx.clerk,
       });
       return projectResponseSchema.parse(result);
     } catch (err) {

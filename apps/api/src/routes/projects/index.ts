@@ -41,6 +41,7 @@ export async function projectRoutes(fastify: FastifyInstance): Promise<void> {
       clerkOrgId: orgId,
       authorUserId: request.auth.user.id,
       input: bodyResult.data,
+      clerk: request.server.clerk,
     });
 
     return reply.code(201).send(response);

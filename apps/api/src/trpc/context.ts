@@ -7,6 +7,7 @@ export function createContext({ req }: CreateFastifyContextOptions): Context {
     orgMemberships: req.auth?.orgMemberships ?? [],
     db: req.server.db,
     r2: req.server.r2,
+    clerk: req.server.clerk,
     requestId: req.id,
   };
 }

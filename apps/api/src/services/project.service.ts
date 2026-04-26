@@ -1,3 +1,4 @@
+import type { ClerkClient } from "@clerk/backend";
 import { type DB, schema } from "@remarks/db";
 import {
   ConflictError,
@@ -9,11 +10,13 @@ import {
 } from "@remarks/shared";
 import { and, desc, eq } from "drizzle-orm";
 import { isUniqueViolation } from "../lib/db-errors.js";
+import { provisionUserFromClerk } from "./clerk-sync.service.js";
 
 export interface CreateProjectArgs {
   clerkOrgId: string;
   authorUserId: string;
   input: CreateProjectRequest;
+  clerk: ClerkClient;
 }
 
 export interface UpdateProjectArgs {
@@ -40,7 +43,38 @@ function toProjectResponse(
 }
 
 export async function createProject(db: DB, args: CreateProjectArgs): Promise<ProjectResponse> {
-  const { clerkOrgId, authorUserId, input } = args;
+  const { clerkOrgId, authorUserId, input, clerk } = args;
+
+  // Fetch the org's full Clerk membership list outside the DB transaction —
+  // it's a network call to Clerk and we don't want it holding a Postgres txn
+  // open. The fan-out below mints `editor` rows for every other member so an
+  // already-invited teammate sees the new project immediately, not just on
+  // their next webhook-driven sync.
+  const memberships = await clerk.organizations.getOrganizationMembershipList({
+    organizationId: clerkOrgId,
+    limit: 500,
+  });
+  const otherClerkUserIds = memberships.data
+    .map((m) => m.publicUserData?.userId)
+    .filter((id): id is string => typeof id === "string");
+
+  // Resolve every Clerk member's local users.id, lazily provisioning rows for
+  // anyone the user.created webhook hasn't reached yet (parallels the auth
+  // plugin's user backstop). Empty `coMemberIds` is the common case: the
+  // creator's own row is inserted as `admin` regardless.
+  const coMemberIds: string[] = [];
+  for (const clerkUserId of otherClerkUserIds) {
+    const existing = await db.query.users.findFirst({
+      where: eq(schema.users.clerkUserId, clerkUserId),
+      columns: { id: true },
+    });
+    if (existing) {
+      if (existing.id !== authorUserId) coMemberIds.push(existing.id);
+      continue;
+    }
+    const provisioned = await provisionUserFromClerk(db, clerk, clerkUserId);
+    if (provisioned && provisioned.id !== authorUserId) coMemberIds.push(provisioned.id);
+  }
 
   return await db.transaction(async (tx) => {
     const org = await tx.query.organizations.findFirst({
@@ -77,6 +111,19 @@ export async function createProject(db: DB, args: CreateProjectArgs): Promise<Pr
       userId: authorUserId,
       role: "admin",
     });
+
+    if (coMemberIds.length > 0) {
+      await tx
+        .insert(schema.projectMembers)
+        .values(
+          coMemberIds.map((userId) => ({
+            projectId: inserted.id,
+            userId,
+            role: "editor" as const,
+          }))
+        )
+        .onConflictDoNothing();
+    }
 
     // Creator is always admin of the new project.
     return toProjectResponse(inserted, "admin");
