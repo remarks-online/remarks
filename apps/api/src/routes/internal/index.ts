@@ -1,0 +1,14 @@
+import type { FastifyInstance } from "fastify";
+import internalAuthPlugin from "../../plugins/internal-auth.js";
+import { tokenRoutes } from "./tokens.js";
+
+// /internal/* — service-to-service endpoints reachable only from the MCP
+// server (Phase 2 spec §5.4). Wraps every internal route in the
+// internal-auth plugin so `x-internal-auth` is enforced before any handler
+// runs. This function is itself registered inside an encapsulated child
+// scope from server.ts, which keeps the auth hook from leaking out to the
+// public /health and /webhooks/* routes.
+export async function internalRoutes(fastify: FastifyInstance): Promise<void> {
+  await fastify.register(internalAuthPlugin);
+  await fastify.register(tokenRoutes);
+}

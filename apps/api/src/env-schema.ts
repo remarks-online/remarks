@@ -8,6 +8,10 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   CLERK_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
   CLERK_SECRET_KEY: z.string().startsWith("sk_"),
+  // Shared secret carried on every internal MCP→API call (`x-internal-auth`
+  // header). The MCP server reads the same value from its own env and the
+  // /internal/* scope refuses requests that don't match. Phase 2 spec §5.4.
+  INTERNAL_API_TOKEN: z.string().min(32),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),

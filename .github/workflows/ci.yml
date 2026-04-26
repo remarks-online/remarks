@@ -66,6 +66,10 @@ jobs:
           R2_ACCESS_KEY_ID: minioadmin
           R2_SECRET_ACCESS_KEY: minioadmin
           R2_BUCKET_SCREENSHOTS: remarks-screenshots-test
+          # Throwaway value — the /internal/* integration test (task 2.5)
+          # constructs `x-internal-auth` from this same env, so any 32+ char
+          # string works as long as both sides see the same one.
+          INTERNAL_API_TOKEN: ci-internal-api-token-not-for-prod-32chars
 
       - run: pnpm turbo run build
         env:

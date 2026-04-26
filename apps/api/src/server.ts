@@ -11,6 +11,7 @@ import r2Plugin from "./plugins/r2.js";
 import rawBodyPlugin from "./plugins/raw-body.js";
 import { annotationRoutes } from "./routes/annotations/index.js";
 import { healthRoutes } from "./routes/health.js";
+import { internalRoutes } from "./routes/internal/index.js";
 import { projectRoutes } from "./routes/projects/index.js";
 import { uploadRoutes } from "./routes/uploads/index.js";
 import { clerkWebhookRoutes } from "./routes/webhooks/clerk.js";
@@ -78,6 +79,11 @@ export async function buildServer(): Promise<FastifyInstance> {
   await server.register(clerkPlugin, {});
   await server.register(healthRoutes);
   await server.register(clerkWebhookRoutes);
+  // Internal MCP-only routes (Phase 2 task 2.5). Registered as its own
+  // top-level scope — the internal-auth plugin's onRequest hook is
+  // encapsulated here, so /health and /webhooks/* still work without an
+  // x-internal-auth header.
+  await server.register(internalRoutes);
 
   await server.register(async (authenticated) => {
     await authenticated.register(authPlugin);

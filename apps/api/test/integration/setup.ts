@@ -6,6 +6,12 @@ process.env.CLERK_WEBHOOK_SECRET =
 process.env.CLERK_SECRET_KEY =
   process.env.CLERK_SECRET_KEY ?? "sk_test_dW5pdC10ZXN0LXNlY3JldC1ub3QtZm9yLXByb2Q=";
 
+// Default INTERNAL_API_TOKEN to a known throwaway value when the dev hasn't
+// set one in .env.local yet. The internal-auth integration test (task 2.5)
+// reads this same value via env.ts to construct its `x-internal-auth` header.
+process.env.INTERNAL_API_TOKEN =
+  process.env.INTERNAL_API_TOKEN ?? "integration-test-internal-api-token-32chars";
+
 if (!process.env.DATABASE_URL) {
   throw new Error(
     "DATABASE_URL is required for integration tests. In CI it's injected by the postgres service; " +
