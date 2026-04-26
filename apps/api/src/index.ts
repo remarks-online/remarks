@@ -1,4 +1,5 @@
 import { env } from "./env.js";
+import { shutdownAnalytics } from "./lib/posthog.js";
 import { buildServer } from "./server.js";
 
 const server = await buildServer();
@@ -6,8 +7,10 @@ const server = await buildServer();
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     server.log.info({ signal }, "shutdown signal received");
-    server
-      .close()
+    Promise.resolve(server.close())
+      // Flush any in-flight PostHog events before exit so we don't lose them
+      // on a Fly machine restart.
+      .then(() => shutdownAnalytics())
       .then(() => process.exit(0))
       .catch((err) => {
         server.log.error({ err }, "error during shutdown");

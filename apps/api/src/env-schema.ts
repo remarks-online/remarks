@@ -16,6 +16,11 @@ export const envSchema = z.object({
   // http://localhost:9000). When unset, r2.ts derives the real endpoint from
   // R2_ACCOUNT_ID.
   R2_S3_ENDPOINT: z.string().url().optional(),
+  // PostHog server (posthog-node) project key. Optional — capture() no-ops
+  // when unset so local dev / CI without analytics doesn't crash. Set in Fly
+  // secrets for production.
+  POSTHOG_PROJECT_API_KEY: z.string().optional(),
+  POSTHOG_HOST: z.string().url().default("https://us.i.posthog.com"),
 });
 
 export type Env = z.infer<typeof envSchema>;

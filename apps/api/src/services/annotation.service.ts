@@ -16,6 +16,7 @@ import {
   encodeAnnotationListCursor,
 } from "../lib/cursor.js";
 import { isUniqueViolation } from "../lib/db-errors.js";
+import { capture as captureAnalytics } from "../lib/posthog.js";
 import { type R2Client, getPresignedGetUrl, headObject } from "../lib/r2.js";
 import { buildAssetR2Key } from "./upload.service.js";
 
@@ -157,6 +158,22 @@ export async function createAnnotation(
         },
       ]
     : [];
+
+  // Spec §7.5 — emitted after the transaction commits so we never report
+  // events for rolled-back writes. Best-effort; PostHog outages don't fail
+  // the request.
+  captureAnalytics({
+    event: "annotation_created",
+    distinctId: author.id,
+    properties: {
+      annotationId: annotationRow.id,
+      projectId: annotationRow.projectId,
+      branchId: annotationRow.branchId,
+      branchName: input.branch,
+      targetType: annotationRow.targetType,
+      hasScreenshot: assetRow !== null,
+    },
+  });
 
   return toAnnotationResponse({
     annotationRow,
@@ -322,10 +339,12 @@ export async function updateAnnotation(
 ): Promise<AnnotationResponse> {
   const { annotationId, actorId, input, r2 } = args;
 
-  await db.transaction(async (tx) => {
+  type StatusTransition = { from: string; to: string; projectId: string };
+
+  const statusTransition = await db.transaction<StatusTransition | null>(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
-      columns: { id: true, status: true, commentText: true },
+      columns: { id: true, status: true, commentText: true, projectId: true },
     });
     if (!current) throw new NotFoundError("Annotation");
 
@@ -335,7 +354,7 @@ export async function updateAnnotation(
 
     // Body validation already requires at least one field; if neither produces
     // an actual change there's nothing to write and no event to emit.
-    if (!statusChanged && !commentChanged) return;
+    if (!statusChanged && !commentChanged) return null;
 
     await tx
       .update(schema.annotations)
@@ -367,7 +386,30 @@ export async function updateAnnotation(
         payload: { previousLength: current.commentText.length },
       });
     }
+
+    if (!statusChanged) return null;
+    return {
+      from: current.status,
+      to: input.status as string,
+      projectId: current.projectId,
+    };
   });
+
+  // Spec §7.5 — fire after the commit so a rolled-back write doesn't surface
+  // as an analytics event.
+  if (statusTransition) {
+    captureAnalytics({
+      event: "annotation_status_changed",
+      distinctId: actorId,
+      properties: {
+        annotationId,
+        projectId: statusTransition.projectId,
+        from: statusTransition.from,
+        to: statusTransition.to,
+        actorType: "user",
+      },
+    });
+  }
 
   // Re-load the row outside the transaction so the response includes branch,
   // author, and assets without forcing the writer transaction to do extra work.

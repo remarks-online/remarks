@@ -2,6 +2,7 @@ import { UnauthorizedError, clerkWebhookEventSchema } from "@remarks/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { Webhook } from "svix";
 import { env } from "../../env.js";
+import { capture } from "../../lib/posthog.js";
 import {
   deleteOrg,
   removeProjectMembersForOrgMember,
@@ -56,6 +57,19 @@ export const clerkWebhookRoutes: FastifyPluginAsync = async (fastify) => {
         await softDeleteUser(fastify.db, event.data.id);
         break;
       case "organization.created":
+        await upsertOrg(fastify.db, event.data);
+        // Spec §7.5 — emit once per org. `created_by` is the Clerk user id of
+        // the org creator; webhook may omit it for system-created orgs in
+        // which case we fall back to the org id as the distinct id.
+        capture({
+          event: "org_created",
+          distinctId: event.data.created_by ?? event.data.id,
+          properties: {
+            clerkOrgId: event.data.id,
+            slug: event.data.slug,
+          },
+        });
+        break;
       case "organization.updated":
         await upsertOrg(fastify.db, event.data);
         break;

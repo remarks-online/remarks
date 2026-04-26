@@ -1,5 +1,6 @@
 "use client";
 
+import { capture } from "@/lib/analytics";
 import { trpc } from "@/lib/trpc-client";
 import { PROJECT_SLUG_REGEX, createProjectRequestSchema } from "@remarks/shared";
 import { Button, Input, Label } from "@remarks/ui";
@@ -22,7 +23,8 @@ export function NewProjectForm({ orgId }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
 
   const createMutation = trpc.projects.create.useMutation({
-    onSuccess: () => {
+    onSuccess: (project) => {
+      capture("project_created", { source: "form", projectId: project.id });
       router.push("/app/projects");
       router.refresh();
     },
