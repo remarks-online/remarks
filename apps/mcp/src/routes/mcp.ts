@@ -2,10 +2,17 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { FastifyInstance } from "fastify";
 import * as apiClient from "../lib/api-client.js";
+import { createRedisIdempotencyCache } from "../lib/idempotency.js";
+import { redis } from "../lib/redis.js";
 import { registerToolHandlers } from "../tools/index.js";
 import { SERVER_VERSION } from "../version.js";
 
 const SERVER_NAME = "remarks";
+
+// One cache instance per process (the Upstash REST client is stateless, so
+// it's safe to share across requests). Built lazily at module load rather
+// than per-request to avoid re-allocating on every MCP call.
+const idempotencyCache = createRedisIdempotencyCache(redis);
 
 export async function mcpRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
@@ -29,6 +36,7 @@ export async function mcpRoutes(fastify: FastifyInstance): Promise<void> {
       registerToolHandlers(server, {
         auth: request.auth,
         api: apiClient,
+        idempotency: idempotencyCache,
         requestId: request.id,
       });
       // Omitting sessionIdGenerator is the SDK's signal for stateless mode;

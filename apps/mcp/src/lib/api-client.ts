@@ -1,6 +1,8 @@
+import type { AgentUpdateStatus, McpCommentKind } from "@remarks/mcp-schema";
 import {
   type AnnotationListResponse,
   type AnnotationResponse,
+  type AnnotationStatus,
   InternalError,
 } from "@remarks/shared";
 import { env } from "../env.js";
@@ -151,5 +153,77 @@ export async function fetchAnnotation(
   return getJson<McpAnnotationPayload>(
     `/internal/mcp/annotations/${annotationId}?projectId=${projectId}`,
     "annotation lookup"
+  );
+}
+
+// --- Mutation fetchers (Phase 2 tasks 2.10–2.11) ---
+//
+// Same null-on-404 / throw-on-other-non-2xx contract as `getJson`. The 2xx
+// surface is split: 200 for status updates (UPDATE then read), 201 for new
+// comment events. Both succeed-shapes are accepted; anything else throws.
+
+async function postJson<TReq, TRes>(path: string, body: TReq, label: string): Promise<TRes | null> {
+  let response: Response;
+  try {
+    response = await fetch(`${env.API_INTERNAL_URL}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-internal-auth": env.INTERNAL_API_TOKEN,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (cause) {
+    throw new InternalError(`Failed to reach Remarks API for ${label}`, cause);
+  }
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new InternalError(`${label} failed with status ${response.status}`);
+  }
+  return (await response.json()) as TRes;
+}
+
+export interface UpdateAnnotationStatusPayload {
+  id: string;
+  status: AnnotationStatus;
+  updatedAt: string;
+}
+
+export async function updateAnnotationStatus(
+  annotationId: string,
+  projectId: string,
+  tokenId: string,
+  status: AgentUpdateStatus,
+  note: string | undefined
+): Promise<UpdateAnnotationStatusPayload | null> {
+  return postJson<
+    { projectId: string; tokenId: string; status: AgentUpdateStatus; note?: string },
+    UpdateAnnotationStatusPayload
+  >(
+    `/internal/mcp/annotations/${annotationId}/status`,
+    { projectId, tokenId, status, ...(note !== undefined ? { note } : {}) },
+    "agent status update"
+  );
+}
+
+export interface AddAnnotationCommentPayload {
+  eventId: string;
+  createdAt: string;
+}
+
+export async function addAnnotationComment(
+  annotationId: string,
+  projectId: string,
+  tokenId: string,
+  comment: string,
+  kind: McpCommentKind | undefined
+): Promise<AddAnnotationCommentPayload | null> {
+  return postJson<
+    { projectId: string; tokenId: string; comment: string; kind?: McpCommentKind },
+    AddAnnotationCommentPayload
+  >(
+    `/internal/mcp/annotations/${annotationId}/comments`,
+    { projectId, tokenId, comment, ...(kind !== undefined ? { kind } : {}) },
+    "agent comment"
   );
 }

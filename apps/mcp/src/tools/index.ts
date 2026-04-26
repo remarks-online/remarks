@@ -7,23 +7,30 @@ import {
 import { REMARKS_TOOLS, type RemarksTool, type RemarksToolName } from "@remarks/mcp-schema";
 import { z } from "zod";
 import { McpToolError, toMcpToolErrorPayload } from "../lib/mcp-error.js";
+import { addTaskCommentHandler } from "./add-task-comment.js";
+import { batchUpdateStatusHandler } from "./batch-update-status.js";
 import { getProjectContextHandler } from "./get-project-context.js";
 import { getTaskHandler } from "./get-task.js";
 import { listTasksHandler } from "./list-tasks.js";
+import { openPrHandler } from "./open-pr.js";
 import type { ToolHandler, ToolHandlerContext } from "./types.js";
+import { updateTaskStatusHandler } from "./update-task-status.js";
 import { whoamiHandler } from "./whoami.js";
 
-// The four read-only tools shipping in tasks 2.6–2.9. The other four
-// (mutators + open_pr stub) are scaffolded in @remarks/mcp-schema with
-// names + descriptions but have no handler yet — `tools/list` exposes them
-// so MCP clients see the full surface, and `tools/call` for an
-// unimplemented one returns INTERNAL "not yet implemented" so the agent
-// fails fast instead of looping (Phase 2 spec §3.1 stable-name principle).
+// All eight tools wired. The mutators + open_pr stub shipped in tasks
+// 2.10–2.13. Phase 2 spec §3.1: tool names are stable; new capability is a
+// new tool, not a rename — so this map only ever grows. Unimplemented tool
+// names still flow through the not-yet-implemented branch below for
+// forward-compat, but every name in @remarks/mcp-schema is now bound.
 const HANDLERS: Partial<Record<RemarksToolName, ToolHandler>> = {
   remarks_whoami: whoamiHandler,
   remarks_list_tasks: listTasksHandler,
   remarks_get_task: getTaskHandler,
   remarks_get_project_context: getProjectContextHandler,
+  remarks_update_task_status: updateTaskStatusHandler,
+  remarks_add_task_comment: addTaskCommentHandler,
+  remarks_batch_update_status: batchUpdateStatusHandler,
+  remarks_open_pr: openPrHandler,
 };
 
 function toToolManifest(tool: RemarksTool): Tool {

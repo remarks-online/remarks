@@ -4,7 +4,9 @@ import { env } from "../env.js";
 // Spec §7.5 — server-side capture call sites:
 //   org_created               (apps/api/src/routes/webhooks/clerk.ts)
 //   annotation_created        (apps/api/src/services/annotation.service.ts)
-//   annotation_status_changed (apps/api/src/services/annotation.service.ts)
+//   annotation_status_changed (apps/api/src/services/annotation.service.ts,
+//                              apps/api/src/services/mcp.service.ts — agent path
+//                              uses tokenId as distinctId and tags actorType="agent")
 // Keep this list in sync.
 export type ServerAnalyticsEvent =
   | "org_created"

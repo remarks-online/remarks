@@ -1,8 +1,19 @@
 import { type DB, schema } from "@remarks/db";
 import { type AnnotationResponse, type AnnotationStatus, NotFoundError } from "@remarks/shared";
 import { and, asc, desc, eq, isNotNull, ne, or, sql } from "drizzle-orm";
+import { capture as captureAnalytics } from "../lib/posthog.js";
 import type { R2Client } from "../lib/r2.js";
 import { getAnnotationById } from "./annotation.service.js";
+
+// Subset of statuses agents may set (Phase 2 spec §3.2 update_task_status).
+// Agents cannot reset to to_do; the schema in @remarks/mcp-schema enforces
+// this at the wire layer, but the type here makes intent explicit.
+type AgentSettableStatus = "doing" | "done" | "rejected";
+
+// Subset of mcpCommentKindSchema in @remarks/mcp-schema. Re-stated here so
+// this service has no @remarks/mcp-schema dep (clean dependency direction:
+// the API doesn't need to know about MCP wire shapes).
+type AgentCommentKind = "clarification_request" | "progress_update" | "completion_note";
 
 // Phase 2 spec §3.2: get_task screenshot_url is "presigned, 1h expiry".
 export const MCP_SCREENSHOT_GET_TTL_SECONDS = 60 * 60;
@@ -215,4 +226,159 @@ export async function getMcpAnnotationById(
   };
 
   return { annotation: annotationWithExtras, relatedTasks: relatedRows };
+}
+
+// --- Agent mutation paths (Phase 2 tasks 2.10–2.11) ---
+//
+// Mirror the user-auth `updateAnnotation` / event-creation paths in
+// annotation.service.ts but: (a) attribute via actor_token_id, not actor_id;
+// (b) emit `agent_updated_status` / `agent_commented` event types so the
+// dashboard can render them with an agent badge (Phase 2 spec §7.2). Cross-
+// project access surfaces as 404 — same existence-leak posture as
+// `getMcpAnnotationById`.
+
+export interface AgentUpdateAnnotationStatusArgs {
+  annotationId: string;
+  projectId: string;
+  tokenId: string;
+  status: AgentSettableStatus;
+  note?: string;
+}
+
+export interface AgentUpdateAnnotationStatusResult {
+  id: string;
+  status: AnnotationStatus;
+  updatedAt: string;
+}
+
+export async function agentUpdateAnnotationStatus(
+  db: DB,
+  args: AgentUpdateAnnotationStatusArgs
+): Promise<AgentUpdateAnnotationStatusResult> {
+  const { annotationId, projectId, tokenId, status, note } = args;
+
+  type StatusTransition = { from: AnnotationStatus; to: AnnotationStatus } | null;
+
+  const transition = await db.transaction<StatusTransition>(async (tx) => {
+    const current = await tx.query.annotations.findFirst({
+      where: eq(schema.annotations.id, annotationId),
+      columns: { id: true, status: true, projectId: true },
+    });
+    // Project-scope check inside the tx so a concurrent project transfer
+    // can't race past the existence guard. Cross-project is 404 (same as
+    // getMcpAnnotationById) — existence not leaked.
+    if (!current || current.projectId !== projectId) {
+      throw new NotFoundError("Annotation");
+    }
+
+    // No-op short-circuit. Same-status retries (e.g., crash-loop after the
+    // status was already flipped) shouldn't write a noisy
+    // `agent_updated_status` event row. Idempotency keys cover exact
+    // request replay; this guards different-key retries on already-applied
+    // changes.
+    if (current.status === status) return null;
+
+    await tx
+      .update(schema.annotations)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(schema.annotations.id, annotationId));
+
+    await tx.insert(schema.annotationEvents).values({
+      annotationId,
+      actorType: "agent",
+      actorId: null,
+      actorTokenId: tokenId,
+      type: "agent_updated_status",
+      payload: {
+        from: current.status,
+        to: status,
+        ...(note !== undefined ? { note } : {}),
+      },
+    });
+
+    return { from: current.status, to: status };
+  });
+
+  // Re-read for the response (need the post-update timestamp). Cheaper than
+  // RETURNING because the transaction is already done by the time the agent
+  // sees the response.
+  const after = await db.query.annotations.findFirst({
+    where: eq(schema.annotations.id, annotationId),
+    columns: { id: true, status: true, updatedAt: true },
+  });
+  // After we've held the project-scope check inside the tx, the only way
+  // `after` is null is concurrent deletion between tx commit and the read.
+  // Treat that the same as a missing annotation.
+  if (!after) throw new NotFoundError("Annotation");
+
+  if (transition) {
+    // Spec §7.5 — fire after commit. distinctId is the tokenId because the
+    // agent path has no user. Property tag `actorType: "agent"` lets
+    // analytics queries split human vs agent traffic in one funnel.
+    captureAnalytics({
+      event: "annotation_status_changed",
+      distinctId: tokenId,
+      properties: {
+        annotationId,
+        projectId,
+        from: transition.from,
+        to: transition.to,
+        actorType: "agent",
+      },
+    });
+  }
+
+  return {
+    id: after.id,
+    status: after.status,
+    updatedAt: after.updatedAt.toISOString(),
+  };
+}
+
+export interface AgentAddAnnotationCommentArgs {
+  annotationId: string;
+  projectId: string;
+  tokenId: string;
+  comment: string;
+  kind?: AgentCommentKind;
+}
+
+export interface AgentAddAnnotationCommentResult {
+  eventId: string;
+  createdAt: string;
+}
+
+export async function agentAddAnnotationComment(
+  db: DB,
+  args: AgentAddAnnotationCommentArgs
+): Promise<AgentAddAnnotationCommentResult> {
+  const { annotationId, projectId, tokenId, comment, kind } = args;
+
+  return db.transaction(async (tx) => {
+    const current = await tx.query.annotations.findFirst({
+      where: eq(schema.annotations.id, annotationId),
+      columns: { id: true, projectId: true },
+    });
+    if (!current || current.projectId !== projectId) {
+      throw new NotFoundError("Annotation");
+    }
+
+    const [row] = await tx
+      .insert(schema.annotationEvents)
+      .values({
+        annotationId,
+        actorType: "agent",
+        actorId: null,
+        actorTokenId: tokenId,
+        type: "agent_commented",
+        payload: { comment, ...(kind !== undefined ? { kind } : {}) },
+      })
+      .returning({
+        id: schema.annotationEvents.id,
+        createdAt: schema.annotationEvents.createdAt,
+      });
+    if (!row) throw new Error("annotation_events insert returned no rows");
+
+    return { eventId: row.id, createdAt: row.createdAt.toISOString() };
+  });
 }

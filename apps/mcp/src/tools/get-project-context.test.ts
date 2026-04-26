@@ -1,5 +1,6 @@
 import { getProjectContextOutputSchema } from "@remarks/mcp-schema";
 import { describe, expect, it, vi } from "vitest";
+import type { IdempotencyCache } from "../lib/idempotency.js";
 import type { AuthContext } from "../types/auth.js";
 import { getProjectContextHandler } from "./get-project-context.js";
 import type { ApiClient } from "./types.js";
@@ -17,8 +18,14 @@ function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
     fetchAnnotation: vi.fn(),
+    updateAnnotationStatus: vi.fn(),
+    addAnnotationComment: vi.fn(),
     ...overrides,
   } as ApiClient;
+}
+
+function makeIdempotency(): IdempotencyCache {
+  return { check: vi.fn(), store: vi.fn() } as IdempotencyCache;
 }
 
 describe("getProjectContextHandler", () => {
@@ -48,7 +55,7 @@ describe("getProjectContextHandler", () => {
 
     const result = await getProjectContextHandler(
       { project_id: PROJECT_ID },
-      { auth: STUB_AUTH, api, requestId: "req_test" }
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
     );
 
     expect(fetchProjectContext).toHaveBeenCalledWith(PROJECT_ID);
@@ -81,7 +88,7 @@ describe("getProjectContextHandler", () => {
     await expect(
       getProjectContextHandler(
         { project_id: "99999999-9999-4999-8999-999999999999" },
-        { auth: STUB_AUTH, api, requestId: "req_test" }
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
       )
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(fetchProjectContext).not.toHaveBeenCalled();
@@ -92,7 +99,7 @@ describe("getProjectContextHandler", () => {
     await expect(
       getProjectContextHandler(
         { project_id: PROJECT_ID },
-        { auth: STUB_AUTH, api, requestId: "req_test" }
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
       )
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });

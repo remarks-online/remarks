@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   fetchProjectContext: vi.fn(),
   fetchListAnnotations: vi.fn(),
   fetchAnnotation: vi.fn(),
+  updateAnnotationStatus: vi.fn(),
+  addAnnotationComment: vi.fn(),
 }));
 
 vi.mock("../lib/redis.js", () => ({
@@ -26,6 +28,8 @@ vi.mock("../lib/api-client.js", () => ({
   fetchProjectContext: mocks.fetchProjectContext,
   fetchListAnnotations: mocks.fetchListAnnotations,
   fetchAnnotation: mocks.fetchAnnotation,
+  updateAnnotationStatus: mocks.updateAnnotationStatus,
+  addAnnotationComment: mocks.addAnnotationComment,
 }));
 
 const { buildServer } = await import("../server.js");
@@ -90,6 +94,11 @@ describe("POST /mcp", () => {
     mocks.fetchProjectContext.mockReset();
     mocks.fetchListAnnotations.mockReset();
     mocks.fetchAnnotation.mockReset();
+    mocks.updateAnnotationStatus.mockReset();
+    mocks.addAnnotationComment.mockReset();
+    // Idempotency cache reads pass through to the mocked redis.get; reset
+    // it per-test so a tests-shared mock doesn't accidentally serve a hit.
+    mocks.redisGet.mockResolvedValue(STUB_AUTH);
   });
 
   it("responds to MCP initialize with serverInfo.name === 'remarks'", async () => {
@@ -213,7 +222,13 @@ describe("POST /mcp", () => {
     expect(result.structuredContent.token_name).toBe("Cursor on laptop");
   });
 
-  it("tools/call for an unimplemented mutator returns an INTERNAL error envelope", async () => {
+  it("tools/call remarks_update_task_status routes through the handler", async () => {
+    mocks.updateAnnotationStatus.mockResolvedValueOnce({
+      id: "33333333-3333-4333-8333-333333333333",
+      status: "doing",
+      updatedAt: "2026-04-26T10:00:00.000Z",
+    });
+
     const response = await server.inject({
       method: "POST",
       url: "/mcp",
@@ -237,12 +252,54 @@ describe("POST /mcp", () => {
     });
 
     expect(response.statusCode).toBe(200);
+    expect(mocks.updateAnnotationStatus).toHaveBeenCalledWith(
+      "33333333-3333-4333-8333-333333333333",
+      STUB_AUTH.projectId,
+      STUB_AUTH.tokenId,
+      "doing",
+      undefined
+    );
     const envelope = parseJsonRpcResponse(response.body);
     const result = envelope.result as {
+      structuredContent: { id: string; status: string; updated_at: string };
       isError?: boolean;
-      structuredContent: { error: { code: string } };
     };
-    expect(result.isError).toBe(true);
-    expect(result.structuredContent.error.code).toBe("INTERNAL");
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent.status).toBe("doing");
+  });
+
+  it("tools/call remarks_open_pr returns the pending stub response", async () => {
+    const response = await server.inject({
+      method: "POST",
+      url: "/mcp",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: "Bearer rmk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+      payload: {
+        jsonrpc: "2.0",
+        id: 13,
+        method: "tools/call",
+        params: {
+          name: "remarks_open_pr",
+          arguments: {
+            project_id: STUB_AUTH.projectId,
+            task_ids: ["33333333-3333-4333-8333-333333333333"],
+            branch: "feat/x",
+          },
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const envelope = parseJsonRpcResponse(response.body);
+    const result = envelope.result as {
+      structuredContent: { status: string; pr_url: string | null };
+      isError?: boolean;
+    };
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent.status).toBe("pending_github_integration");
+    expect(result.structuredContent.pr_url).toBeNull();
   });
 });
