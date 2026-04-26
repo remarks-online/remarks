@@ -288,7 +288,7 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 | # | Done when | Complete |
 |---|---|---|
-| A13 | `deploy-api.yml` applies pending Drizzle migrations against the prod direct endpoint before `flyctl deploy`; current prod DB seeded; runbook documents the wiring | [ ] |
+| A13 ✓ | `deploy-api.yml` applies pending Drizzle migrations against the prod direct endpoint before `flyctl deploy`; current prod DB seeded; runbook documents the wiring | [x] |
 
 - **Spec reference**: §9 (deployment); ADR 0004 (`docs/adr/0004-neon-postgres-and-drizzle.md`) says migrations "are applied with `drizzle-kit migrate`" but doesn't say where/when on prod.
 - **Problem**: Neon prod (`main` branch) has zero application tables — the four migrations in `packages/db/drizzle/` (`0000`–`0003`) have never been applied to it. Root cause: nothing in the path from `git push origin main` → running prod app ever invokes `db:migrate`. `apps/api/src/index.ts` doesn't call `migrate()` on boot (intentional, §9.4); `apps/api/fly.toml` has no `[deploy] release_command`; `.github/workflows/deploy-api.yml` runs only `check-fly-secrets` → `flyctl deploy`. The dashboard on Vercel and the API on Fly both connect to that empty DB and silently 500 on schema-dependent endpoints. Compounding wrinkle: the runtime `DATABASE_URL` Fly secret is Neon's pooled (pgbouncer) endpoint, which can't run DDL — migrations have to use the direct endpoint, so the migrator can't reuse the Fly secret as-is.
@@ -308,4 +308,4 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Affected tasks / components**: `.github/workflows/deploy-api.yml`; `docs/runbooks/environments.md`; the prod Neon `main` branch state; indirectly every dashboard/API surface that 500s today against the empty schema.
 - **Dependencies**: Independent. Should be picked up immediately — Phase 1 prod is currently broken on any schema-dependent path.
 - **Estimated size**: `s`.
-- **Status**: `open`.
+- **Status**: `done` — workflow change landed in PR #50 (commit `d74b1b1`). Bootstrap was run from a workstation against the Neon `main` direct endpoint before merge, so the first post-merge `Deploy API` workflow run hit the migrate step as a no-op and proceeded into `flyctl deploy` cleanly. Subsequent deploys will pick up new migrations automatically as they're added under `packages/db/drizzle/`.
