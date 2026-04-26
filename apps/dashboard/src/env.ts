@@ -7,7 +7,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_API_BASE_URL: z.string().url(),
   // Public URL of the hosted MCP server. The "Connect Agent" guide page
   // renders this into install commands and config snippets. Local dev:
-  // http://localhost:4001/mcp. Production: https://mcp.remarks.dev/mcp.
+  // http://localhost:4001/mcp. Production: https://mcp.remarks.online/mcp.
   NEXT_PUBLIC_MCP_SERVER_URL: z.string().url().default("http://localhost:4001/mcp"),
   // PostHog browser SDK key. Optional in dev; analytics no-ops when unset so
   // local dev / preview deploys without a configured project don't crash. Set
