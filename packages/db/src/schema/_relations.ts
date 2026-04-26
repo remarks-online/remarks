@@ -4,7 +4,6 @@ import { annotationEvents } from "./annotation-events.js";
 import { annotations } from "./annotations.js";
 import { branches } from "./branches.js";
 import { organizations } from "./organizations.js";
-import { projectApiTokens } from "./project-api-tokens.js";
 import { projectMembers } from "./project-members.js";
 import { projects } from "./projects.js";
 import { users } from "./users.js";
@@ -17,7 +16,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   authoredAnnotations: many(annotations),
   projectMemberships: many(projectMembers),
   annotationEvents: many(annotationEvents),
-  createdApiTokens: many(projectApiTokens),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -25,7 +23,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   branches: many(branches),
   annotations: many(annotations),
   members: many(projectMembers),
-  apiTokens: many(projectApiTokens),
 }));
 
 export const branchesRelations = relations(branches, ({ one, many }) => ({
@@ -47,10 +44,6 @@ export const annotationEventsRelations = relations(annotationEvents, ({ one }) =
     references: [annotations.id],
   }),
   actor: one(users, { fields: [annotationEvents.actorId], references: [users.id] }),
-  actorToken: one(projectApiTokens, {
-    fields: [annotationEvents.actorTokenId],
-    references: [projectApiTokens.id],
-  }),
 }));
 
 export const annotationAssetsRelations = relations(annotationAssets, ({ one }) => ({
@@ -63,15 +56,4 @@ export const annotationAssetsRelations = relations(annotationAssets, ({ one }) =
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
   project: one(projects, { fields: [projectMembers.projectId], references: [projects.id] }),
   user: one(users, { fields: [projectMembers.userId], references: [users.id] }),
-}));
-
-export const projectApiTokensRelations = relations(projectApiTokens, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectApiTokens.projectId],
-    references: [projects.id],
-  }),
-  createdBy: one(users, {
-    fields: [projectApiTokens.createdById],
-    references: [users.id],
-  }),
 }));

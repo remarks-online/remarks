@@ -6,9 +6,9 @@ import { batchUpdateStatusHandler } from "./batch-update-status.js";
 import type { ApiClient } from "./types.js";
 
 const STUB_AUTH: AuthContext = {
-  tokenId: "11111111-1111-4111-8111-111111111111",
-  projectId: "22222222-2222-4222-8222-222222222222",
+  clerkUserId: "user_2abc123",
   scopes: ["tasks:read", "tasks:write", "project:read"],
+  oauthClientName: "Claude Code",
 };
 
 const TASK_A = "33333333-3333-4333-8333-333333333333";
@@ -18,6 +18,8 @@ const IDEMPOTENCY_KEY = "66666666-6666-4666-8666-666666666666";
 
 function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    assertProjectAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleProjects: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),

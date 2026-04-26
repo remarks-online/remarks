@@ -7,13 +7,15 @@ import type { ApiClient } from "./types.js";
 
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 const STUB_AUTH: AuthContext = {
-  tokenId: "11111111-1111-4111-8111-111111111111",
-  projectId: PROJECT_ID,
-  scopes: ["tasks:read", "project:read"],
+  clerkUserId: "user_2abc123",
+  scopes: ["tasks:read", "tasks:write", "project:read"],
+  oauthClientName: "Claude Code",
 };
 
 function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    assertProjectAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleProjects: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
@@ -84,7 +86,10 @@ describe("getProjectContextHandler", () => {
 
   it("rejects cross-project access with NOT_FOUND, never calls api", async () => {
     const fetchProjectContext = vi.fn();
-    const api = makeApi({ fetchProjectContext });
+    const api = makeApi({
+      assertProjectAccess: vi.fn().mockResolvedValue(false),
+      fetchProjectContext,
+    });
     await expect(
       getProjectContextHandler(
         { project_id: "99999999-9999-4999-8999-999999999999" },

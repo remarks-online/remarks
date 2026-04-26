@@ -1,14 +1,17 @@
 import { getProjectContextInputSchema, getProjectContextOutputSchema } from "@remarks/mcp-schema";
 import { McpToolError } from "../lib/mcp-error.js";
-import { parseToolInput, structuredToolResult } from "./shared.js";
+import {
+  parseToolInput,
+  requireProjectAccess,
+  requireScope,
+  structuredToolResult,
+} from "./shared.js";
 import type { ToolHandler } from "./types.js";
 
 export const getProjectContextHandler: ToolHandler = async (args, ctx) => {
   const input = parseToolInput(getProjectContextInputSchema, args, "remarks_get_project_context");
-
-  if (input.project_id !== ctx.auth.projectId) {
-    throw new McpToolError("NOT_FOUND", "Project not found");
-  }
+  requireScope(ctx.auth, "project:read", "remarks_get_project_context");
+  await requireProjectAccess(ctx.auth, ctx.api, input.project_id);
 
   const payload = await ctx.api.fetchProjectContext(input.project_id);
   if (!payload) {

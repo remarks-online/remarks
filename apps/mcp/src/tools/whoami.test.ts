@@ -6,14 +6,20 @@ import type { AuthContext } from "../types/auth.js";
 import type { ApiClient } from "./types.js";
 import { whoamiHandler } from "./whoami.js";
 
+const CLERK_USER_ID = "user_2abc123";
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+
 const STUB_AUTH: AuthContext = {
-  tokenId: "11111111-1111-4111-8111-111111111111",
-  projectId: "22222222-2222-4222-8222-222222222222",
+  clerkUserId: CLERK_USER_ID,
   scopes: ["tasks:read", "tasks:write", "project:read"],
+  oauthClientName: "Claude Code",
 };
 
 function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    assertProjectAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleProjects: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
@@ -29,10 +35,10 @@ function makeIdempotency(): IdempotencyCache {
 }
 
 describe("whoamiHandler", () => {
-  it("returns project + token + version metadata on success", async () => {
+  it("returns user, projects, oauth client name, and version metadata on success", async () => {
     const fetchWhoami = vi.fn().mockResolvedValue({
-      token: { id: STUB_AUTH.tokenId, name: "Cursor on laptop", scopes: STUB_AUTH.scopes },
-      project: { id: STUB_AUTH.projectId, name: "Acme", slug: "acme" },
+      user: { id: USER_ID, email: "alice@example.com", name: "Alice" },
+      projects: [{ id: PROJECT_ID, name: "Acme", slug: "acme" }],
     });
     const api = makeApi({ fetchWhoami });
 
@@ -41,15 +47,12 @@ describe("whoamiHandler", () => {
       { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
     );
 
-    expect(fetchWhoami).toHaveBeenCalledWith(STUB_AUTH.tokenId);
+    expect(fetchWhoami).toHaveBeenCalledWith(CLERK_USER_ID);
     const parsed = whoamiOutputSchema.parse(result.structuredContent);
-    expect(parsed.project).toEqual({
-      id: STUB_AUTH.projectId,
-      name: "Acme",
-      slug: "acme",
-    });
-    expect(parsed.token_name).toBe("Cursor on laptop");
-    expect(parsed.token_scopes).toEqual(STUB_AUTH.scopes);
+    expect(parsed.user).toEqual({ id: USER_ID, email: "alice@example.com", name: "Alice" });
+    expect(parsed.projects).toEqual([{ id: PROJECT_ID, name: "Acme", slug: "acme" }]);
+    expect(parsed.oauth_client_name).toBe("Claude Code");
+    expect(parsed.granted_scopes).toEqual(STUB_AUTH.scopes);
     expect(parsed.server_version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(parsed.skill_version).toBeTypeOf("string");
   });

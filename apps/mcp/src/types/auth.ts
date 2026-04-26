@@ -1,9 +1,15 @@
 // Resolved auth state attached to every authenticated MCP request.
-// Tools (tasks 2.6+) consume `projectId` to gate access and `scopes` to
-// gate write operations. `tokenId` is for audit/event attribution
-// (annotation_events.actor_token_id when an agent mutates state).
+// Populated by the JWT-verifying auth plugin (apps/mcp/src/plugins/mcp-auth.ts)
+// after a successful Clerk-issued token validation.
+//
+// `clerkUserId`: Clerk's `sub` claim. Used for project-membership lookups and
+//   audit attribution (annotation_events.actor_id resolves through users).
+// `scopes`: granted OAuth scopes (`tasks:read`, `tasks:write`, `project:read`).
+// `oauthClientName`: human-readable name of the OAuth app the token was
+//   issued to — captured at DCR time. Used for event attribution
+//   (annotation_events.actor_oauth_client_id, e.g. "Claude Code", "Cursor").
 export interface AuthContext {
-  tokenId: string;
-  projectId: string;
+  clerkUserId: string;
   scopes: string[];
+  oauthClientName: string;
 }

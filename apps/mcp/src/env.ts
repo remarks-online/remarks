@@ -5,20 +5,22 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default("0.0.0.0"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-  // Shared secret used to hash bearer tokens before comparing against
-  // project_api_tokens.token_hash. Must equal the salt the API uses during
-  // token creation (task 2.20). Phase 2 spec §5.1.
-  TOKEN_HASH_SALT: z.string().min(32),
+  // Clerk credentials. Used to verify OAuth-issued JWTs and to resolve OAuth
+  // app metadata (the human-readable client name surfaced on agent-authored
+  // events). ADR-0015.
+  CLERK_SECRET_KEY: z.string().startsWith("sk_"),
+  CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_"),
+  // Canonical resource URI advertised in PRM and validated against `aud` on
+  // every token (RFC 8707). Local dev: http://localhost:3000/mcp;
+  // production: https://mcp.remarks.dev/mcp.
+  MCP_RESOURCE_URI: z.string().url(),
   // Shared secret carried on every internal MCP→API call so the API can refuse
-  // requests that arrive on `*.internal` from anywhere other than this server
-  // (task 2.5 builds the matching API-side check). Phase 2 spec §5.4.
+  // requests that arrive on `*.internal` from anywhere other than this server.
   INTERNAL_API_TOKEN: z.string().min(32),
-  // Base URL of the Remarks API for service-to-service calls. On Fly this is
-  // `http://remarks-api.internal:3000` (private VPC); locally it points at the
-  // dev API on 4000.
+  // Base URL of the Remarks API for service-to-service calls.
   API_INTERNAL_URL: z.string().url(),
-  // Upstash REST endpoint + token. The MCP auth plugin caches token-resolution
-  // results here for 5 min (Phase 2 spec §5.4).
+  // Upstash REST endpoint + token. The MCP auth plugin caches per-user
+  // membership lookups here for 5 min (ADR-0015).
   UPSTASH_REDIS_REST_URL: z.string().url(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
 });

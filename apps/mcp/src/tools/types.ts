@@ -7,6 +7,8 @@ import type { AuthContext } from "../types/auth.js";
 // the methods it needs via `ctx.api.fetch...`; tests replace this with a
 // vi.mock so handlers don't make real network calls.
 export interface ApiClient {
+  assertProjectAccess: typeof apiClient.assertProjectAccess;
+  listAccessibleProjects: typeof apiClient.listAccessibleProjects;
   fetchWhoami: typeof apiClient.fetchWhoami;
   fetchProjectContext: typeof apiClient.fetchProjectContext;
   fetchListAnnotations: typeof apiClient.fetchListAnnotations;

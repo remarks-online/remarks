@@ -24,37 +24,33 @@ export const MCP_SCREENSHOT_GET_TTL_SECONDS = 60 * 60;
 const RELATED_TASKS_LIMIT = 10;
 
 export interface WhoamiPayload {
-  token: { id: string; name: string; scopes: string[] };
-  project: { id: string; name: string; slug: string };
+  user: { id: string; email: string | null; name: string | null };
+  projects: Array<{ id: string; name: string; slug: string }>;
 }
 
-export async function getMcpWhoami(db: DB, tokenId: string): Promise<WhoamiPayload> {
-  const [row] = await db
-    .select({
-      tokenId: schema.projectApiTokens.id,
-      tokenName: schema.projectApiTokens.name,
-      tokenScopes: schema.projectApiTokens.scopes,
-      tokenRevokedAt: schema.projectApiTokens.revokedAt,
-      projectId: schema.projects.id,
-      projectName: schema.projects.name,
-      projectSlug: schema.projects.slug,
-    })
-    .from(schema.projectApiTokens)
-    .innerJoin(schema.projects, eq(schema.projects.id, schema.projectApiTokens.projectId))
-    .where(eq(schema.projectApiTokens.id, tokenId))
-    .limit(1);
+// Backs `remarks_whoami` under the OAuth model (ADR-0015). The MCP server's
+// auth plugin already validated the bearer JWT and extracted the Clerk user
+// ID; this endpoint joins the user to every project they have membership of.
+export async function getMcpWhoami(db: DB, clerkUserId: string): Promise<WhoamiPayload> {
+  const user = await db.query.users.findFirst({
+    where: eq(schema.users.clerkUserId, clerkUserId),
+    columns: { id: true, email: true, name: true },
+  });
+  if (!user) throw new NotFoundError("User");
 
-  // Revoked tokens still resolve here so the MCP server can surface a useful
-  // "your token was revoked" error to a client that has cached auth — the
-  // upstream auth middleware would normally reject revoked tokens before the
-  // request reaches whoami at all, so this branch is defensive.
-  if (!row || row.tokenRevokedAt !== null) {
-    throw new NotFoundError("Token");
-  }
+  const projects = await db
+    .select({
+      id: schema.projects.id,
+      name: schema.projects.name,
+      slug: schema.projects.slug,
+    })
+    .from(schema.projects)
+    .innerJoin(schema.projectMembers, eq(schema.projectMembers.projectId, schema.projects.id))
+    .where(eq(schema.projectMembers.userId, user.id));
 
   return {
-    token: { id: row.tokenId, name: row.tokenName, scopes: row.tokenScopes },
-    project: { id: row.projectId, name: row.projectName, slug: row.projectSlug },
+    user: { id: user.id, email: user.email, name: user.name },
+    projects,
   };
 }
 
@@ -160,17 +156,32 @@ export interface McpAnnotationPayload {
   relatedTasks: RelatedTaskRow[];
 }
 
+async function userIsProjectMember(
+  db: DB,
+  clerkUserId: string,
+  projectId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ projectId: schema.projectMembers.projectId })
+    .from(schema.projectMembers)
+    .innerJoin(schema.users, eq(schema.users.id, schema.projectMembers.userId))
+    .where(
+      and(eq(schema.users.clerkUserId, clerkUserId), eq(schema.projectMembers.projectId, projectId))
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
 export async function getMcpAnnotationById(
   db: DB,
-  args: { annotationId: string; projectId: string; r2: R2Client }
+  args: { annotationId: string; clerkUserId: string; r2: R2Client }
 ): Promise<McpAnnotationPayload> {
-  const { annotationId, projectId, r2 } = args;
+  const { annotationId, clerkUserId, r2 } = args;
 
-  // Single round-trip for the project-scope check: confirm the annotation
-  // exists in the requested project, plus pre-load fields used both for
-  // related-task matching and for the agent-only payload extension. Cross-
-  // project access surfaces as 404 (existence not leaked), matching
-  // requireProjectMember's behavior on the user-auth path.
+  // Look up the annotation to discover its project, then check membership.
+  // Existence-leak posture: any failure (annotation missing, user not a
+  // member of its project) maps to NotFoundError("Annotation"), so an agent
+  // can't use this endpoint to enumerate annotation IDs.
   const row = await db.query.annotations.findFirst({
     where: eq(schema.annotations.id, annotationId),
     columns: {
@@ -182,9 +193,10 @@ export async function getMcpAnnotationById(
       frameworkHint: true,
     },
   });
-  if (!row || row.projectId !== projectId) {
-    throw new NotFoundError("Annotation");
-  }
+  if (!row) throw new NotFoundError("Annotation");
+  const allowed = await userIsProjectMember(db, clerkUserId, row.projectId);
+  if (!allowed) throw new NotFoundError("Annotation");
+  const projectId = row.projectId;
 
   const annotation = await getAnnotationById(db, annotationId, r2, {
     assetTtlSeconds: MCP_SCREENSHOT_GET_TTL_SECONDS,
@@ -231,16 +243,29 @@ export async function getMcpAnnotationById(
 // --- Agent mutation paths (Phase 2 tasks 2.10–2.11) ---
 //
 // Mirror the user-auth `updateAnnotation` / event-creation paths in
-// annotation.service.ts but: (a) attribute via actor_token_id, not actor_id;
-// (b) emit `agent_updated_status` / `agent_commented` event types so the
-// dashboard can render them with an agent badge (Phase 2 spec §7.2). Cross-
-// project access surfaces as 404 — same existence-leak posture as
-// `getMcpAnnotationById`.
+// annotation.service.ts. Per ADR-0015 attribution is via:
+//   actor_id              → users row matched by Clerk user id (the human who
+//                            authorized the OAuth grant the agent is using)
+//   actor_oauth_client_id → human-readable name of the OAuth app from DCR
+//                            (e.g. "Claude Code")
+// Emits `agent_updated_status` / `agent_commented` event types so the
+// dashboard can render them with an agent badge (Phase 2 spec §7.2).
+// Cross-project access surfaces as 404 — existence-leak posture matches
+// getMcpAnnotationById.
+
+async function resolveUserIdByClerkId(db: DB, clerkUserId: string): Promise<string> {
+  const user = await db.query.users.findFirst({
+    where: eq(schema.users.clerkUserId, clerkUserId),
+    columns: { id: true },
+  });
+  if (!user) throw new NotFoundError("User");
+  return user.id;
+}
 
 export interface AgentUpdateAnnotationStatusArgs {
   annotationId: string;
-  projectId: string;
-  tokenId: string;
+  clerkUserId: string;
+  oauthClientName: string;
   status: AgentSettableStatus;
   note?: string;
 }
@@ -255,27 +280,24 @@ export async function agentUpdateAnnotationStatus(
   db: DB,
   args: AgentUpdateAnnotationStatusArgs
 ): Promise<AgentUpdateAnnotationStatusResult> {
-  const { annotationId, projectId, tokenId, status, note } = args;
+  const { annotationId, clerkUserId, oauthClientName, status, note } = args;
+  const actorId = await resolveUserIdByClerkId(db, clerkUserId);
 
-  type StatusTransition = { from: AnnotationStatus; to: AnnotationStatus } | null;
+  type StatusTransition = {
+    from: AnnotationStatus;
+    to: AnnotationStatus;
+    projectId: string;
+  } | null;
 
   const transition = await db.transaction<StatusTransition>(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
       columns: { id: true, status: true, projectId: true },
     });
-    // Project-scope check inside the tx so a concurrent project transfer
-    // can't race past the existence guard. Cross-project is 404 (same as
-    // getMcpAnnotationById) — existence not leaked.
-    if (!current || current.projectId !== projectId) {
-      throw new NotFoundError("Annotation");
-    }
+    if (!current) throw new NotFoundError("Annotation");
+    const allowed = await userIsProjectMember(tx as unknown as DB, clerkUserId, current.projectId);
+    if (!allowed) throw new NotFoundError("Annotation");
 
-    // No-op short-circuit. Same-status retries (e.g., crash-loop after the
-    // status was already flipped) shouldn't write a noisy
-    // `agent_updated_status` event row. Idempotency keys cover exact
-    // request replay; this guards different-key retries on already-applied
-    // changes.
     if (current.status === status) return null;
 
     await tx
@@ -286,8 +308,8 @@ export async function agentUpdateAnnotationStatus(
     await tx.insert(schema.annotationEvents).values({
       annotationId,
       actorType: "agent",
-      actorId: null,
-      actorTokenId: tokenId,
+      actorId,
+      actorOauthClientId: oauthClientName,
       type: "agent_updated_status",
       payload: {
         from: current.status,
@@ -296,34 +318,26 @@ export async function agentUpdateAnnotationStatus(
       },
     });
 
-    return { from: current.status, to: status };
+    return { from: current.status, to: status, projectId: current.projectId };
   });
 
-  // Re-read for the response (need the post-update timestamp). Cheaper than
-  // RETURNING because the transaction is already done by the time the agent
-  // sees the response.
   const after = await db.query.annotations.findFirst({
     where: eq(schema.annotations.id, annotationId),
     columns: { id: true, status: true, updatedAt: true },
   });
-  // After we've held the project-scope check inside the tx, the only way
-  // `after` is null is concurrent deletion between tx commit and the read.
-  // Treat that the same as a missing annotation.
   if (!after) throw new NotFoundError("Annotation");
 
   if (transition) {
-    // Spec §7.5 — fire after commit. distinctId is the tokenId because the
-    // agent path has no user. Property tag `actorType: "agent"` lets
-    // analytics queries split human vs agent traffic in one funnel.
     captureAnalytics({
       event: "annotation_status_changed",
-      distinctId: tokenId,
+      distinctId: clerkUserId,
       properties: {
         annotationId,
-        projectId,
+        projectId: transition.projectId,
         from: transition.from,
         to: transition.to,
         actorType: "agent",
+        oauthClientName,
       },
     });
   }
@@ -337,8 +351,8 @@ export async function agentUpdateAnnotationStatus(
 
 export interface AgentAddAnnotationCommentArgs {
   annotationId: string;
-  projectId: string;
-  tokenId: string;
+  clerkUserId: string;
+  oauthClientName: string;
   comment: string;
   kind?: AgentCommentKind;
 }
@@ -352,24 +366,25 @@ export async function agentAddAnnotationComment(
   db: DB,
   args: AgentAddAnnotationCommentArgs
 ): Promise<AgentAddAnnotationCommentResult> {
-  const { annotationId, projectId, tokenId, comment, kind } = args;
+  const { annotationId, clerkUserId, oauthClientName, comment, kind } = args;
+  const actorId = await resolveUserIdByClerkId(db, clerkUserId);
 
   return db.transaction(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
       columns: { id: true, projectId: true },
     });
-    if (!current || current.projectId !== projectId) {
-      throw new NotFoundError("Annotation");
-    }
+    if (!current) throw new NotFoundError("Annotation");
+    const allowed = await userIsProjectMember(tx as unknown as DB, clerkUserId, current.projectId);
+    if (!allowed) throw new NotFoundError("Annotation");
 
     const [row] = await tx
       .insert(schema.annotationEvents)
       .values({
         annotationId,
         actorType: "agent",
-        actorId: null,
-        actorTokenId: tokenId,
+        actorId,
+        actorOauthClientId: oauthClientName,
         type: "agent_commented",
         payload: { comment, ...(kind !== undefined ? { kind } : {}) },
       })

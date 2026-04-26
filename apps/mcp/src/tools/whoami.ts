@@ -5,29 +5,30 @@ import { SERVER_VERSION } from "../version.js";
 import { parseToolInput, structuredToolResult } from "./shared.js";
 import type { ToolHandler } from "./types.js";
 
-// remarks_whoami — Phase 2 spec §3.2 Health. Cheap, side-effect-free probe
-// the agent calls at session start to confirm "I'm connected to project
-// X with scopes Y." server_version + skill_version let the agent detect
-// when either has updated since the last connection.
+// remarks_whoami — Phase 2 spec §3.2 Health, ADR-0015. Cheap probe the agent
+// calls at session start to confirm "I'm connected; here's the user and the
+// projects I can act on." Under the OAuth model one grant covers every
+// project the Clerk user is a member of, so the response is plural.
 export const whoamiHandler: ToolHandler = async (args, ctx) => {
   parseToolInput(whoamiInputSchema, args, "remarks_whoami");
 
-  const payload = await ctx.api.fetchWhoami(ctx.auth.tokenId);
+  const payload = await ctx.api.fetchWhoami(ctx.auth.clerkUserId);
   if (!payload) {
-    // The bearer token resolved (we got past the auth middleware) but the
-    // backing token row vanished or got revoked between cache TTLs. Surface
-    // as NOT_FOUND so the agent stops calling tools instead of retrying.
-    throw new McpToolError("NOT_FOUND", "Token not found");
+    // The token verified (we got past the auth middleware) but the user has
+    // no row in our DB yet — Clerk webhook lag. Surface as NOT_FOUND so the
+    // agent stops calling tools instead of retrying tightly.
+    throw new McpToolError("NOT_FOUND", "User not found");
   }
 
   const output = whoamiOutputSchema.parse({
-    project: {
-      id: payload.project.id,
-      name: payload.project.name,
-      slug: payload.project.slug,
+    user: {
+      id: payload.user.id,
+      email: payload.user.email,
+      name: payload.user.name,
     },
-    token_name: payload.token.name,
-    token_scopes: payload.token.scopes,
+    projects: payload.projects,
+    oauth_client_name: ctx.auth.oauthClientName,
+    granted_scopes: ctx.auth.scopes,
     server_version: SERVER_VERSION,
     skill_version: SKILL_VERSION,
   });

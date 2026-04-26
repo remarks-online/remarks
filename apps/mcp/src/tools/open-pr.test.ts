@@ -5,22 +5,26 @@ import type { AuthContext } from "../types/auth.js";
 import { openPrHandler } from "./open-pr.js";
 import type { ApiClient } from "./types.js";
 
+const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 const STUB_AUTH: AuthContext = {
-  tokenId: "11111111-1111-4111-8111-111111111111",
-  projectId: "22222222-2222-4222-8222-222222222222",
+  clerkUserId: "user_2abc123",
   scopes: ["tasks:read", "tasks:write", "project:read"],
+  oauthClientName: "Claude Code",
 };
 
 const TASK_ID = "33333333-3333-4333-8333-333333333333";
 
-function makeApi(): ApiClient {
+function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    assertProjectAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleProjects: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
     fetchAnnotation: vi.fn(),
     updateAnnotationStatus: vi.fn(),
     addAnnotationComment: vi.fn(),
+    ...overrides,
   } as ApiClient;
 }
 
@@ -32,12 +36,12 @@ function makeIdempotency(): IdempotencyCache {
 }
 
 describe("openPrHandler", () => {
-  it("returns deterministic pending response on the same project", async () => {
+  it("returns deterministic pending response on a project the user can access", async () => {
     const api = makeApi();
     const idempotency = makeIdempotency();
     const result = await openPrHandler(
       {
-        project_id: STUB_AUTH.projectId,
+        project_id: PROJECT_ID,
         task_ids: [TASK_ID],
         branch: "feat/something",
       },
@@ -57,6 +61,7 @@ describe("openPrHandler", () => {
   });
 
   it("cross-project project_id → NOT_FOUND", async () => {
+    const api = makeApi({ assertProjectAccess: vi.fn().mockResolvedValue(false) });
     await expect(
       openPrHandler(
         {
@@ -64,7 +69,7 @@ describe("openPrHandler", () => {
           task_ids: [TASK_ID],
           branch: "feat/x",
         },
-        { auth: STUB_AUTH, api: makeApi(), idempotency: makeIdempotency(), requestId: "req_test" }
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
       )
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
@@ -74,7 +79,7 @@ describe("openPrHandler", () => {
     await expect(
       openPrHandler(
         {
-          project_id: STUB_AUTH.projectId,
+          project_id: PROJECT_ID,
           task_ids: [TASK_ID],
           branch: "feat/x",
         },
@@ -86,7 +91,7 @@ describe("openPrHandler", () => {
   it("empty task_ids → VALIDATION_ERROR", async () => {
     await expect(
       openPrHandler(
-        { project_id: STUB_AUTH.projectId, task_ids: [], branch: "feat/x" },
+        { project_id: PROJECT_ID, task_ids: [], branch: "feat/x" },
         { auth: STUB_AUTH, api: makeApi(), idempotency: makeIdempotency(), requestId: "req_test" }
       )
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });

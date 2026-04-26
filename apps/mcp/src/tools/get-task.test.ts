@@ -8,14 +8,17 @@ import type { ApiClient } from "./types.js";
 
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 const TASK_ID = "33333333-3333-4333-8333-333333333333";
+const CLERK_USER_ID = "user_2abc123";
 const STUB_AUTH: AuthContext = {
-  tokenId: "11111111-1111-4111-8111-111111111111",
-  projectId: PROJECT_ID,
-  scopes: ["tasks:read", "project:read"],
+  clerkUserId: CLERK_USER_ID,
+  scopes: ["tasks:read", "tasks:write", "project:read"],
+  oauthClientName: "Claude Code",
 };
 
 function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    assertProjectAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleProjects: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
@@ -86,7 +89,7 @@ describe("getTaskHandler", () => {
       { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
     );
 
-    expect(fetchAnnotation).toHaveBeenCalledWith(TASK_ID, PROJECT_ID);
+    expect(fetchAnnotation).toHaveBeenCalledWith(TASK_ID, CLERK_USER_ID);
     const parsed = getTaskOutputSchema.parse(result.structuredContent);
     expect(parsed.id).toBe(TASK_ID);
     expect(parsed.target).toEqual({ type: "element", selector: "button.submit" });

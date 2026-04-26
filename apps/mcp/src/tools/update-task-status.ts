@@ -28,7 +28,7 @@ export const updateTaskStatusHandler: ToolHandler = async (args, ctx) => {
   if (input.idempotency_key) {
     const cached = await ctx.idempotency.check<UpdateTaskStatusOutput>({
       tool: TOOL_NAME,
-      tokenId: ctx.auth.tokenId,
+      tokenId: ctx.auth.clerkUserId,
       key: input.idempotency_key,
       payload: idemPayload,
     });
@@ -40,8 +40,8 @@ export const updateTaskStatusHandler: ToolHandler = async (args, ctx) => {
 
   const result = await ctx.api.updateAnnotationStatus(
     input.task_id,
-    ctx.auth.projectId,
-    ctx.auth.tokenId,
+    ctx.auth.clerkUserId,
+    ctx.auth.oauthClientName,
     input.status,
     input.note
   );
@@ -67,7 +67,7 @@ export const updateTaskStatusHandler: ToolHandler = async (args, ctx) => {
   if (input.idempotency_key) {
     await ctx.idempotency.store({
       tool: TOOL_NAME,
-      tokenId: ctx.auth.tokenId,
+      tokenId: ctx.auth.clerkUserId,
       key: input.idempotency_key,
       payload: idemPayload,
       response: output,

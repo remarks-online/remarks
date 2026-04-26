@@ -419,41 +419,53 @@ The Remarks Skill drops all the file-format workarounds. It's ~400 lines of pure
 
 ## 5. Authentication and authorization
 
-### 5.1 Token model
+> Superseded as of 2026-04-26 by [ADR-0015](../adr/0015-mcp-oauth-via-clerk.md). The original §5.1–§5.5 specced a project-scoped bearer-token model (`rmk_live_…` minted in the dashboard, pasted into the agent's MCP config). It is replaced wholesale by OAuth 2.1 with Clerk as the authorization server. The sections below describe the model that ships.
 
-Every MCP connection authenticates with a **project-scoped token**.
+### 5.1 OAuth model
 
-- Generated in the Remarks dashboard under Project Settings → Connect Agent.
-- Format: `rmk_live_` + 32 random chars (or `rmk_test_` for a future test mode).
-- Hashed in the DB (sha256-hmac with a server-side salt); never stored in plaintext.
-- Displayed to the user once at creation; after that, only the prefix and last 4 chars are shown.
-- Scoped to exactly one project. No cross-project tokens. If a user wants agent access to 3 projects, they generate 3 tokens.
-- Can be revoked from the dashboard. Revocation is instant (checked per-request).
-- Optional expiry (30/90/365 days/never, default: never).
+The MCP server is an **OAuth 2.1 resource server**; Clerk is the **authorization server**. Tokens are Clerk-issued JWTs validated against Clerk's JWKS. There are no Remarks-issued opaque tokens.
 
-### 5.2 Permission model
+- **Discovery.** The MCP server publishes RFC 9728 Protected Resource Metadata at `/.well-known/oauth-protected-resource/mcp`, listing the Clerk tenant's issuer URL in `authorization_servers`. Clerk publishes RFC 8414 Authorization Server Metadata at `/.well-known/oauth-authorization-server` (advertising `code_challenge_methods_supported: ["S256"]`).
+- **Client registration.** RFC 7591 Dynamic Client Registration is enabled on the Clerk OAuth applications page. Pre-registration is the fallback for enterprise customers. Client ID Metadata Documents (the MCP spec's preferred path, [SEP-991]) are not enabled in Phase 2 because Clerk doesn't yet support them; tracked as a follow-up.
+- **PKCE.** S256, mandatory (Clerk enforces).
+- **Resource indicator (RFC 8707).** Clients pass `resource=https://mcp.remarks.dev/mcp`. The MCP server validates the JWT's audience claim contains this canonical URI.
 
-In Phase 2, every project token has the same scopes:
-- `tasks:read`
-- `tasks:write` (update status, add comments)
-- `project:read`
+### 5.2 Token scope and permission model
 
-Fine-grained scopes (`tasks:read` only, for a read-only agent) are reserved for a future phase. We store `token_scopes` as a JSON array in the DB now so the column exists when needed.
+**One access token covers every project the authenticated Clerk user is a member of.** No per-project consent step. Authorization happens per tool call:
+
+- Tools that take `project_id` (everything except `whoami`): the handler resolves the target project and calls `assertProjectAccess(clerkUserId, projectId)` against the `project_members` table (cached in Redis 300s).
+- Tools that take `task_id` (`get_task`, `update_task_status`, `add_task_comment`, `batch_update_status`): the handler resolves the task → its project, then runs the same membership check.
+- Non-member → 403 with `WWW-Authenticate: Bearer error="insufficient_scope"`.
+
+OAuth scopes (defined per OAuth-app on Clerk):
+- `tasks:read` — list/get tools.
+- `tasks:write` — update status, comments, batch updates.
+- `project:read` — `remarks_get_project_context`.
+- `whoami` requires only authentication.
 
 ### 5.3 Transport auth
 
-The MCP server expects the token in the `Authorization` header as `Bearer rmk_live_xxx` on every request. MCP's streamable HTTP transport supports this directly.
+The MCP server expects `Authorization: Bearer <jwt>` on every request. Missing/invalid → 401 with:
+
+```
+WWW-Authenticate: Bearer resource_metadata="https://mcp.remarks.dev/.well-known/oauth-protected-resource/mcp",
+                         scope="tasks:read tasks:write project:read"
+```
+
+MCP-compatible clients (Claude Code, Cursor, Windsurf, etc.) parse this header and execute the OAuth 2.1 flow without further configuration.
 
 ### 5.4 How auth maps to the API
 
-The MCP server calls the main Remarks API (`api.remarks.dev`) for all data operations. It doesn't talk to Postgres directly. The auth flow:
+The MCP server calls the main Remarks API (`api.remarks.dev`) for all data operations; it doesn't talk to Postgres directly. The auth flow:
 
-1. Agent sends request with `Authorization: Bearer rmk_live_xxx`.
-2. MCP server hashes the token, looks up the project token in `project_api_tokens`, retrieves `project_id` and `scopes`.
-3. MCP server calls the internal API with a system token (a different credential, valid only for internal service-to-service calls) plus `X-Remarks-Project-Id: {project_id}` header.
-4. The internal API trusts the `X-Remarks-Project-Id` header because it came over the internal VPC from a known caller (via Fly's private networking, not the public internet).
+1. Agent sends request with `Authorization: Bearer <jwt>` (Clerk-issued).
+2. MCP server validates the JWT locally (signature against Clerk's JWKS, `iss`, `aud` includes `https://mcp.remarks.dev/mcp`, `exp`, `nbf`). On failure: 401.
+3. MCP server attaches `{ clerkUserId, scopes, oauthClientName }` to the request.
+4. Tool handler resolves the target `project_id` (from input or via task→project lookup) and calls the API: `GET /internal/users/:clerkUserId/projects/:projectId` (cached 300s in Redis at `cache:mcp:projects:{clerkUserId}`). 200 → member; 404 → 403 from the tool.
+5. On success, the handler calls the API for the actual data, attributing agent-authored events to the (Clerk user, OAuth client name) pair. The OAuth client name is captured at DCR time (e.g., "Claude Code") and stored on the event row.
 
-This keeps the MCP server stateless and moves all DB access behind the same API that serves the dashboard. No code duplication.
+The internal API trusts the MCP server because both run in the same Fly VPC with a shared service token; no different from the bearer-token model. What's new is that the source of project authorization is `project_members` (single source of truth, also used by the dashboard) rather than a separate `project_api_tokens` table.
 
 ### 5.5 Rate limiting for agent traffic
 
@@ -461,65 +473,59 @@ Agents make more requests than humans and need different limits:
 
 | Bucket | Limit | Window |
 |---|---|---|
-| `mcp_read` (list_tasks, get_task, whoami, get_project_context) | 600 | 60s per token |
-| `mcp_write` (update_status, add_task_comment, batch_update_status, open_pr) | 200 | 60s per token |
+| `mcp_read` (list_tasks, get_task, whoami, get_project_context) | 600 | 60s per Clerk user |
+| `mcp_write` (update_status, add_task_comment, batch_update_status, open_pr) | 200 | 60s per Clerk user |
 
-Shared Redis instance with the Phase 1 rate limiter, different key prefix (`ratelimit:mcp:{bucket}:{tokenHash}`).
+Shared Redis instance with the Phase 1 rate limiter, key prefix `ratelimit:mcp:{bucket}:{clerkUserId}`. The bucket key changed from `tokenHash` to `clerkUserId` because grants are per-user, not per-token.
 
 ---
 
 ## 6. Install experience
 
+> Rewritten 2026-04-26 to match [ADR-0015](../adr/0015-mcp-oauth-via-clerk.md). The original §6 instructed the user to mint a token in the dashboard and paste it into their agent's config. The OAuth flow eliminates the paste step.
+
 ### 6.1 The dashboard flow
 
-In the Remarks dashboard, under a project, there's a "Connect Agent" section:
+In the Remarks dashboard, under a project, there's a "Connect Agent" page that **shows the user how to install the MCP server in their agent of choice**. No tokens are minted or shown; the page is a guide.
 
-1. User clicks "Connect Agent."
-2. Modal: "Which agent are you using?" — dropdown with presets:
-   - Claude Code
-   - Cursor
-   - Windsurf
-   - Codex CLI
-   - GitHub Copilot
-   - Claude.ai desktop / ChatGPT desktop
-   - Other (generic MCP client)
-3. User picks one. Remarks generates a project token on the fly (if they don't have one named for this agent yet) and displays **two things**:
-   - **Option A: One-click install** (where supported). For Claude Code on macOS/Linux, we generate a `claude mcp add` command or a deep link. For Cursor, a `cursor://install-mcp?...` deep link. For others where deep links don't exist, we skip to Option B.
-   - **Option B: Copy-paste snippet**. The exact JSON block or command to paste into the agent's config file. Always provided as a fallback.
+For each preset agent the page renders:
 
-For every preset, the dashboard shows:
-- Which file the snippet should go in (`~/.cursor/mcp.json`, `.claude/mcp.json`, etc.)
-- Where to paste it (top level, or inside a specific key)
-- A "Verify connection" button that polls the MCP server's `remarks_whoami` tool until it sees a call from this token
+1. **The one-line install command**, ready to copy:
+   - Claude Code: `claude mcp add --transport http remarks https://mcp.remarks.dev/mcp`
+   - Cursor / Windsurf / Codex CLI: equivalent CLI command or settings-pane deep link.
+2. **A manual-config JSON snippet** as a fallback for clients that don't have an `add`-style command. The snippet has no `Authorization` header — the agent obtains its token via OAuth on the first request.
+3. **A short "What happens next"** explanation: "On first use, your agent will open a browser to log into Remarks. The first tool call may be `remarks_whoami` — once that succeeds, you're connected."
+4. **A "Verify Connection" button** that polls the membership cache (same Redis-based last-seen mechanism we already use). On success: ✓ Connected. On timeout (2 minutes): a troubleshooting block.
+
+The page lives at `/projects/[slug]/settings/connect-agent` for now; because grants are per-user, a near-identical guide page also lives at `/account/connections/mcp` so the user can land there from account settings.
 
 ### 6.2 Snippet examples (for the dashboard to render)
 
-The dashboard generates these strings; none of them are hardcoded on the agent side.
+The dashboard generates these strings from per-agent templates in `apps/dashboard/src/lib/agent-presets.ts`. None of them are hardcoded on the agent side.
 
-**Claude Code (project-level `.mcp.json`):**
+**Claude Code — preferred path (CLI):**
+```
+claude mcp add --transport http remarks https://mcp.remarks.dev/mcp
+```
+
+**Claude Code — manual config (`.claude/mcp.json` or `~/.claude/mcp.json`):**
 ```json
 {
   "mcpServers": {
     "remarks": {
       "type": "http",
-      "url": "https://mcp.remarks.dev",
-      "headers": {
-        "Authorization": "Bearer rmk_live_xxxxxxxxxxxxxxxx"
-      }
+      "url": "https://mcp.remarks.dev/mcp"
     }
   }
 }
 ```
 
-**Cursor (project-level `.cursor/mcp.json`):**
+**Cursor (`.cursor/mcp.json`):**
 ```json
 {
   "mcpServers": {
     "remarks": {
-      "url": "https://mcp.remarks.dev",
-      "headers": {
-        "Authorization": "Bearer rmk_live_xxxxxxxxxxxxxxxx"
-      }
+      "url": "https://mcp.remarks.dev/mcp"
     }
   }
 }
@@ -530,24 +536,23 @@ The dashboard generates these strings; none of them are hardcoded on the agent s
 {
   "mcpServers": {
     "remarks": {
-      "serverUrl": "https://mcp.remarks.dev",
-      "headers": {
-        "Authorization": "Bearer rmk_live_xxxxxxxxxxxxxxxx"
-      }
+      "serverUrl": "https://mcp.remarks.dev/mcp"
     }
   }
 }
 ```
 
-Snippets for other agents are generated by the same template engine with per-agent variations captured in a config file (`apps/dashboard/src/lib/agent-presets.ts`) that's easy to extend when a new agent ships.
+The snippets are intentionally minimal — no `Authorization` header. On the agent's first MCP request, the server returns 401 with the `WWW-Authenticate` challenge, the agent runs OAuth 2.1 + DCR + PKCE against Clerk, the user logs in via the browser, and the agent caches the resulting access token + refresh token locally.
 
-### 6.3 The "Verify connection" step
+### 6.3 The "Verify Connection" step
 
-After the user configures their agent and restarts it (most require a restart), they come back to the Remarks dashboard and click "Verify connection." The dashboard polls for any call from this token in the last 5 minutes via an internal endpoint that reads the Redis-based last-seen timestamp. On success, the user sees ✓ Connected; on timeout (2 minutes), a troubleshooting guide with common issues.
+After the user pastes/runs the install snippet and restarts their agent, they click "Verify Connection." The dashboard polls an internal endpoint that reads the Redis last-seen key for the user's grants. On success: ✓ Connected. On timeout (2 minutes): troubleshooting guide with common issues — Clerk's DCR toggle off, browser blocking the redirect, agent not restarted, etc.
 
 ### 6.4 Rotation and revocation
 
-Project Settings → Connected Agents shows a table of tokens: name, last-used timestamp, created date, scopes. Each has "Rotate" (revoke + regenerate) and "Revoke" actions. Rotate displays the new token once (same flow as creation).
+**Account Settings → Connected Apps** shows a table of OAuth grants for the current user: client name (from DCR — "Claude Code", "Cursor", etc.), first authorized, last used (from Redis), scopes granted. Each row has a "Revoke" action that calls Clerk's grant-revocation API. Revocation propagates within ≤ 5 minutes (the membership cache TTL); no plaintext rotation flow because there is no plaintext to rotate.
+
+For users who need access removed from a specific project rather than for a specific agent, Project Settings → Members → Remove still works — that drops the row from `project_members`, the Redis cache invalidates within 5 minutes, and the agent gets 403 on the next call to that project.
 
 ---
 
@@ -555,41 +560,9 @@ Project Settings → Connected Agents shows a table of tokens: name, last-used t
 
 Phase 1 captures most of what's needed. Phase 2 adds three things:
 
-### 7.1 Project API tokens table (new)
+### 7.1 Project API tokens table (REMOVED)
 
-```ts
-// packages/db/src/schema/project-api-tokens.ts
-import { pgTable, text, timestamp, uuid, jsonb, index } from "drizzle-orm/pg-core";
-import { projects } from "./projects";
-import { users } from "./users";
-
-export const projectApiTokens = pgTable(
-  "project_api_tokens",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),                              // user-supplied, e.g., "Claude Code on my laptop"
-    tokenHash: text("token_hash").notNull().unique(),
-    tokenPrefix: text("token_prefix").notNull(),              // first 12 chars for display
-    tokenLast4: text("token_last_4").notNull(),               // last 4 for display
-    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
-    createdById: uuid("created_by_id").notNull().references(() => users.id),
-    expiresAt: timestamp("expires_at", { withTimezone: true }),
-    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    clientInfo: jsonb("client_info").$type<{
-      agent?: string;
-      version?: string;
-      os?: string;
-    } | null>(),                                               // populated from MCP init handshake
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    projectIdx: index("project_api_tokens_project_idx").on(table.projectId),
-    lastUsedIdx: index("project_api_tokens_last_used_idx").on(table.lastUsedAt),
-  }),
-);
-```
+Originally specced as `project_api_tokens` (hashed bearer tokens with prefix/last4 display). [ADR-0015](../adr/0015-mcp-oauth-via-clerk.md) removed this table; the migration `0004_drop_project_api_tokens.sql` drops it. Authorization derives from `project_members` for the authenticated Clerk user. Headless/CI scenarios that need a long-lived secret will be addressed by a future Clerk service-account flow.
 
 ### 7.2 Annotation events: two new event types
 
@@ -601,17 +574,17 @@ export const projectApiTokens = pgTable(
 
 These let the dashboard distinguish agent-authored events from human-authored ones and render them differently (robot icon, slight visual treatment, etc.).
 
-### 7.3 `annotation_events.actor_type` column (new)
+### 7.3 `annotation_events` actor columns (revised)
 
-Currently the events table has `actor_id` referencing a user. For agent-authored events, there's no user — it's a token. Add:
+Originally specced as `actor_id` (user) + `actor_token_id` (token) + `actor_type`. [ADR-0015](../adr/0015-mcp-oauth-via-clerk.md) replaces `actor_token_id` with `actor_oauth_client_id text` (the OAuth-app name from DCR — "Claude Code", "Cursor"). Agent-authored events still set `actor_id` (the Clerk user the agent is acting on behalf of) — that's how attribution is preserved.
 
 ```ts
-// In annotation_events schema
+// annotation-events schema
 actorType: pgEnum("event_actor_type", ["user", "agent", "system"]),
-actorTokenId: uuid("actor_token_id").references(() => projectApiTokens.id),   // nullable
+actorOauthClientId: text("actor_oauth_client_id"), // null unless actor_type = 'agent'
 ```
 
-When `actor_type = 'agent'`, `actor_token_id` is set and `actor_id` is null. When `actor_type = 'user'`, the reverse. When `actor_type = 'system'`, both are null (e.g., for lifecycle events triggered by cascade deletes).
+When `actor_type = 'agent'`, both `actor_id` (Clerk user) and `actor_oauth_client_id` (OAuth client name) are set. When `actor_type = 'user'`, only `actor_id` is set. When `actor_type = 'system'`, both are null. The check constraint enforces this.
 
 ### 7.4 No other schema changes needed
 
@@ -819,8 +792,8 @@ Estimated ~6 weeks total for a solo developer with Claude Code.
 |---|---|---|
 | 2.2 ✓ | Scaffold `apps/mcp` with the official [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk); [Build Server Overview](https://modelcontextprotocol.io/docs/develop/build-server#typescript), health check, deployed to Fly | `curl https://mcp.remarks.online/health` returns 200 |
 | 2.3 ✓ | Build `packages/mcp-schema` with Zod schemas for all 8 tools from §3 | Exports type-safe tool definitions; imported by api and mcp |
-| 2.4 | Auth middleware on the MCP server: parse `Authorization`, hash token, call API to resolve, cache in Redis (5 min TTL) | Integration test: valid token → success, invalid → 401, revoked → 401 |
-| 2.5 | Internal API endpoint for MCP server to resolve tokens (not exposed publicly) | Integration test passes |
+| 2.4 | OAuth resource-server auth on the MCP server: validate Clerk-issued JWTs (signature, `iss`, `aud`, `exp`), 401 with PRM-pointing `WWW-Authenticate` on failure ([ADR-0015](../adr/0015-mcp-oauth-via-clerk.md)) | Integration test: valid JWT → success, expired/wrong-aud/missing → 401 with correct `WWW-Authenticate` |
+| 2.5 | Internal API endpoint for MCP server to resolve project membership (`/internal/users/:clerkUserId/projects/:projectId`) and list accessible projects | Integration test passes |
 
 ### Week 2: core tools
 
@@ -853,10 +826,10 @@ Estimated ~6 weeks total for a solo developer with Claude Code.
 
 | # | Task | Done when |
 |---|---|---|
-| 2.18 | Dashboard: "Connect Agent" page with dropdown | UI renders |
-| 2.19 | Agent-preset catalog in `apps/dashboard/src/lib/agent-presets.ts` (Claude Code, Cursor, Windsurf, Codex, Copilot, Generic MCP) | Each preset produces correct snippet |
-| 2.20 | Token creation flow: generate, show once, store hash | Token only displayed at creation |
-| 2.21 | Connected Agents table: list, rotate, revoke | All actions work |
+| 2.18 | Dashboard: "Connect Agent" guide page with per-agent install instructions (no token mint — see [ADR-0015](../adr/0015-mcp-oauth-via-clerk.md) §6) | UI renders; copy-paste snippets work; "What happens next" explains OAuth |
+| 2.19 | Agent-preset catalog in `apps/dashboard/src/lib/agent-presets.ts` (Claude Code, Cursor, Windsurf, Codex, Copilot, Generic MCP) | Each preset produces correct CLI command + manual JSON snippet |
+| 2.20 | (REMOVED — no tokens to create under the OAuth model) | n/a |
+| 2.21 | Connected Apps table in account settings: list grants from Clerk, revoke per-grant | Revocation surfaces in Clerk and within 5 min stops further calls |
 | 2.22 | Verify Connection button with polling | Success path verified manually |
 | 2.23 | Troubleshooting guide / FAQ page | Published at `docs.remarks.dev/agents` |
 
@@ -897,8 +870,8 @@ When all of these are true, Phase 3 (GitHub integration + billing + public launc
 So the next spec author knows what's unresolved.
 
 - **SSE / websocket for agent notifications.** Phase 2 tools are pull-only. If a human marks a task `rejected` while an agent is processing its batch, the agent doesn't find out until its next `get_task` call. This is fine for Phase 2 (agents don't hold tasks in flight for long). An `agent_notifications` push mechanism is a Phase 3+ concern.
-- **Multi-project tokens.** Some users will want one token that accesses all projects in their org. Deferred to Phase 3 or later, requires `tokens:*` scope model.
-- **Token expiry auto-rotation.** A 90-day rotating token with a grace-period overlap is a security best practice but a UX headache. Not in Phase 2.
+- **Per-project consent.** Phase 2 OAuth tokens cover every project the Clerk user can see. The MCP spec's RFC 8707 resource-indicator mechanism would let us issue per-project tokens (`resource=https://mcp.remarks.dev/p/<slug>`) without dashboard changes; deferred until/unless the all-projects model becomes a real problem.
+- **Headless / CI service-account tokens.** [ADR-0015](../adr/0015-mcp-oauth-via-clerk.md) removed `project_api_tokens`. A future ADR will spec a Clerk service-account flow for scripted use; not in Phase 2.
 - **The `remarks_open_pr` real implementation.** Phase 3, when the GitHub App ships.
 - **Design tokens in `remarks_get_project_context`.** Returned as null in Phase 2. Populated in year 2 when the Figma integration ships.
 - **Per-scope tokens.** `tasks:read` vs `tasks:write` etc. Reserved in the schema, not exposed in the UI.

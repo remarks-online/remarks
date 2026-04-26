@@ -12,41 +12,28 @@ const paramsSchema = z.object({
 });
 
 const querySchema = z.object({
-  projectId: z.string().uuid(),
+  clerkUserId: z.string().min(1),
 });
 
 // Phase 2 §3.2: agents may set doing/done/rejected; cannot reset to to_do.
+// Attribution moves to (clerkUserId, oauthClientName) per ADR-0015. The API
+// resolves the annotation's project itself, then enforces project_members
+// for the Clerk user; cross-project access surfaces as 404 (existence-leak
+// posture preserved).
 const statusUpdateBodySchema = z.object({
-  projectId: z.string().uuid(),
-  tokenId: z.string().uuid(),
+  clerkUserId: z.string().min(1),
+  oauthClientName: z.string().min(1),
   status: z.enum(["doing", "done", "rejected"]),
   note: z.string().optional(),
 });
 
 const commentBodySchema = z.object({
-  projectId: z.string().uuid(),
-  tokenId: z.string().uuid(),
+  clerkUserId: z.string().min(1),
+  oauthClientName: z.string().min(1),
   comment: z.string().min(1).max(MAX_COMMENT_LENGTH),
   kind: z.enum(["clarification_request", "progress_update", "completion_note"]).optional(),
 });
 
-// GET /internal/mcp/annotations/:annotationId?projectId={uuid} — backs
-// `remarks_get_task` (Phase 2 task 2.8). The MCP server passes its
-// resolved auth.projectId so the API can return 404 (not 403) when an agent
-// asks for an annotation outside the token's project. Keeps the
-// existence-leak surface identical to requireProjectMember on the
-// user-auth path.
-//
-// POST /internal/mcp/annotations/:annotationId/status — backs
-// `remarks_update_task_status` (Phase 2 task 2.10). The MCP server forwards
-// its resolved tokenId so the API can attribute the resulting
-// `agent_updated_status` event correctly (actor_type='agent',
-// actor_token_id=tokenId per the CHECK constraint in
-// packages/db/src/schema/annotation-events.ts).
-//
-// POST /internal/mcp/annotations/:annotationId/comments — backs
-// `remarks_add_task_comment` (Phase 2 task 2.11). Same trust model as the
-// status route.
 export async function annotationInternalRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get("/internal/mcp/annotations/:annotationId", async (request, reply) => {
     const paramsResult = paramsSchema.safeParse(request.params);
@@ -60,7 +47,7 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
 
     const payload = await getMcpAnnotationById(fastify.db, {
       annotationId: paramsResult.data.annotationId,
-      projectId: queryResult.data.projectId,
+      clerkUserId: queryResult.data.clerkUserId,
       r2: fastify.r2,
     });
     return reply.code(200).send(payload);
@@ -78,8 +65,8 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
 
     const result = await agentUpdateAnnotationStatus(fastify.db, {
       annotationId: paramsResult.data.annotationId,
-      projectId: bodyResult.data.projectId,
-      tokenId: bodyResult.data.tokenId,
+      clerkUserId: bodyResult.data.clerkUserId,
+      oauthClientName: bodyResult.data.oauthClientName,
       status: bodyResult.data.status,
       ...(bodyResult.data.note !== undefined ? { note: bodyResult.data.note } : {}),
     });
@@ -98,8 +85,8 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
 
     const result = await agentAddAnnotationComment(fastify.db, {
       annotationId: paramsResult.data.annotationId,
-      projectId: bodyResult.data.projectId,
-      tokenId: bodyResult.data.tokenId,
+      clerkUserId: bodyResult.data.clerkUserId,
+      oauthClientName: bodyResult.data.oauthClientName,
       comment: bodyResult.data.comment,
       ...(bodyResult.data.kind !== undefined ? { kind: bodyResult.data.kind } : {}),
     });

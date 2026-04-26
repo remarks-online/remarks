@@ -1,10 +1,7 @@
-import { UnauthorizedError } from "@remarks/shared";
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { env } from "../env.js";
-import { resolveToken } from "../lib/api-client.js";
-import { hashApiToken } from "../lib/hash.js";
-import { redis } from "../lib/redis.js";
+import { verifyOAuthToken } from "../lib/jwt.js";
 import type { AuthContext } from "../types/auth.js";
 
 declare module "fastify" {
@@ -14,40 +11,65 @@ declare module "fastify" {
 }
 
 const BEARER_PREFIX = "Bearer ";
-const CACHE_KEY_PREFIX = "cache:mcp:auth:";
-const CACHE_TTL_SECONDS = 300;
+const REQUIRED_SCOPES = "tasks:read tasks:write project:read";
+
+// MCP authorization spec: on missing/invalid token, return 401 with a
+// WWW-Authenticate header pointing the client at our PRM document so it can
+// discover the authorization server (Clerk) and run OAuth 2.1 + PKCE.
+// ADR-0015.
+function challengeHeader(): string {
+  const prmUrl = `${new URL(env.MCP_RESOURCE_URI).origin}/.well-known/oauth-protected-resource/mcp`;
+  return `Bearer resource_metadata="${prmUrl}", scope="${REQUIRED_SCOPES}"`;
+}
 
 const mcpAuthPlugin: FastifyPluginAsync = async (fastify) => {
   // Pre-declare the `auth` property so Fastify preserves V8's hidden class
   // across requests (mirrors apps/api/src/plugins/auth.ts).
   fastify.decorateRequest("auth", null as unknown as AuthContext);
 
-  fastify.addHook("onRequest", async (request) => {
+  fastify.addHook("onRequest", async (request, reply) => {
     const header = request.headers.authorization;
     if (typeof header !== "string" || !header.startsWith(BEARER_PREFIX)) {
-      throw new UnauthorizedError("Missing bearer token");
+      reply.header("WWW-Authenticate", challengeHeader());
+      return reply.code(401).send({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing bearer token",
+          requestId: request.id,
+        },
+      });
     }
-    const plaintext = header.slice(BEARER_PREFIX.length).trim();
-    if (plaintext.length === 0) {
-      throw new UnauthorizedError("Missing bearer token");
+    const jwt = header.slice(BEARER_PREFIX.length).trim();
+    if (jwt.length === 0) {
+      reply.header("WWW-Authenticate", challengeHeader());
+      return reply.code(401).send({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing bearer token",
+          requestId: request.id,
+        },
+      });
     }
 
-    const tokenHash = hashApiToken(plaintext, env.TOKEN_HASH_SALT);
-    const cacheKey = `${CACHE_KEY_PREFIX}${tokenHash}`;
-
-    const cached = await redis.get<AuthContext>(cacheKey);
-    if (cached) {
-      request.auth = cached;
-      return;
+    try {
+      const verified = await verifyOAuthToken(jwt);
+      request.auth = {
+        clerkUserId: verified.clerkUserId,
+        scopes: verified.scopes,
+        oauthClientName: verified.oauthClientName,
+      };
+    } catch (err) {
+      request.log.warn({ err }, "JWT verification failed");
+      reply.header("WWW-Authenticate", challengeHeader());
+      return reply.code(401).send({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired token",
+          requestId: request.id,
+        },
+      });
     }
-
-    const resolved = await resolveToken(tokenHash);
-    if (!resolved) {
-      throw new UnauthorizedError("Invalid or revoked token");
-    }
-
-    await redis.set(cacheKey, resolved, { ex: CACHE_TTL_SECONDS });
-    request.auth = resolved;
+    return undefined;
   });
 };
 
