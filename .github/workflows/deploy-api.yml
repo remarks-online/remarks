@@ -38,6 +38,16 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      # Apply pending Drizzle migrations against the prod direct endpoint
+      # before shipping a new image. The runtime DATABASE_URL Fly secret is
+      # the pooled (pgbouncer) endpoint, which can't run DDL — migrations
+      # need Neon's direct (non-pooler) endpoint, stored as PROD_DATABASE_URL
+      # here. A failure here aborts the workflow so flyctl deploy below
+      # never ships code that expects schema we couldn't apply.
+      - run: pnpm --filter @remarks/db db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+
       - run: flyctl deploy --config apps/api/fly.toml --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
