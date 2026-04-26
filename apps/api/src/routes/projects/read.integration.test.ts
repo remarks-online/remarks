@@ -1,4 +1,5 @@
 import { schema } from "@remarks/db";
+import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -33,7 +34,7 @@ function mockAuth(args: {
   mocks.getOrganizationMembershipList.mockResolvedValueOnce({
     data: args.memberships.map((m) => ({
       role: m.role,
-      organization: { id: m.clerkOrgId },
+      organization: { id: m.clerkOrgId, name: m.clerkOrgId, slug: m.clerkOrgId },
     })),
   });
 }
@@ -184,7 +185,7 @@ describe("GET /orgs/:orgId/projects (integration)", () => {
     expect(res.json().error.code).toBe("FORBIDDEN");
   });
 
-  test("clerk org with no matching DB row → 404 NOT_FOUND", async () => {
+  test("clerk org with no matching DB row → auth plugin lazy-provisions it, 200 empty list", async () => {
     const db = await getIntegrationDb();
     const user = await seedUser(db, { clerkUserId: "user_list_unknown_org" });
 
@@ -199,8 +200,14 @@ describe("GET /orgs/:orgId/projects (integration)", () => {
       headers: { authorization: BEARER },
     });
 
-    expect(res.statusCode).toBe(404);
-    expect(res.json().error.code).toBe("NOT_FOUND");
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ items: [] });
+    const provisioned = await db.query.organizations.findFirst({
+      where: eq(schema.organizations.clerkOrgId, "org_unsynced"),
+    });
+    expect(provisioned).toBeDefined();
+    expect(provisioned?.name).toBe("org_unsynced");
+    expect(provisioned?.slug).toBe("org_unsynced");
   });
 });
 

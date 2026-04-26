@@ -130,16 +130,18 @@ export function SidebarShell() {
 
   const body = !auth.signedIn ? (
     <SidebarSignedOut />
-  ) : !projectId ? (
-    <SidebarNoProject />
   ) : (
     <SidebarTrpcProvider token={auth.token}>
-      <SidebarBody
-        projectId={projectId}
-        token={auth.token}
-        clerkOrgId={auth.clerkOrgId}
-        compact={compact}
-      />
+      {projectId ? (
+        <SidebarBody
+          projectId={projectId}
+          token={auth.token}
+          clerkOrgId={auth.clerkOrgId}
+          compact={compact}
+        />
+      ) : (
+        <SidebarNoProject clerkOrgId={auth.clerkOrgId} />
+      )}
     </SidebarTrpcProvider>
   );
 

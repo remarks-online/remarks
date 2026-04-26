@@ -6,14 +6,25 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
   getOrganizationMembershipList: vi.fn(),
+  getUser: vi.fn(),
   findFirst: vi.fn(),
+  provisionUserFromClerk: vi.fn(),
+  provisionOrgsFromMemberships: vi.fn(),
 }));
 
 vi.mock("@clerk/backend", () => ({
   verifyToken: mocks.verifyToken,
   createClerkClient: () => ({
-    users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
+    users: {
+      getOrganizationMembershipList: mocks.getOrganizationMembershipList,
+      getUser: mocks.getUser,
+    },
   }),
+}));
+
+vi.mock("../services/clerk-sync.service.js", () => ({
+  provisionUserFromClerk: mocks.provisionUserFromClerk,
+  provisionOrgsFromMemberships: mocks.provisionOrgsFromMemberships,
 }));
 
 const { default: authPlugin } = await import("./auth.js");
@@ -48,7 +59,10 @@ function buildTestServer(): FastifyInstance {
 }
 
 const fakeClerk = {
-  users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
+  users: {
+    getOrganizationMembershipList: mocks.getOrganizationMembershipList,
+    getUser: mocks.getUser,
+  },
 } as unknown as ClerkClient;
 
 async function registerAuthedScope(server: FastifyInstance): Promise<void> {
@@ -122,16 +136,50 @@ describe("auth plugin", () => {
     expect(mocks.findFirst).not.toHaveBeenCalled();
   });
 
-  test("rejects when the clerk user has no DB row", async () => {
+  test("lazily provisions the user when no DB row exists, then proceeds", async () => {
     mocks.verifyToken.mockResolvedValueOnce({ sub: "user_123" });
     mocks.findFirst.mockResolvedValueOnce(undefined);
+    mocks.provisionUserFromClerk.mockResolvedValueOnce(SAMPLE_USER);
+    mocks.getOrganizationMembershipList.mockResolvedValueOnce({ data: [] });
+    const res = await server.inject({
+      method: "GET",
+      url: "/_protected",
+      headers: { authorization: "Bearer valid.token" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.provisionUserFromClerk).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "user_123"
+    );
+    expect(res.json().auth.user.clerkUserId).toBe(SAMPLE_USER.clerkUserId);
+  });
+
+  test("rejects when lazy provisioning throws (Clerk getUser failed)", async () => {
+    mocks.verifyToken.mockResolvedValueOnce({ sub: "user_123" });
+    mocks.findFirst.mockResolvedValueOnce(undefined);
+    mocks.provisionUserFromClerk.mockRejectedValueOnce(new Error("clerk 404"));
     const res = await server.inject({
       method: "GET",
       url: "/_protected",
       headers: { authorization: "Bearer valid.token" },
     });
     expect(res.statusCode).toBe(401);
-    expect(res.json().error.message).toContain("not provisioned");
+    expect(res.json().error.message).toContain("Failed to load Clerk user");
+    expect(mocks.getOrganizationMembershipList).not.toHaveBeenCalled();
+  });
+
+  test("rejects when lazy provisioning resolves but no row materializes", async () => {
+    mocks.verifyToken.mockResolvedValueOnce({ sub: "user_123" });
+    mocks.findFirst.mockResolvedValueOnce(undefined);
+    mocks.provisionUserFromClerk.mockResolvedValueOnce(null);
+    const res = await server.inject({
+      method: "GET",
+      url: "/_protected",
+      headers: { authorization: "Bearer valid.token" },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.message).toContain("provisioning failed");
     expect(mocks.getOrganizationMembershipList).not.toHaveBeenCalled();
   });
 
@@ -175,8 +223,8 @@ describe("auth plugin", () => {
     mocks.findFirst.mockResolvedValueOnce(SAMPLE_USER);
     mocks.getOrganizationMembershipList.mockResolvedValueOnce({
       data: [
-        { role: "org:admin", organization: { id: "org_aaa" } },
-        { role: "org:member", organization: { id: "org_bbb" } },
+        { role: "org:admin", organization: { id: "org_aaa", name: "AAA", slug: "aaa" } },
+        { role: "org:member", organization: { id: "org_bbb", name: "BBB", slug: "bbb" } },
       ],
     });
     const res = await server.inject({

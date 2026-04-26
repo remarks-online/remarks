@@ -24,6 +24,12 @@ export default defineConfig({
       port: 3030,
     },
   },
+  // Don't auto-launch a Chromium window on `wxt` / `turbo run dev`. We load
+  // the unpacked extension manually via chrome://extensions (see
+  // docs/runbooks/local-dev.md), so the auto-opened about:blank is just noise.
+  webExt: {
+    disabled: true,
+  },
   manifest: {
     name: "Remarks",
     description: "In-context feedback for websites.",

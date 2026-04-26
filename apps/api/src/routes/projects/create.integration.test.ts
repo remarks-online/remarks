@@ -34,7 +34,7 @@ function mockAuth(args: {
   mocks.getOrganizationMembershipList.mockResolvedValueOnce({
     data: args.memberships.map((m) => ({
       role: m.role,
-      organization: { id: m.clerkOrgId },
+      organization: { id: m.clerkOrgId, name: m.clerkOrgId, slug: m.clerkOrgId },
     })),
   });
 }

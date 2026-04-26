@@ -35,6 +35,15 @@ export function useAuthStatus(): AuthStatus {
       if (!cancelled) setStatus(s);
     });
 
+    // Recover from a sign-in that lands while the panel is mounted but before
+    // the background's cookie/Clerk listeners have broadcast. One belated
+    // re-fetch is enough — after that, broadcasts handle subsequent changes.
+    const recheckTimer = setTimeout(() => {
+      void fetchAuthStatus().then((s) => {
+        if (!cancelled) setStatus(s);
+      });
+    }, 1000);
+
     const listener = (message: unknown) => {
       if (
         typeof message === "object" &&
@@ -57,6 +66,7 @@ export function useAuthStatus(): AuthStatus {
 
     return () => {
       cancelled = true;
+      clearTimeout(recheckTimer);
       chrome.runtime.onMessage.removeListener(listener);
     };
   }, []);
