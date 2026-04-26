@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import internalAuthPlugin from "../../plugins/internal-auth.js";
+import { annotationInternalRoutes } from "./annotations.js";
+import { projectInternalRoutes } from "./projects.js";
 import { tokenRoutes } from "./tokens.js";
+import { whoamiRoutes } from "./whoami.js";
 
 // /internal/* — service-to-service endpoints reachable only from the MCP
 // server (Phase 2 spec §5.4). Wraps every internal route in the
@@ -11,4 +14,7 @@ import { tokenRoutes } from "./tokens.js";
 export async function internalRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(internalAuthPlugin);
   await fastify.register(tokenRoutes);
+  await fastify.register(whoamiRoutes);
+  await fastify.register(projectInternalRoutes);
+  await fastify.register(annotationInternalRoutes);
 }

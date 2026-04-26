@@ -41,9 +41,14 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
       throw new ValidationError("Invalid query params", queryResult.error.issues);
     }
 
+    // The shared REST query schema exposes a single-status filter (back-compat
+    // with existing dashboard / extension callers). The service signature
+    // accepts an array so the internal MCP route can multi-filter; wrap once
+    // here.
+    const { status, ...rest } = queryResult.data;
     const result = await listAnnotations(request.server.db, {
       projectId,
-      query: queryResult.data,
+      query: { ...rest, statuses: status ? [status] : undefined },
       r2: request.server.r2,
     });
     return reply.send(result);

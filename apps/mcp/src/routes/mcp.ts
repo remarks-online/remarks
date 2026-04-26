@@ -1,12 +1,11 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { FastifyInstance } from "fastify";
+import * as apiClient from "../lib/api-client.js";
+import { registerToolHandlers } from "../tools/index.js";
+import { SERVER_VERSION } from "../version.js";
 
 const SERVER_NAME = "remarks";
-// Keep in sync with apps/mcp/package.json#version. Surfaced in the MCP
-// initialize response's serverInfo.version (Phase 2 spec §3.1: server
-// version, not per-tool versions; bump on breaking tool-surface changes).
-const SERVER_VERSION = "0.0.0";
 
 export async function mcpRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
@@ -20,13 +19,18 @@ export async function mcpRoutes(fastify: FastifyInstance): Promise<void> {
 
       // Stateless mode: fresh Server + Transport per HTTP request, no
       // session store. Bearer-token auth runs as a Fastify onRequest hook
-      // above this route (apps/mcp/src/plugins/mcp-auth.ts); tasks 2.6+
-      // register tool handlers on the Server via setRequestHandler before
-      // connect (Phase 2 spec §8.3).
+      // above this route (apps/mcp/src/plugins/mcp-auth.ts); tool handlers
+      // close over `request.auth` so each request operates strictly within
+      // its token's project scope (Phase 2 spec §8.3 + §5.1).
       const server = new Server(
         { name: SERVER_NAME, version: SERVER_VERSION },
         { capabilities: { tools: {}, resources: {} } }
       );
+      registerToolHandlers(server, {
+        auth: request.auth,
+        api: apiClient,
+        requestId: request.id,
+      });
       // Omitting sessionIdGenerator is the SDK's signal for stateless mode;
       // passing `undefined` explicitly trips exactOptionalPropertyTypes.
       const transport = new StreamableHTTPServerTransport();

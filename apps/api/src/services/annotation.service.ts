@@ -3,13 +3,13 @@ import {
   type AnnotationEventResponse,
   type AnnotationListResponse,
   type AnnotationResponse,
+  type AnnotationStatus,
   type CreateAnnotationRequest,
-  type ListAnnotationsQuery,
   NotFoundError,
   type UpdateAnnotationRequest,
   ValidationError,
 } from "@remarks/shared";
-import { and, asc, desc, eq, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
 import {
   type AnnotationListCursor,
   decodeAnnotationListCursor,
@@ -183,10 +183,27 @@ export async function createAnnotation(
   });
 }
 
+export interface ListAnnotationsServiceQuery {
+  cursor?: string | undefined;
+  limit: number;
+  // Multi-status filter: empty array or undefined → no status filter. The
+  // user-auth REST route still exposes a single-status query string and wraps
+  // the value into a one-element array; the internal MCP route passes the
+  // array directly so `remarks_list_tasks` can default to ["to_do","doing"]
+  // (Phase 2 spec §3.2).
+  statuses?: AnnotationStatus[] | undefined;
+  branch?: string | undefined;
+  url?: string | undefined;
+}
+
 export interface ListAnnotationsArgs {
   projectId: string;
-  query: ListAnnotationsQuery;
+  query: ListAnnotationsServiceQuery;
   r2: R2Client;
+  // Override the default presign TTL. The dashboard uses the 24h default; the
+  // MCP path passes 1h per Phase 2 spec §3.2 so screenshot URLs aren't
+  // long-lived for agent traffic.
+  assetTtlSeconds?: number;
 }
 
 export async function listAnnotations(
@@ -194,6 +211,7 @@ export async function listAnnotations(
   args: ListAnnotationsArgs
 ): Promise<AnnotationListResponse> {
   const { projectId, query, r2 } = args;
+  const ttlSeconds = args.assetTtlSeconds ?? ANNOTATION_ASSET_GET_TTL_SECONDS;
 
   // Resolve `branch` (name) → branch id. A missing branch short-circuits to an
   // empty page instead of flowing through to the annotations query.
@@ -223,9 +241,14 @@ export async function listAnnotations(
       )
     : undefined;
 
+  const statusPredicate =
+    query.statuses && query.statuses.length > 0
+      ? inArray(schema.annotations.status, query.statuses)
+      : undefined;
+
   const where = and(
     eq(schema.annotations.projectId, projectId),
-    query.status ? eq(schema.annotations.status, query.status) : undefined,
+    statusPredicate,
     branchFilterId ? eq(schema.annotations.branchId, branchFilterId) : undefined,
     query.url ? eq(schema.annotations.url, query.url) : undefined,
     cursorPredicate
@@ -252,7 +275,7 @@ export async function listAnnotations(
           row: asset,
           url: await getPresignedGetUrl(r2, {
             key: asset.r2Key,
-            ttlSeconds: ANNOTATION_ASSET_GET_TTL_SECONDS,
+            ttlSeconds,
           }),
         }))
       );
@@ -293,11 +316,20 @@ export async function getAnnotationOwnership(
   return row;
 }
 
+export interface GetAnnotationByIdOptions {
+  // Override the default presign TTL. The dashboard uses the 24h default; the
+  // MCP path passes 1h per Phase 2 spec §3.2 so screenshot URLs aren't
+  // long-lived for agent traffic.
+  assetTtlSeconds?: number;
+}
+
 export async function getAnnotationById(
   db: DB,
   annotationId: string,
-  r2: R2Client
+  r2: R2Client,
+  options: GetAnnotationByIdOptions = {}
 ): Promise<AnnotationResponse> {
+  const ttlSeconds = options.assetTtlSeconds ?? ANNOTATION_ASSET_GET_TTL_SECONDS;
   const row = await db.query.annotations.findFirst({
     where: eq(schema.annotations.id, annotationId),
     with: {
@@ -313,7 +345,7 @@ export async function getAnnotationById(
       row: asset,
       url: await getPresignedGetUrl(r2, {
         key: asset.r2Key,
-        ttlSeconds: ANNOTATION_ASSET_GET_TTL_SECONDS,
+        ttlSeconds,
       }),
     }))
   );
