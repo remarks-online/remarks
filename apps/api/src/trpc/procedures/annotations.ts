@@ -53,10 +53,12 @@ export const annotationsRouter = router({
       mapError(err);
     }
 
-    const { projectId, ...query } = input;
+    const { projectId, status, ...rest } = input;
+    // listInputSchema mirrors the REST query (single-status); the service
+    // takes a multi-status array for the internal MCP path. Wrap to one-element.
     const result = await listAnnotations(ctx.db, {
       projectId,
-      query,
+      query: { ...rest, statuses: status ? [status] : undefined },
       r2: ctx.r2,
     });
     return annotationListResponseSchema.parse(result);
