@@ -1,3 +1,4 @@
+import { isContextInvalidatedError, isExtensionContextValid } from "@/lib/extension-context";
 import { MAX_BRANCH_NAME_LENGTH } from "@remarks/shared";
 import { type Unwatch, storage } from "wxt/utils/storage";
 
@@ -20,14 +21,24 @@ function normalize(value: string | null | undefined): string {
 }
 
 export async function getSelectedBranch(projectId: string): Promise<string> {
-  const stored = await storage.getItem<string>(key(projectId));
-  return normalize(stored);
+  try {
+    const stored = await storage.getItem<string>(key(projectId));
+    return normalize(stored);
+  } catch (err) {
+    if (isContextInvalidatedError(err)) return DEFAULT_BRANCH;
+    throw err;
+  }
 }
 
-export function setSelectedBranch(projectId: string, branch: string): Promise<void> {
-  return storage.setItem(key(projectId), normalize(branch));
+export async function setSelectedBranch(projectId: string, branch: string): Promise<void> {
+  try {
+    await storage.setItem(key(projectId), normalize(branch));
+  } catch (err) {
+    if (!isContextInvalidatedError(err)) throw err;
+  }
 }
 
 export function watchSelectedBranch(projectId: string, cb: (branch: string) => void): Unwatch {
+  if (!isExtensionContextValid()) return () => {};
   return storage.watch<string>(key(projectId), (value) => cb(normalize(value)));
 }

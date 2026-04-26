@@ -1,5 +1,7 @@
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SidebarShell } from "@/components/SidebarShell";
 import { fetchAuthStatus } from "@/lib/auth-status";
+import { isExtensionContextValid } from "@/lib/extension-context";
 import { initPickerController } from "@/lib/picker-controller";
 import { ShadowRootProvider } from "@/lib/shadow-root-context";
 import { loadSidebarPrefs } from "@/lib/sidebar-prefs";
@@ -9,6 +11,10 @@ import "@/styles/content.css";
 
 export default defineContentScript({
   matches: ["<all_urls>"],
+  // The dashboard is the Remarks app itself — overlaying our own sidebar on
+  // it is double-UI and also the place users were most likely to see
+  // "Extension context invalidated" after an HMR reload.
+  excludeMatches: ["http://localhost:3000/*", "https://app.remarks.online/*"],
   cssInjectionMode: "ui",
   allFrames: false,
   async main(ctx) {
@@ -33,7 +39,9 @@ export default defineContentScript({
         signedIn = Boolean((message as { signedIn?: unknown }).signedIn);
       }
     };
-    chrome.runtime.onMessage.addListener(onAuthMessage);
+    if (isExtensionContextValid()) {
+      chrome.runtime.onMessage.addListener(onAuthMessage);
+    }
 
     const ui = await createShadowRootUi(ctx, {
       name: "remarks-sidebar",
@@ -45,7 +53,9 @@ export default defineContentScript({
         const root = createRoot(mountPoint);
         root.render(
           <ShadowRootProvider value={shadow}>
-            <SidebarShell />
+            <ErrorBoundary>
+              <SidebarShell />
+            </ErrorBoundary>
           </ShadowRootProvider>
         );
         const picker = initPickerController({
@@ -60,7 +70,9 @@ export default defineContentScript({
         return { root, picker };
       },
       onRemove: (mounted) => {
-        chrome.runtime.onMessage.removeListener(onAuthMessage);
+        if (isExtensionContextValid()) {
+          chrome.runtime.onMessage.removeListener(onAuthMessage);
+        }
         mounted?.picker.teardown();
         mounted?.root.unmount();
       },

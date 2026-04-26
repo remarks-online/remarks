@@ -1,7 +1,7 @@
 import { env } from "@/env";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { trpc } from "./trpc";
 
 /**
@@ -28,20 +28,26 @@ export function SidebarTrpcProvider({
       })
   );
 
-  // Re-create the tRPC client when the token changes so subsequent requests
-  // reflect the refreshed cookie. TanStack Query caches survive across client
-  // swaps because they live on the QueryClient, not the trpc instance.
-  const trpcClient = useMemo(
-    () =>
-      trpc.createClient({
-        links: [
-          httpBatchLink({
-            url: `${env.WXT_API_URL}/trpc`,
-            headers: () => (token ? { authorization: `Bearer ${token}` } : {}),
-          }),
-        ],
-      }),
-    [token]
+  // Stable client; the headers function reads the latest token from a ref so
+  // a refreshed cookie takes effect on the next request without resubscribing
+  // every in-flight query (which would bounce them back into `isPending`).
+  const tokenRef = useRef(token);
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+
+  const [trpcClient] = useState(() =>
+    trpc.createClient({
+      links: [
+        httpBatchLink({
+          url: `${env.WXT_API_URL}/trpc`,
+          headers: () => {
+            const t = tokenRef.current;
+            return t ? { authorization: `Bearer ${t}` } : {};
+          },
+        }),
+      ],
+    })
   );
 
   return (
