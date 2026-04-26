@@ -11,8 +11,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { findMissingKeys, parseFlyTomlEnvKeys, requiredEnvKeys } from "@remarks/shared";
 import { envSchema } from "../src/env-schema.js";
-import { findMissingKeys, parseFlyTomlEnvKeys, requiredEnvKeys } from "../src/lib/env-check.js";
 
 const APP_NAME = process.env.FLY_APP_NAME ?? "remarks-api";
 const here = dirname(fileURLToPath(import.meta.url));

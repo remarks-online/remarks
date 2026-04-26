@@ -32,12 +32,16 @@ jobs:
 
       # No db:migrate step: the MCP server doesn't own schema; per Phase 2
       # spec §5.4 it reaches Postgres only through apps/api over Fly's private
-      # network (wired in tasks 2.4/2.5).
-      #
-      # No check-fly-secrets step yet: the current envSchema only has
-      # NODE_ENV/PORT/HOST/LOG_LEVEL, all set in fly.toml [env]. Add the
-      # script + step in task 2.4 when API_INTERNAL_URL and any
-      # service-to-service token become required secrets.
+      # network.
+
+      # Preflight: fail fast if envSchema requires an env var that isn't
+      # provided by fly.toml [env] or fly secrets. Prevents the class of
+      # regression where a new required var ships to main but the
+      # corresponding Fly secret was never set, causing a crash loop at boot.
+      - run: pnpm --filter @remarks/mcp check-fly-secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - run: flyctl deploy --config apps/mcp/fly.toml --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

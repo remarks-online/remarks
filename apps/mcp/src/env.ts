@@ -1,29 +1,5 @@
-import { z } from "zod";
+import { envSchema } from "./env-schema.js";
 
-const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.coerce.number().int().positive().default(3000),
-  HOST: z.string().default("0.0.0.0"),
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-  // Clerk credentials. Used to verify OAuth-issued JWTs and to resolve OAuth
-  // app metadata (the human-readable client name surfaced on agent-authored
-  // events). ADR-0015.
-  CLERK_SECRET_KEY: z.string().startsWith("sk_"),
-  CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_"),
-  // Canonical resource URI advertised in PRM and validated against `aud` on
-  // every token (RFC 8707). Local dev: http://localhost:3000/mcp;
-  // production: https://mcp.remarks.dev/mcp.
-  MCP_RESOURCE_URI: z.string().url(),
-  // Shared secret carried on every internal MCP→API call so the API can refuse
-  // requests that arrive on `*.internal` from anywhere other than this server.
-  INTERNAL_API_TOKEN: z.string().min(32),
-  // Base URL of the Remarks API for service-to-service calls.
-  API_INTERNAL_URL: z.string().url(),
-  // Upstash REST endpoint + token. The MCP auth plugin caches per-user
-  // membership lookups here for 5 min (ADR-0015).
-  UPSTASH_REDIS_REST_URL: z.string().url(),
-  UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
-});
-
+export { envSchema } from "./env-schema.js";
+export type { Env } from "./env-schema.js";
 export const env = envSchema.parse(process.env);
-export type Env = z.infer<typeof envSchema>;

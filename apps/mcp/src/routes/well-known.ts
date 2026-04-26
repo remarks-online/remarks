@@ -41,7 +41,7 @@ export async function wellKnownRoutes(fastify: FastifyInstance): Promise<void> {
         authorization_servers: [issuer],
         scopes_supported: ["tasks:read", "tasks:write", "project:read"],
         bearer_methods_supported: ["header"],
-        resource_documentation: "https://docs.remarks.dev/mcp",
+        resource_documentation: "https://docs.remarks.online/mcp",
       });
   });
 

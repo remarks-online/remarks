@@ -1,4 +1,5 @@
 export * from "./constants.js";
+export * from "./env-check.js";
 export * from "./errors.js";
 export * from "./schemas/annotation.js";
 export * from "./schemas/annotation-event.js";
