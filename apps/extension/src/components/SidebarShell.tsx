@@ -164,7 +164,7 @@ export function SidebarShell() {
           {body}
           <SidebarResizeHandle />
         </div>
-        <div ref={setPopoverEl} />
+        <div ref={setPopoverEl} className="pointer-events-auto" />
       </PopoverContainerProvider>
     </div>
   );

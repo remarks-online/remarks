@@ -24,7 +24,6 @@ export function SidebarThreadList({ projectId, branch }: Props) {
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
       initialCursor: undefined,
-      enabled: url.length > 0,
     }
   );
 

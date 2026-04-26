@@ -1,3 +1,11 @@
+// Minimal `chrome.runtime.id` so `isExtensionContextValid()` (in
+// src/lib/extension-context.ts) treats the test as a live extension context.
+// Specs that mock `wxt/utils/storage` don't otherwise need a `chrome` global,
+// but the runtime-context guard checks for it.
+if (typeof (globalThis as { chrome?: unknown }).chrome === "undefined") {
+  (globalThis as { chrome: unknown }).chrome = { runtime: { id: "test-extension" } };
+}
+
 // jsdom ships `window.CSS` but not every build exposes `CSS.escape` on globalThis.
 // Polyfill the spec's two escape rules we rely on so the picker logic is testable.
 // https://www.w3.org/TR/cssom-1/#the-css.escape()-method

@@ -1,3 +1,4 @@
+import { isContextInvalidatedError } from "@/lib/extension-context";
 import { type Capture, pickerStore } from "@/lib/picker-store";
 import type { BackgroundRequest, BackgroundResponse, ViewportRect } from "@/types";
 
@@ -46,7 +47,11 @@ export async function requestScreenshot(capture: Capture): Promise<void> {
       height: response.height,
     });
   } catch (err) {
-    console.warn("[remarks] screenshot message failed:", err);
+    if (isContextInvalidatedError(err)) {
+      console.debug("[remarks] screenshot skipped: extension context invalidated");
+    } else {
+      console.warn("[remarks] screenshot message failed:", err);
+    }
     pickerStore.getState().setScreenshot(null);
   }
 }

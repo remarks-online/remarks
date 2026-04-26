@@ -1,3 +1,4 @@
+import { isExtensionContextValid } from "@/lib/extension-context";
 import type { BackgroundRequest, BackgroundResponse } from "@/types";
 import { useEffect, useState } from "react";
 
@@ -10,6 +11,7 @@ export interface AuthStatus {
 const UNKNOWN: AuthStatus = { signedIn: false, clerkOrgId: null, token: null };
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
+  if (!isExtensionContextValid()) return UNKNOWN;
   const request: BackgroundRequest = { kind: "auth-status" };
   try {
     const response = (await chrome.runtime.sendMessage(request)) as BackgroundResponse;
@@ -30,6 +32,7 @@ export function useAuthStatus(): AuthStatus {
   const [status, setStatus] = useState<AuthStatus>(UNKNOWN);
 
   useEffect(() => {
+    if (!isExtensionContextValid()) return;
     let cancelled = false;
     void fetchAuthStatus().then((s) => {
       if (!cancelled) setStatus(s);
@@ -67,7 +70,9 @@ export function useAuthStatus(): AuthStatus {
     return () => {
       cancelled = true;
       clearTimeout(recheckTimer);
-      chrome.runtime.onMessage.removeListener(listener);
+      if (isExtensionContextValid()) {
+        chrome.runtime.onMessage.removeListener(listener);
+      }
     };
   }, []);
 
