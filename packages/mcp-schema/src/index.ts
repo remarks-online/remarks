@@ -1,1 +1,2 @@
-export const MCP_SCHEMA_PACKAGE = "@remarks/mcp-schema";
+export * from "./common.js";
+export * from "./tools.js";
