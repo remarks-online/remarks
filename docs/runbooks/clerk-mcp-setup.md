@@ -43,12 +43,14 @@ These scopes are advertised in the MCP server's PRM document (`scopes_supported`
 
 ### 4. Configure the resource (audience)
 
-> **No first-class Dashboard UI for this in Clerk today.** When/if Clerk ships an "Allowed resources" panel, add the canonical MCP URI here:
+> **Currently blocked on Clerk product capability.** Clerk's OAuth provider does not honor RFC 8707 `resource` parameters and does not emit an `aud` claim on issued tokens (April 2026 — confirmed against prod). There is no Dashboard UI to register an MCP resource. The MCP server bridges this in `apps/mcp/src/lib/jwt.ts`: it enforces `typ === "at+jwt"` (so Clerk session JWTs can't be replayed) and, when `aud` *is* present, validates it against `MCP_RESOURCE_URI`; missing `aud` is accepted on signature + issuer + typ alone. Spec-gap A20 tracks unwinding once Clerk ships audience binding.
+>
+> When Clerk ships it, register here:
 
 - Production: `https://mcp.remarks.online/mcp`
 - Dev: `http://localhost:3000/mcp`
 
-This is the value Clerk will accept in the `resource` parameter (RFC 8707) and embed in the `aud` claim of issued tokens. The MCP server validates `aud` matches `MCP_RESOURCE_URI` on every request (`apps/mcp/src/lib/jwt.ts:61`). If a Clerk-issued token arrives with a missing/mismatched `aud`, that check throws and the request 401s; that's the indicator we'll need to revisit this section once Clerk's audience handling is observable.
+This is the value Clerk will accept in the `resource` parameter (RFC 8707) and embed in the `aud` claim of issued tokens. The MCP server already validates `aud` when present.
 
 ### 5. Configure PKCE and public clients
 
