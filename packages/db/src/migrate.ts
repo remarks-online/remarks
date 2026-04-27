@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
@@ -27,6 +28,32 @@ const migrationsFolder = resolve(here, "../drizzle");
 const { db, sql } = createClient(url);
 try {
   await migrate(db, { migrationsFolder });
+
+  // Drizzle's migrator decides what's pending by comparing each journal
+  // entry's `when` against `max(created_at)` in __drizzle_migrations and
+  // skipping any whose `when` is not strictly greater. If a prior journal
+  // entry's `when` was set to a future date (or is otherwise out of order),
+  // a later migration with an earlier `when` is silently skipped — the
+  // migrate command exits 0 with no output. Assert that the last journal
+  // entry's `when` matches the latest applied row so this fails loudly.
+  const journalRaw = await readFile(resolve(migrationsFolder, "meta/_journal.json"), "utf8");
+  const journal = JSON.parse(journalRaw) as {
+    entries: Array<{ idx: number; tag: string; when: number }>;
+  };
+  const lastEntry = journal.entries[journal.entries.length - 1];
+  if (!lastEntry) throw new Error("Drizzle journal has no entries");
+  const [latestApplied] = await sql<{ created_at: string | number }[]>`
+    select created_at from drizzle.__drizzle_migrations order by id desc limit 1
+  `;
+  if (!latestApplied) {
+    throw new Error("No rows in drizzle.__drizzle_migrations after migrate()");
+  }
+  const latestAppliedWhen = Number(latestApplied.created_at);
+  if (latestAppliedWhen !== lastEntry.when) {
+    throw new Error(
+      `Drizzle migration drift: journal's last entry is ${lastEntry.tag} (when=${lastEntry.when}) but DB latest created_at=${latestAppliedWhen}. Drizzle silently skipped a migration — check that all journal \`when\` values are monotonically increasing.`
+    );
+  }
 } finally {
   await sql.end({ timeout: 5 });
 }
