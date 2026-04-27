@@ -33,6 +33,9 @@ export function StepSuccess({ annotation }: Props) {
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3">
+        <Button asChild variant="ghost">
+          <Link href="/app/connect-agent">Connect an AI agent</Link>
+        </Button>
         <Button asChild variant="outline">
           <Link href="/app/projects">Create a team project</Link>
         </Button>

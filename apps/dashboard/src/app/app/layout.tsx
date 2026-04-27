@@ -22,6 +22,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               >
                 Personal
               </Link>
+              <Link
+                href="/app/connect-agent"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Connect agent
+              </Link>
               <OrganizationSwitcher
                 afterSelectOrganizationUrl="/app/projects"
                 afterCreateOrganizationUrl="/app/projects"
