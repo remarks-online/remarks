@@ -327,6 +327,7 @@ describe("POST /mcp", () => {
     const body = response.json();
     expect(body.resource).toBe("http://localhost:3000/mcp");
     expect(Array.isArray(body.authorization_servers)).toBe(true);
-    expect(body.scopes_supported).toEqual(["tasks:read", "tasks:write", "project:read"]);
+    // `openid` until Clerk ships custom OAuth scopes; see spec-gap A20.
+    expect(body.scopes_supported).toEqual(["openid"]);
   });
 });

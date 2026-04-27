@@ -11,7 +11,11 @@ declare module "fastify" {
 }
 
 const BEARER_PREFIX = "Bearer ";
-const REQUIRED_SCOPES = "tasks:read tasks:write project:read";
+// `openid` until Clerk ships custom OAuth scopes (roadmap as of 2026-04).
+// Per-tool authorization stays via requireScope() in tools/shared.ts; the
+// stub in lib/jwt.ts grants `tasks:*` / `project:read` to verified Clerk
+// JWTs so those checks keep working. Spec-gap A20 tracks unwinding.
+const REQUIRED_SCOPES = "openid";
 
 // MCP authorization spec: on missing/invalid token, return 401 with a
 // WWW-Authenticate header pointing the client at our PRM document so it can

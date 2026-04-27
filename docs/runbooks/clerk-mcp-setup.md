@@ -7,7 +7,7 @@ This is a one-time operator task per environment (dev, staging, production). Re-
 ## Prerequisites
 
 - Admin access to the Clerk tenant for the environment.
-- The MCP server's canonical URL (Phase 2 production: `https://mcp.remarks.dev/mcp`; staging: `https://mcp-staging.remarks.dev/mcp`; local dev: `http://localhost:3000/mcp`).
+- The MCP server's canonical URL (production: `https://mcp.remarks.online/mcp`; local dev: `http://localhost:3000/mcp`). No staging environment as of Phase 2.
 - The `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` from Clerk Dashboard → API Keys, set in the MCP app's env (`apps/mcp/.env.local` for dev; Fly secrets for staging/prod).
 
 ## Steps
@@ -27,6 +27,10 @@ This makes `POST {clerk_issuer}/oauth/register` (RFC 7591) public so MCP clients
 
 ### 3. Define the MCP scopes
 
+> **Currently blocked on Clerk product capability.** Custom OAuth scopes are roadmap-only as of April 2026 (see `clerk.com/docs/guides/configure/auth-strategies/oauth/scoped-access`). Until Clerk ships them, the MCP server bridges this in code: PRM and the 401 challenge advertise `openid` only, and `apps/mcp/src/lib/jwt.ts` `parseScopes()` stubs the three Remarks scopes onto every verified Clerk JWT so per-tool `requireScope()` checks keep passing. Tracked in `docs/plan/spec-gaps.md` A20 — that's the unwind.
+>
+> When Clerk ships custom scopes, add them here:
+
 OAuth applications page → **Scopes** → **Add scope** for each:
 
 | Scope | Description shown on consent page |
@@ -39,13 +43,12 @@ These scopes are advertised in the MCP server's PRM document (`scopes_supported`
 
 ### 4. Configure the resource (audience)
 
-OAuth applications page → **Allowed resources** → add the canonical MCP server URI for this environment, exactly:
+> **No first-class Dashboard UI for this in Clerk today.** When/if Clerk ships an "Allowed resources" panel, add the canonical MCP URI here:
 
-- Production: `https://mcp.remarks.dev/mcp`
-- Staging: `https://mcp-staging.remarks.dev/mcp`
+- Production: `https://mcp.remarks.online/mcp`
 - Dev: `http://localhost:3000/mcp`
 
-This is the value Clerk will accept in the `resource` parameter (RFC 8707) and embed in the `aud` claim of issued tokens. The MCP server validates `aud` includes this URI on every request.
+This is the value Clerk will accept in the `resource` parameter (RFC 8707) and embed in the `aud` claim of issued tokens. The MCP server validates `aud` matches `MCP_RESOURCE_URI` on every request (`apps/mcp/src/lib/jwt.ts:61`). If a Clerk-issued token arrives with a missing/mismatched `aud`, that check throws and the request 401s; that's the indicator we'll need to revisit this section once Clerk's audience handling is observable.
 
 ### 5. Configure PKCE and public clients
 
