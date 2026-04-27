@@ -10,8 +10,10 @@ import { env } from "../env.js";
 // follow the AS metadata link from there to get token/authorize/register
 // endpoints, all served by Clerk.
 //
-// scopes_supported: the MCP spec recommends advertising the minimum set
-// needed for basic functionality; clients request all three by default.
+// scopes_supported is `openid` until Clerk ships custom OAuth scopes
+// (roadmap as of 2026-04). The MCP server stubs `tasks:*` / `project:read`
+// onto verified Clerk JWTs in lib/jwt.ts so per-tool requireScope checks
+// keep working. Spec-gap A20 tracks unwinding the stub.
 
 function clerkIssuerFromPublishableKey(): string {
   // Clerk publishable keys encode the frontend API host. For Phase 2 we pull
@@ -39,7 +41,7 @@ export async function wellKnownRoutes(fastify: FastifyInstance): Promise<void> {
       .send({
         resource: env.MCP_RESOURCE_URI,
         authorization_servers: [issuer],
-        scopes_supported: ["tasks:read", "tasks:write", "project:read"],
+        scopes_supported: ["openid"],
         bearer_methods_supported: ["header"],
         resource_documentation: "https://docs.remarks.online/mcp",
       });

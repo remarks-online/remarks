@@ -36,12 +36,22 @@ function audienceMatches(aud: string | string[] | undefined, expected: string): 
   return Array.isArray(aud) ? aud.includes(expected) : aud === expected;
 }
 
+// TODO(clerk-custom-scopes): remove the REMARKS_SCOPES fallback once Clerk
+// ships custom OAuth scopes (currently roadmap-only — see
+// docs/plan/spec-gaps.md A20). Until then, Clerk-issued tokens carry only
+// built-in scopes (`openid` etc.) so we grant the Remarks scope set
+// implicitly on any verified Clerk token. Per-tool requireScope() still
+// gates from there.
+const REMARKS_SCOPES = ["tasks:read", "tasks:write", "project:read"];
+
 function parseScopes(claims: ClerkOAuthClaims): string[] {
-  if (Array.isArray(claims.scopes)) return claims.scopes;
-  if (typeof claims.scope === "string") {
-    return claims.scope.split(" ").filter((s) => s.length > 0);
-  }
-  return [];
+  const raw = Array.isArray(claims.scopes)
+    ? claims.scopes
+    : typeof claims.scope === "string"
+      ? claims.scope.split(" ").filter((s) => s.length > 0)
+      : [];
+  const hasRemarksScope = raw.some((s) => s.startsWith("tasks:") || s.startsWith("project:"));
+  return hasRemarksScope ? raw : REMARKS_SCOPES;
 }
 
 function pickClientName(claims: ClerkOAuthClaims): string {
