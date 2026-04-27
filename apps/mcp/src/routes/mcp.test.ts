@@ -12,9 +12,13 @@ const mocks = vi.hoisted(() => ({
   redisSet: vi.fn(),
   assertProjectAccess: vi.fn(),
   listAccessibleProjects: vi.fn(),
+  assertOrgAccess: vi.fn(),
+  listAccessibleOrgs: vi.fn(),
   fetchWhoami: vi.fn(),
   fetchProjectContext: vi.fn(),
   fetchListAnnotations: vi.fn(),
+  fetchListPersonalAnnotations: vi.fn(),
+  fetchListOrgAnnotations: vi.fn(),
   fetchAnnotation: vi.fn(),
   updateAnnotationStatus: vi.fn(),
   addAnnotationComment: vi.fn(),
@@ -31,9 +35,13 @@ vi.mock("../lib/redis.js", () => ({
 vi.mock("../lib/api-client.js", () => ({
   assertProjectAccess: mocks.assertProjectAccess,
   listAccessibleProjects: mocks.listAccessibleProjects,
+  assertOrgAccess: mocks.assertOrgAccess,
+  listAccessibleOrgs: mocks.listAccessibleOrgs,
   fetchWhoami: mocks.fetchWhoami,
   fetchProjectContext: mocks.fetchProjectContext,
   fetchListAnnotations: mocks.fetchListAnnotations,
+  fetchListPersonalAnnotations: mocks.fetchListPersonalAnnotations,
+  fetchListOrgAnnotations: mocks.fetchListOrgAnnotations,
   fetchAnnotation: mocks.fetchAnnotation,
   updateAnnotationStatus: mocks.updateAnnotationStatus,
   addAnnotationComment: mocks.addAnnotationComment,
@@ -95,9 +103,13 @@ describe("POST /mcp", () => {
     mocks.verifyOAuthToken.mockReset();
     mocks.assertProjectAccess.mockReset();
     mocks.listAccessibleProjects.mockReset();
+    mocks.assertOrgAccess.mockReset();
+    mocks.listAccessibleOrgs.mockReset();
     mocks.fetchWhoami.mockReset();
     mocks.fetchProjectContext.mockReset();
     mocks.fetchListAnnotations.mockReset();
+    mocks.fetchListPersonalAnnotations.mockReset();
+    mocks.fetchListOrgAnnotations.mockReset();
     mocks.fetchAnnotation.mockReset();
     mocks.updateAnnotationStatus.mockReset();
     mocks.addAnnotationComment.mockReset();
@@ -107,6 +119,8 @@ describe("POST /mcp", () => {
     // access to PROJECT_ID. Individual tests can override.
     mocks.verifyOAuthToken.mockResolvedValue(STUB_VERIFIED);
     mocks.assertProjectAccess.mockResolvedValue(true);
+    mocks.assertOrgAccess.mockResolvedValue(true);
+    mocks.listAccessibleOrgs.mockResolvedValue([]);
   });
 
   it("responds to MCP initialize with serverInfo.name === 'remarks'", async () => {

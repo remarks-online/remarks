@@ -7,6 +7,7 @@ import { listTasksHandler } from "./list-tasks.js";
 import type { ApiClient } from "./types.js";
 
 const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+const ORG_ID = "77777777-7777-4777-8777-777777777777";
 const STUB_AUTH: AuthContext = {
   clerkUserId: "user_2abc123",
   scopes: ["tasks:read", "tasks:write", "project:read"],
@@ -19,9 +20,13 @@ function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     assertProjectAccess: vi.fn().mockResolvedValue(true),
     listAccessibleProjects: vi.fn().mockResolvedValue([]),
+    assertOrgAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleOrgs: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
+    fetchListPersonalAnnotations: vi.fn(),
+    fetchListOrgAnnotations: vi.fn(),
     fetchAnnotation: vi.fn(),
     updateAnnotationStatus: vi.fn(),
     addAnnotationComment: vi.fn(),
@@ -36,6 +41,7 @@ function makeIdempotency(): IdempotencyCache {
 const SAMPLE_ROW = {
   id: TASK_ID,
   projectId: PROJECT_ID,
+  projectSlug: "acme",
   branchId: BRANCH_ID,
   branchName: "main",
   status: "to_do" as const,
@@ -63,6 +69,19 @@ const SAMPLE_ROW = {
   updatedAt: "2026-04-26T10:00:00.000Z",
 };
 
+// Personal-mode row: no project, no branch.
+const PERSONAL_ROW = {
+  ...SAMPLE_ROW,
+  id: "88888888-8888-4888-8888-888888888888",
+  projectId: null,
+  projectSlug: null,
+  branchId: null,
+  branchName: null,
+  url: "https://remarks.online/dashboard",
+  commentText: "personal scratch note",
+  assets: [],
+};
+
 describe("listTasksHandler", () => {
   it("defaults to to_do+doing when status omitted, projects to snake_case", async () => {
     const fetchListAnnotations = vi
@@ -88,6 +107,7 @@ describe("listTasksHandler", () => {
       id: TASK_ID,
       status: "to_do",
       branch: "main",
+      project: { id: PROJECT_ID, slug: "acme" },
       url: "https://example.test/page",
       target_type: "element",
       comment_preview: "make this button blue",
@@ -96,6 +116,95 @@ describe("listTasksHandler", () => {
       has_screenshot: true,
     });
     expect(parsed.next_cursor).toBeNull();
+  });
+
+  it("personal mode: no project_id/org_id → personal endpoint, branch+project null", async () => {
+    const fetchListPersonalAnnotations = vi
+      .fn()
+      .mockResolvedValue({ items: [PERSONAL_ROW], nextCursor: null });
+    const assertProjectAccess = vi.fn();
+    const assertOrgAccess = vi.fn();
+    const api = makeApi({
+      fetchListPersonalAnnotations,
+      assertProjectAccess,
+      assertOrgAccess,
+    });
+
+    const result = await listTasksHandler(
+      {},
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+    );
+
+    expect(fetchListPersonalAnnotations).toHaveBeenCalledWith(STUB_AUTH.clerkUserId, {
+      limit: 20,
+      statuses: ["to_do", "doing"],
+    });
+    expect(assertProjectAccess).not.toHaveBeenCalled();
+    expect(assertOrgAccess).not.toHaveBeenCalled();
+    const parsed = listTasksOutputSchema.parse(result.structuredContent);
+    expect(parsed.tasks).toHaveLength(1);
+    expect(parsed.tasks[0]?.branch).toBeNull();
+    expect(parsed.tasks[0]?.project).toBeNull();
+  });
+
+  it("org mode: org_id → org endpoint after access check, project populated per row", async () => {
+    const fetchListOrgAnnotations = vi
+      .fn()
+      .mockResolvedValue({ items: [SAMPLE_ROW], nextCursor: null });
+    const assertOrgAccess = vi.fn().mockResolvedValue(true);
+    const fetchListAnnotations = vi.fn();
+    const api = makeApi({ fetchListOrgAnnotations, assertOrgAccess, fetchListAnnotations });
+
+    const result = await listTasksHandler(
+      { org_id: ORG_ID },
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+    );
+
+    expect(assertOrgAccess).toHaveBeenCalledWith(STUB_AUTH.clerkUserId, ORG_ID);
+    expect(fetchListOrgAnnotations).toHaveBeenCalledWith(STUB_AUTH.clerkUserId, ORG_ID, {
+      limit: 20,
+      statuses: ["to_do", "doing"],
+    });
+    expect(fetchListAnnotations).not.toHaveBeenCalled();
+    const parsed = listTasksOutputSchema.parse(result.structuredContent);
+    expect(parsed.tasks[0]?.project).toEqual({ id: PROJECT_ID, slug: "acme" });
+    expect(parsed.tasks[0]?.branch).toBe("main");
+  });
+
+  it("org mode: non-member → NOT_FOUND, never calls list endpoint", async () => {
+    const fetchListOrgAnnotations = vi.fn();
+    const api = makeApi({
+      assertOrgAccess: vi.fn().mockResolvedValue(false),
+      fetchListOrgAnnotations,
+    });
+
+    await expect(
+      listTasksHandler(
+        { org_id: ORG_ID },
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+      )
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(fetchListOrgAnnotations).not.toHaveBeenCalled();
+  });
+
+  it("VALIDATION_ERROR when both project_id and org_id are passed", async () => {
+    const api = makeApi();
+    await expect(
+      listTasksHandler(
+        { project_id: PROJECT_ID, org_id: ORG_ID },
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+      )
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+
+  it("VALIDATION_ERROR when branch is passed without project_id", async () => {
+    const api = makeApi();
+    await expect(
+      listTasksHandler(
+        { branch: "main" },
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+      )
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 
   it("passes branch and explicit statuses through to the API", async () => {

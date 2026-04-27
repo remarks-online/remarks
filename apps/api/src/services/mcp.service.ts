@@ -54,6 +54,75 @@ export async function getMcpWhoami(db: DB, clerkUserId: string): Promise<WhoamiP
   };
 }
 
+// Distinct from project membership: this returns the orgs the user belongs to
+// (Clerk-authoritative; we only see orgs whose membership has been synced into
+// project_members on at least one project, so for now we go through projects).
+//
+// Used by `remarks_whoami` to surface `org_id`s the agent can pass back to
+// `remarks_list_tasks` in org mode, and by the org-access check.
+export interface UserOrgRow {
+  id: string;
+  clerkOrgId: string;
+  name: string;
+  slug: string;
+  // Caller's role within the org. Sourced from project_members.role (per-project),
+  // collapsed to "member" — full org-level role plumbing arrives with A15.
+  role: string;
+}
+
+export async function listMcpUserOrgs(db: DB, clerkUserId: string): Promise<UserOrgRow[]> {
+  const user = await db.query.users.findFirst({
+    where: eq(schema.users.clerkUserId, clerkUserId),
+    columns: { id: true },
+  });
+  if (!user) throw new NotFoundError("User");
+
+  // Distinct over org because a user can be in many projects within one org.
+  const rows = await db
+    .selectDistinct({
+      id: schema.organizations.id,
+      clerkOrgId: schema.organizations.clerkOrgId,
+      name: schema.organizations.name,
+      slug: schema.organizations.slug,
+    })
+    .from(schema.organizations)
+    .innerJoin(schema.projects, eq(schema.projects.orgId, schema.organizations.id))
+    .innerJoin(schema.projectMembers, eq(schema.projectMembers.projectId, schema.projects.id))
+    .where(eq(schema.projectMembers.userId, user.id));
+
+  return rows.map((r) => ({ ...r, role: "member" }));
+}
+
+// 200/404 access check. Mirrors assertProjectAccess: returns true iff the user
+// is a member of at least one project in the org identified by `orgId`
+// (Remarks UUID — same id the agent passes to `remarks_list_tasks`).
+export async function userHasOrgAccess(
+  db: DB,
+  clerkUserId: string,
+  orgId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: schema.projects.orgId })
+    .from(schema.projectMembers)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.projectMembers.projectId))
+    .innerJoin(schema.users, eq(schema.users.id, schema.projectMembers.userId))
+    .where(and(eq(schema.users.clerkUserId, clerkUserId), eq(schema.projects.orgId, orgId)))
+    .limit(1);
+  return row !== undefined;
+}
+
+// Resolves Clerk user id → internal users.id for the personal/org list endpoints
+// that need to call listAnnotationsForUser. Throws NotFoundError("User") if the
+// Clerk id has no corresponding user — same posture as getMcpWhoami.
+export async function resolveMcpUserId(db: DB, clerkUserId: string): Promise<string> {
+  const user = await db.query.users.findFirst({
+    where: eq(schema.users.clerkUserId, clerkUserId),
+    columns: { id: true },
+  });
+  if (!user) throw new NotFoundError("User");
+  return user.id;
+}
+
 export interface ProjectContextPayload {
   project: {
     id: string;

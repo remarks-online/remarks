@@ -11,26 +11,34 @@ const paramsSchema = z.object({
   projectId: z.string().uuid(),
 });
 
-const annotationsListQuerySchema = z.object({
+// Shared query parser for the project / personal / org list endpoints. The
+// project route uses the full shape; personal/org routes pick the subset they
+// support (no `branch`, since branches are project-scoped).
+export const mcpListQueryStatusesSchema = z
+  .string()
+  .optional()
+  .transform((value) => {
+    if (value === undefined || value === "") return undefined;
+    const parts = value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return parts;
+  })
+  .pipe(z.array(z.enum(ANNOTATION_STATUSES)).optional());
+
+export const mcpListQueryBaseSchema = z.object({
   // CSV of statuses (e.g., `to_do,doing`). Empty string parses as no filter.
   // The MCP server defaults to ["to_do","doing"] when the agent omits it; the
   // server-side default lives there, not here, so this query is purely
   // pass-through.
-  statuses: z
-    .string()
-    .optional()
-    .transform((value) => {
-      if (value === undefined || value === "") return undefined;
-      const parts = value
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      return parts;
-    })
-    .pipe(z.array(z.enum(ANNOTATION_STATUSES)).optional()),
-  branch: z.string().min(1).optional(),
+  statuses: mcpListQueryStatusesSchema,
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
+});
+
+const annotationsListQuerySchema = mcpListQueryBaseSchema.extend({
+  branch: z.string().min(1).optional(),
 });
 
 // Internal MCP-only project routes (Phase 2 tasks 2.7 + 2.9).

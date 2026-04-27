@@ -632,3 +632,262 @@ describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", 
     expect(res.json().error.code).toBe("VALIDATION_ERROR");
   });
 });
+
+// A21 — personal + org-scoped list endpoints. Both wrap listAnnotationsForUser
+// with a different `scope`. The handler also gates org access and resolves
+// clerkUserId → users.id via the same helper as the single-annotation route.
+describe("GET /internal/mcp/users/:clerkUserId/personal-annotations (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  async function seedPersonalAnnotation(
+    db: Db,
+    args: { authorId: string; url?: string; commentText?: string; createdAt?: Date }
+  ): Promise<typeof schema.annotations.$inferSelect> {
+    const [row] = await db
+      .insert(schema.annotations)
+      .values({
+        projectId: null,
+        branchId: null,
+        authorId: args.authorId,
+        status: "to_do",
+        targetType: "element",
+        url: args.url ?? "https://remarks.online/dashboard",
+        targetSelector: "button.primary",
+        targetCoords: null,
+        viewport: { width: 1280, height: 720, dpr: 1 },
+        domContext: null,
+        frameworkHint: null,
+        commentText: args.commentText ?? "personal note",
+        ...(args.createdAt ? { createdAt: args.createdAt } : {}),
+      })
+      .returning();
+    if (!row) throw new Error("seed: personal annotation insert returned no rows");
+    return row;
+  }
+
+  test("returns only the caller's personal annotations; project rows excluded", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+
+    const personal = await seedPersonalAnnotation(db, {
+      authorId: user.id,
+      url: "https://remarks.online/x",
+      createdAt: new Date("2026-04-26T10:00:00Z"),
+    });
+    await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+      url: "https://example.test/proj",
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/users/${encodeURIComponent(user.clerkUserId)}/personal-annotations`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items.map((it: { id: string }) => it.id)).toEqual([personal.id]);
+    expect(body.items[0].projectId).toBeNull();
+    expect(body.items[0].branchName).toBeNull();
+    expect(body.nextCursor).toBeNull();
+  });
+
+  test("hides another user's personal annotations", async () => {
+    const db = await getIntegrationDb();
+    const caller = await seedUser(db);
+    const other = await seedUser(db);
+    await seedPersonalAnnotation(db, { authorId: other.id });
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/users/${encodeURIComponent(caller.clerkUserId)}/personal-annotations`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items).toEqual([]);
+  });
+
+  test("status filter narrows results", async () => {
+    const db = await getIntegrationDb();
+    const user = await seedUser(db);
+    const open = await seedPersonalAnnotation(db, {
+      authorId: user.id,
+      createdAt: new Date("2026-04-26T10:00:00Z"),
+    });
+    await db
+      .update(schema.annotations)
+      .set({ status: "done" })
+      .where(eq(schema.annotations.id, open.id));
+    const stillOpen = await seedPersonalAnnotation(db, {
+      authorId: user.id,
+      createdAt: new Date("2026-04-26T10:01:00Z"),
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/users/${encodeURIComponent(user.clerkUserId)}/personal-annotations?statuses=to_do`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items.map((it: { id: string }) => it.id)).toEqual([stillOpen.id]);
+  });
+});
+
+describe("GET /internal/mcp/users/:clerkUserId/orgs/:orgId/annotations (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  async function seedTwoProjectsInDifferentOrgs(db: Db) {
+    const orgA = await seedOrg(db);
+    const orgB = await seedOrg(db);
+    const user = await seedUser(db);
+    const [projectA] = await db
+      .insert(schema.projects)
+      .values({
+        orgId: orgA.id,
+        name: `A ${rand()}`,
+        slug: `a-${rand()}`,
+        primaryBranch: "main",
+      })
+      .returning();
+    const [projectB] = await db
+      .insert(schema.projects)
+      .values({
+        orgId: orgB.id,
+        name: `B ${rand()}`,
+        slug: `b-${rand()}`,
+        primaryBranch: "main",
+      })
+      .returning();
+    if (!projectA || !projectB) throw new Error("seed: project insert returned no rows");
+    const [branchA] = await db
+      .insert(schema.branches)
+      .values({ projectId: projectA.id, name: "main" })
+      .returning();
+    const [branchB] = await db
+      .insert(schema.branches)
+      .values({ projectId: projectB.id, name: "main" })
+      .returning();
+    if (!branchA || !branchB) throw new Error("seed: branch insert returned no rows");
+    await db.insert(schema.projectMembers).values([
+      { projectId: projectA.id, userId: user.id, role: "editor" },
+      { projectId: projectB.id, userId: user.id, role: "editor" },
+    ]);
+    return { orgA, orgB, user, projectA, projectB, branchA, branchB };
+  }
+
+  test("org filter restricts results to that org's projects", async () => {
+    const db = await getIntegrationDb();
+    const { orgA, user, projectA, projectB, branchA, branchB } =
+      await seedTwoProjectsInDifferentOrgs(db);
+
+    const inOrg = await seedAnnotation(db, {
+      projectId: projectA.id,
+      branchId: branchA.id,
+      authorId: user.id,
+      url: "https://example.test/a",
+      createdAt: new Date("2026-04-26T10:00:00Z"),
+    });
+    await seedAnnotation(db, {
+      projectId: projectB.id,
+      branchId: branchB.id,
+      authorId: user.id,
+      url: "https://example.test/b",
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/users/${encodeURIComponent(user.clerkUserId)}/orgs/${orgA.id}/annotations`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items.map((it: { id: string }) => it.id)).toEqual([inOrg.id]);
+    expect(body.items[0].projectId).toBe(projectA.id);
+  });
+
+  test("non-member org → 404", async () => {
+    const db = await getIntegrationDb();
+    const { user } = await seedTwoProjectsInDifferentOrgs(db);
+    const orphan = await seedOrg(db);
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/users/${encodeURIComponent(user.clerkUserId)}/orgs/${orphan.id}/annotations`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  test("excludes the caller's personal annotations even when they exist", async () => {
+    const db = await getIntegrationDb();
+    const { orgA, user, projectA, branchA } = await seedTwoProjectsInDifferentOrgs(db);
+
+    await db.insert(schema.annotations).values({
+      projectId: null,
+      branchId: null,
+      authorId: user.id,
+      status: "to_do",
+      targetType: "element",
+      url: "https://remarks.online/x",
+      targetSelector: "button",
+      targetCoords: null,
+      viewport: { width: 1280, height: 720, dpr: 1 },
+      domContext: null,
+      frameworkHint: null,
+      commentText: "personal",
+    });
+    const inOrg = await seedAnnotation(db, {
+      projectId: projectA.id,
+      branchId: branchA.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/users/${encodeURIComponent(user.clerkUserId)}/orgs/${orgA.id}/annotations`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items.map((it: { id: string }) => it.id)).toEqual([inOrg.id]);
+  });
+});
+
+void and;

@@ -24,6 +24,7 @@ function validAnnotation(): AnnotationResponse {
   return {
     id: "11111111-2222-4333-8444-555555555555",
     projectId: PROJECT,
+    projectSlug: "acme",
     branchId: "11111111-3333-4333-8444-555555555555",
     branchName: "main",
     status: "to_do",

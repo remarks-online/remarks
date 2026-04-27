@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import internalAuthPlugin from "../../plugins/internal-auth.js";
 import { annotationInternalRoutes } from "./annotations.js";
 import { projectInternalRoutes } from "./projects.js";
+import { userOrgsRoutes } from "./user-orgs.js";
 import { userProjectsRoutes } from "./user-projects.js";
 import { whoamiRoutes } from "./whoami.js";
 
@@ -14,6 +15,7 @@ import { whoamiRoutes } from "./whoami.js";
 export async function internalRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(internalAuthPlugin);
   await fastify.register(userProjectsRoutes);
+  await fastify.register(userOrgsRoutes);
   await fastify.register(whoamiRoutes);
   await fastify.register(projectInternalRoutes);
   await fastify.register(annotationInternalRoutes);

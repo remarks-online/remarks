@@ -37,6 +37,7 @@ const SAMPLE_PAYLOAD = {
   annotation: {
     id: TASK_ID,
     projectId: PROJECT_ID,
+    projectSlug: "acme",
     branchId: "44444444-4444-4444-8444-444444444444",
     branchName: "feat/checkout",
     status: "to_do" as const,

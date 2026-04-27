@@ -93,11 +93,24 @@ export const mcpTaskAuthorSchema = z.object({
 
 export type McpTaskAuthor = z.infer<typeof mcpTaskAuthorSchema>;
 
+// Project pointer surfaced on list_tasks rows so org-mode results can identify
+// which project a row belongs to without a follow-up call.
+export const mcpTaskProjectSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+});
+
+export type McpTaskProject = z.infer<typeof mcpTaskProjectSchema>;
+
 // Compact task shape returned by list_tasks (§3.2).
+// `branch` and `project` are nullable because personal tasks have no project
+// (and therefore no branch). Project-scoped and org-scoped rows always carry
+// both.
 export const mcpTaskSummarySchema = z.object({
   id: z.string().uuid(),
   status: annotationStatusSchema,
-  branch: z.string(),
+  branch: z.string().nullable(),
+  project: mcpTaskProjectSchema.nullable(),
   url: z.string().url(),
   target_type: annotationTargetTypeSchema,
   comment_preview: z.string(),
