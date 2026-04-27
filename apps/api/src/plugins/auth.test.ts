@@ -199,6 +199,27 @@ describe("auth plugin", () => {
     expect(res.json().error.code).toBe("UNAUTHORIZED");
   });
 
+  test("treats orgs-disabled-in-instance as empty memberships, not 401", async () => {
+    mocks.verifyToken.mockResolvedValueOnce({ sub: "user_123" });
+    mocks.findFirst.mockResolvedValueOnce(SAMPLE_USER);
+    // Mirrors the production failure: Clerk SDK throws ClerkAPIResponseError
+    // with `errors: [{ code: "organization_not_enabled_in_instance" }]` when
+    // the instance has Organizations turned off.
+    const orgsDisabledError = Object.assign(new Error("Forbidden"), {
+      clerkError: true,
+      status: 403,
+      errors: [{ code: "organization_not_enabled_in_instance", message: "access denied" }],
+    });
+    mocks.getOrganizationMembershipList.mockRejectedValueOnce(orgsDisabledError);
+    const res = await server.inject({
+      method: "GET",
+      url: "/_protected",
+      headers: { authorization: "Bearer valid.token" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().auth.orgMemberships).toEqual([]);
+  });
+
   test("attaches user + empty orgMemberships for users with no orgs", async () => {
     mocks.verifyToken.mockResolvedValueOnce({ sub: "user_123" });
     mocks.findFirst.mockResolvedValueOnce(SAMPLE_USER);
