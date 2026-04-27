@@ -1,5 +1,6 @@
 "use client";
 
+import { AnnotationDetailSheet } from "@/components/annotations/annotation-detail-sheet";
 import { trpc } from "@/lib/trpc-client";
 import type { AnnotationListResponse, AnnotationResponse } from "@remarks/shared";
 import { Button } from "@remarks/ui";
@@ -7,7 +8,6 @@ import { MessageSquarePlus } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { AnnotationCard } from "./annotation-card";
-import { AnnotationDetailSheet } from "./annotation-detail-sheet";
 
 export const ANNOTATION_LIST_PAGE_SIZE = 50;
 

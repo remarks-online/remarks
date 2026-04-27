@@ -51,4 +51,5 @@ export {
   SheetTitle,
   SheetTrigger,
 } from "./components/sheet";
+export { Textarea, type TextareaProps } from "./components/textarea";
 export { cn } from "./lib/utils";

@@ -17,6 +17,7 @@ import {
   assertProjectMember,
 } from "../../lib/project-authorization.js";
 import {
+  deleteAnnotation,
   getAnnotationById,
   getAnnotationOwnership,
   listAnnotationEvents,
@@ -132,6 +133,20 @@ export const annotationsRouter = router({
         r2: ctx.r2,
       });
       return annotationResponseSchema.parse(response);
+    } catch (err) {
+      mapError(err);
+    }
+  }),
+
+  delete: protectedProcedure.input(annotationIdInputSchema).mutation(async ({ ctx, input }) => {
+    try {
+      const ownership = await getAnnotationOwnership(ctx.db, input.id);
+      const { role, isOwner } = await assertAnnotationAccess(ctx.db, ctx.user.id, ownership);
+      if (role !== null && PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK.editor && !isOwner) {
+        throw new ForbiddenError("Requires project editor role or annotation author");
+      }
+      await deleteAnnotation(ctx.db, input.id);
+      return { ok: true } as const;
     } catch (err) {
       mapError(err);
     }

@@ -1,9 +1,11 @@
 "use client";
 
 import { trpc } from "@/lib/trpc-client";
+import { MAX_COMMENT_LENGTH } from "@remarks/shared";
 import type { AnnotationResponse } from "@remarks/shared";
 import {
   Badge,
+  Button,
   Select,
   SelectContent,
   SelectItem,
@@ -12,8 +14,10 @@ import {
   Sheet,
   SheetContent,
   SheetTitle,
+  Textarea,
 } from "@remarks/ui";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { EventRow } from "./event-row";
 import { STATUS_LABEL, STATUS_OPTIONS, STATUS_VARIANT, safeHostname } from "./status-ui";
 
@@ -36,13 +40,13 @@ export function AnnotationDetailSheet({ selectedId, onOpenChange }: AnnotationDe
         {/* even during the loading state; the visible heading below replaces */}
         {/* it semantically once the detail hydrates. */}
         <SheetTitle className="sr-only">Annotation detail</SheetTitle>
-        {selectedId ? <DetailBody id={selectedId} /> : null}
+        {selectedId ? <DetailBody id={selectedId} onClose={() => onOpenChange(false)} /> : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-function DetailBody({ id }: { id: string }) {
+function DetailBody({ id, onClose }: { id: string; onClose: () => void }) {
   const router = useRouter();
   const utils = trpc.useUtils();
   const annotationQuery = trpc.annotations.get.useQuery({ id });
@@ -75,6 +79,18 @@ function DetailBody({ id }: { id: string }) {
         utils.annotations.get.invalidate({ id }),
         utils.annotations.listEvents.invalidate({ id }),
         utils.annotations.list.invalidate(),
+        utils.annotations.listForUser.invalidate(),
+      ]);
+      router.refresh();
+    },
+  });
+
+  const deleteMutation = trpc.annotations.delete.useMutation({
+    onSuccess: async () => {
+      onClose();
+      await Promise.all([
+        utils.annotations.list.invalidate(),
+        utils.annotations.listForUser.invalidate(),
       ]);
       router.refresh();
     },
@@ -101,6 +117,14 @@ function DetailBody({ id }: { id: string }) {
   const screenshot = annotation.assets.find((a) => a.kind === "screenshot");
   const hostname = safeHostname(annotation.url);
 
+  const handleDelete = () => {
+    if (deleteMutation.isPending) return;
+    // Native confirm is a placeholder until packages/ui ships an AlertDialog
+    // primitive; gating destructive actions matters more than the chrome.
+    if (!window.confirm("Delete this annotation? This can't be undone.")) return;
+    deleteMutation.mutate({ id });
+  };
+
   return (
     <div className="flex h-full flex-col gap-6">
       <header className="flex flex-col gap-2 pr-10">
@@ -122,10 +146,12 @@ function DetailBody({ id }: { id: string }) {
         </p>
       </header>
 
-      <section>
-        <h3 className="sr-only">Comment</h3>
-        <p className="whitespace-pre-wrap text-sm">{annotation.commentText}</p>
-      </section>
+      <CommentSection
+        annotation={annotation}
+        onSave={(commentText) => updateMutation.mutate({ id, input: { commentText } })}
+        isSaving={updateMutation.isPending}
+        saveError={updateMutation.isError ? updateMutation.error.message : null}
+      />
 
       {screenshot ? (
         <section>
@@ -195,7 +221,101 @@ function DetailBody({ id }: { id: string }) {
           </ul>
         )}
       </section>
+
+      <section className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={handleDelete}
+          disabled={deleteMutation.isPending}
+        >
+          {deleteMutation.isPending ? "Deleting…" : "Delete annotation"}
+        </Button>
+        {deleteMutation.isError ? (
+          <span className="text-xs text-destructive">{deleteMutation.error.message}</span>
+        ) : null}
+      </section>
     </div>
+  );
+}
+
+function CommentSection({
+  annotation,
+  onSave,
+  isSaving,
+  saveError,
+}: {
+  annotation: AnnotationResponse;
+  onSave: (commentText: string) => void;
+  isSaving: boolean;
+  saveError: string | null;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(annotation.commentText);
+
+  const startEditing = () => {
+    setDraft(annotation.commentText);
+    setIsEditing(true);
+  };
+
+  const cancel = () => {
+    setDraft(annotation.commentText);
+    setIsEditing(false);
+  };
+
+  const save = () => {
+    const trimmed = draft.trim();
+    if (trimmed.length === 0 || trimmed === annotation.commentText) {
+      setIsEditing(false);
+      return;
+    }
+    onSave(trimmed);
+    setIsEditing(false);
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Comment
+        </h3>
+        {isEditing ? null : (
+          <Button type="button" variant="ghost" size="sm" onClick={startEditing}>
+            Edit
+          </Button>
+        )}
+      </div>
+      {isEditing ? (
+        <div className="mt-2 space-y-2">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={MAX_COMMENT_LENGTH}
+            rows={5}
+            aria-label="Annotation comment"
+            disabled={isSaving}
+          />
+          <div className="flex items-center justify-end gap-2">
+            {saveError ? (
+              <span className="mr-auto text-xs text-destructive">{saveError}</span>
+            ) : null}
+            <Button type="button" variant="outline" size="sm" onClick={cancel} disabled={isSaving}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={save}
+              disabled={isSaving || draft.trim().length === 0}
+            >
+              {isSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 whitespace-pre-wrap text-sm">{annotation.commentText}</p>
+      )}
+    </section>
   );
 }
 

@@ -1,8 +1,13 @@
 "use client";
 
+import {
+  STATUS_LABEL,
+  STATUS_VARIANT,
+  authorInitials,
+  safeHostname,
+} from "@/components/annotations/status-ui";
 import type { AnnotationResponse } from "@remarks/shared";
 import { Badge, Card, CardContent } from "@remarks/ui";
-import { STATUS_LABEL, STATUS_VARIANT, authorInitials, safeHostname } from "./status-ui";
 
 interface AnnotationCardProps {
   annotation: AnnotationResponse;
