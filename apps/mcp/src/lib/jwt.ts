@@ -36,8 +36,7 @@ interface ClerkOAuthClaims extends JWTPayload {
   client_id?: string;
 }
 
-function audienceMatches(aud: string | string[] | undefined, expected: string): boolean {
-  if (aud === undefined) return false;
+function audienceContains(aud: string | string[], expected: string): boolean {
   return Array.isArray(aud) ? aud.includes(expected) : aud === expected;
 }
 
@@ -65,14 +64,24 @@ function pickClientName(claims: ClerkOAuthClaims): string {
 
 export async function verifyOAuthToken(jwt: string): Promise<VerifiedToken> {
   // jose validates signature against JWKS, plus exp/nbf/iss when those options
-  // are set. It does not enforce a specific `typ` unless asked, so RFC 9068
-  // `at+jwt` tokens are accepted alongside legacy `JWT` typ.
+  // are set. We additionally enforce `typ === "at+jwt"` (RFC 9068) so Clerk
+  // *session* JWTs (typ "JWT") can't be replayed against MCP tools.
   const { issuer, jwks } = getVerifierConfig();
-  const { payload } = await jwtVerify(jwt, jwks, { issuer });
+  const { payload, protectedHeader } = await jwtVerify(jwt, jwks, { issuer });
+  if (protectedHeader.typ !== "at+jwt") {
+    throw new Error(`Unexpected JWT typ: ${String(protectedHeader.typ)} (expected "at+jwt")`);
+  }
   const claims = payload as ClerkOAuthClaims;
 
-  if (!audienceMatches(claims.aud, env.MCP_RESOURCE_URI)) {
-    throw new Error("Token audience does not match this resource server");
+  // RFC 8707 audience binding. Clerk's OAuth provider doesn't emit `aud` for
+  // dynamically-registered clients today (no "Allowed resources" Dashboard
+  // UI; same product gap as custom scopes — see spec-gap A20). When `aud` is
+  // present we still validate it; when absent we accept on signature + iss +
+  // typ alone. The day Clerk emits `aud`, this branch tightens automatically.
+  if (claims.aud !== undefined && !audienceContains(claims.aud, env.MCP_RESOURCE_URI)) {
+    throw new Error(
+      `Token aud=${JSON.stringify(claims.aud)} does not match resource ${env.MCP_RESOURCE_URI}`
+    );
   }
   if (typeof claims.sub !== "string" || claims.sub.length === 0) {
     throw new Error("Token missing `sub` claim");

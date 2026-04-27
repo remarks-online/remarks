@@ -392,26 +392,28 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Estimated size**: `xs`.
 - **Status**: `in progress` — bundled with the Google-social-connection rollout.
 
-## A20 — Remove the Clerk-custom-scopes bridge once Clerk ships custom OAuth scopes
+## A20 — Remove the Clerk OAuth bridges (custom scopes + audience binding)
 
 | # | Done when | Complete |
 |---|---|---|
-| A20 | `apps/mcp/src/lib/jwt.ts` no longer stubs `tasks:*` / `project:read` onto verified Clerk JWTs; PRM and 401 challenge advertise the real scope set; per-tool `requireScope` is enforcing real grants | [ ] |
+| A20 | `apps/mcp/src/lib/jwt.ts` enforces real scope grants and a strictly-required `aud` claim; PRM/401 advertise real scopes; runbook §3-§4 are unblocked | [ ] |
 
-- **Spec reference**: `docs/runbooks/clerk-mcp-setup.md` §3 ("Define the MCP scopes"); ADR-0015 §4 ("Custom OAuth scopes via Clerk").
-- **Problem**: Clerk's OAuth provider (April 2026) only issues tokens scoped to its built-in catalog (`openid`, `profile`, `email`, `public_metadata`, `private_metadata`, `offline_access`). Custom user-defined scopes are roadmap-only — confirmed via `clerk.com/docs/guides/configure/auth-strategies/oauth/scoped-access` and by probing prod `clerk.remarks.online/.well-known/oauth-authorization-server`. The MCP server's PRM, 401 challenge, and per-tool `requireScope` checks all assumed `tasks:read`/`tasks:write`/`project:read` were live; they aren't, and Clerk would reject any OAuth request asking for them with `invalid_scope`. The first-connect debug session for `mcp.remarks.online` exposed this.
-- **Proposed deliverable**: When Clerk ships custom scopes, define `tasks:read`, `tasks:write`, `project:read` in the prod (and dev/staging) Clerk OAuth applications page per the runbook §3 table, then revert the bridge:
+- **Spec reference**: `docs/runbooks/clerk-mcp-setup.md` §3 ("Define the MCP scopes"), §4 ("Configure the resource (audience)"); ADR-0015 §4.
+- **Problem**: Clerk's OAuth provider (April 2026) ships an incomplete OAuth-as-AS surface for MCP. Two specific gaps that the MCP server bridges:
+  1. **Custom scopes are roadmap-only.** Only the built-in catalog (`openid`, `profile`, `email`, `public_metadata`, `private_metadata`, `offline_access`) is issuable. Confirmed via `clerk.com/docs/guides/configure/auth-strategies/oauth/scoped-access` and probing the prod AS metadata.
+  2. **No "Allowed resources" Dashboard UI / no `aud` on issued OAuth tokens.** RFC 8707 resource indicators are documented in our runbook §4 but Clerk's OAuth provider does not honor the `resource` parameter today — the access tokens it emits omit `aud` entirely. The MCP server initially rejected those tokens; the bridge accepts a missing `aud` while still rejecting a present-but-mismatched one.
+- **Proposed deliverable**: When Clerk ships both:
   - `apps/mcp/src/routes/well-known.ts` — restore `scopes_supported: ["tasks:read", "tasks:write", "project:read"]`.
   - `apps/mcp/src/plugins/mcp-auth.ts` — restore `REQUIRED_SCOPES = "tasks:read tasks:write project:read"`.
-  - `apps/mcp/src/lib/jwt.ts` — drop the `REMARKS_SCOPES` fallback in `parseScopes()`; return parsed scopes verbatim.
-  - `docs/runbooks/clerk-mcp-setup.md` — remove the "not yet supported by Clerk" caveats added when this gap was opened.
+  - `apps/mcp/src/lib/jwt.ts` — drop the `REMARKS_SCOPES` fallback in `parseScopes()` and tighten the audience check from "if present, must match" back to "must be present and match".
+  - `docs/runbooks/clerk-mcp-setup.md` §3-§4 — remove the "not yet supported" caveats.
 - **Done when**:
-  - The three custom scopes are defined in Clerk Dashboard for prod (and dev) and appear in `https://clerk.remarks.online/.well-known/oauth-authorization-server` `scopes_supported`.
-  - Code reverts above are merged.
-  - Existing FORBIDDEN tests in `apps/mcp/src/tools/*.test.ts` pass against real Clerk-issued JWTs lacking a given scope (i.e., scope enforcement is actually exercising).
-- **Conflicts / overlaps with spec**: ADR-0015 §4 implies custom scopes work today; this gap and the bridge are the temporary deviation.
+  - The three custom scopes are defined in Clerk Dashboard for prod (and dev) and appear in the AS metadata `scopes_supported`.
+  - The canonical resource URI (`https://mcp.remarks.online/mcp`) is registered as an Allowed Resource in Clerk Dashboard, and Clerk-issued tokens carry `aud` matching it.
+  - Code reverts above are merged; the FORBIDDEN tests in `apps/mcp/src/tools/*.test.ts` pass against real Clerk-issued tokens missing a given scope.
+- **Conflicts / overlaps with spec**: ADR-0015 §4 + §3 imply both custom scopes and audience binding work today; this gap and the bridges are the temporary deviation.
 - **Affected tasks / components**: `apps/mcp/src/lib/jwt.ts`, `apps/mcp/src/plugins/mcp-auth.ts`, `apps/mcp/src/routes/well-known.ts`, `docs/runbooks/clerk-mcp-setup.md`.
-- **Dependencies**: After Clerk ships custom OAuth scopes (track `clerk.com/changelog`).
+- **Dependencies**: After Clerk ships custom OAuth scopes *and* honors the RFC 8707 `resource` parameter (track `clerk.com/changelog`).
 - **Estimated size**: `xs`.
 - **Status**: `open`.
 
