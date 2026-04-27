@@ -75,6 +75,10 @@ export const annotationResponseSchema = z.object({
   id: z.string().uuid(),
   // Null for personal (URL-keyed) annotations; set for project-scoped ones.
   projectId: z.string().uuid().nullable(),
+  // Project slug, or null for personal annotations. Mirrors `branchName` —
+  // useful when callers list across multiple projects (org mode) and need to
+  // identify the row's project without a follow-up lookup.
+  projectSlug: z.string().nullable(),
   branchId: z.string().uuid().nullable(),
   branchName: z.string().nullable(),
   status: annotationStatusSchema,

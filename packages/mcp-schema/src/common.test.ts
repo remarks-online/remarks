@@ -160,6 +160,7 @@ describe("mcpTaskSummarySchema", () => {
     id: validUuid,
     status: "to_do",
     branch: "main",
+    project: { id: validUuid, slug: "acme" },
     url: "https://example.com",
     target_type: "element",
     comment_preview: "Make the button blue",
@@ -170,6 +171,12 @@ describe("mcpTaskSummarySchema", () => {
 
   test("accepts a complete summary", () => {
     expect(mcpTaskSummarySchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("accepts personal-mode shape (branch + project null)", () => {
+    expect(mcpTaskSummarySchema.safeParse({ ...valid, branch: null, project: null }).success).toBe(
+      true
+    );
   });
 
   test("rejects when has_screenshot is missing", () => {

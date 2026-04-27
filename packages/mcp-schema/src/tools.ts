@@ -15,18 +15,41 @@ import {
   viewportSchema,
 } from "./common.js";
 
-// --- remarks_list_tasks (Phase 2 spec §3.2 Discovery) ---
+// --- remarks_list_tasks (Phase 2 spec §3.2 Discovery; A21 personal + org modes) ---
 
-export const listTasksInputSchema = z.object({
-  project_id: z.string().uuid(),
-  branch: z.string().optional(),
-  // Spec defaults to ["to_do", "doing"] when omitted; the server applies that
-  // default — keeping the schema permissive lets clients pass an empty array
-  // for "all statuses" without hitting a refinement.
-  status: z.array(taskStatusSchema).optional(),
-  limit: z.number().int().min(1).max(100).default(20),
-  cursor: z.string().optional(),
-});
+export const listTasksInputSchema = z
+  .object({
+    // Mode selector — exactly one of {project_id, org_id, neither} is allowed.
+    // - project_id set    → tasks for that project (membership required)
+    // - org_id set        → tasks across the caller's projects in that org
+    // - neither set       → caller's personal tasks (annotations with no project)
+    project_id: z.string().uuid().optional(),
+    org_id: z.string().uuid().optional(),
+    // `branch` is project-specific; refinement below rejects it without project_id.
+    branch: z.string().optional(),
+    // Spec defaults to ["to_do", "doing"] when omitted; the server applies that
+    // default — keeping the schema permissive lets clients pass an empty array
+    // for "all statuses" without hitting a refinement.
+    status: z.array(taskStatusSchema).optional(),
+    limit: z.number().int().min(1).max(100).default(20),
+    cursor: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.project_id !== undefined && value.org_id !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "project_id and org_id are mutually exclusive",
+        path: ["org_id"],
+      });
+    }
+    if (value.branch !== undefined && value.project_id === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "branch filter requires project_id",
+        path: ["branch"],
+      });
+    }
+  });
 
 export type ListTasksInput = z.infer<typeof listTasksInputSchema>;
 
@@ -40,7 +63,7 @@ export type ListTasksOutput = z.infer<typeof listTasksOutputSchema>;
 const listTasksTool = {
   name: "remarks_list_tasks",
   description:
-    "Returns Remarks tasks for the given project. Tasks are visual feedback items that a human has left on a running web application. Default filter returns open (to_do) and in-progress (doing) tasks. Call `remarks_get_task` to get full context for a specific task.",
+    "Returns Remarks tasks. Tasks are visual feedback items that a human has left on a running web application. Pass `project_id` to list tasks for a single project, `org_id` to list tasks across all of the caller's projects in that organization, or omit both to list the caller's personal tasks (annotations with no project). The two ID inputs are mutually exclusive. The `branch` filter is only valid with `project_id`. Default status filter returns open (to_do) and in-progress (doing) tasks. Personal-task rows return `branch: null` and `project: null`. Call `remarks_get_task` to get full context for a specific task.",
   input: listTasksInputSchema,
   output: listTasksOutputSchema,
 } as const;
@@ -262,6 +285,19 @@ export const whoamiOutputSchema = z.object({
       slug: z.string(),
     })
   ),
+  // Orgs the caller belongs to (Clerk-authoritative). The `id` is the Remarks
+  // organization UUID; `clerk_org_id` is the Clerk identifier. Pass `id` as
+  // `org_id` to `remarks_list_tasks` to list tasks across the caller's
+  // projects within that org.
+  orgs: z.array(
+    z.object({
+      id: z.string().uuid(),
+      clerk_org_id: z.string(),
+      name: z.string(),
+      slug: z.string(),
+      role: z.string(),
+    })
+  ),
   oauth_client_name: z.string(),
   granted_scopes: z.array(z.string()),
   server_version: z.string(),
@@ -273,7 +309,7 @@ export type WhoamiOutput = z.infer<typeof whoamiOutputSchema>;
 const whoamiTool = {
   name: "remarks_whoami",
   description:
-    "Returns information about the current Remarks connection. Use this to verify connectivity and see which projects the authenticated user has access to. Tokens are scoped to a Clerk user (ADR-0015); one grant covers every project the user is a member of.",
+    "Returns information about the current Remarks connection. Use this to verify connectivity and see which projects and organizations the authenticated user has access to. Tokens are scoped to a Clerk user (ADR-0015); one grant covers every project the user is a member of and every org the user belongs to. Use the returned `org` IDs to drive `remarks_list_tasks` in org mode, or call `remarks_list_tasks` with no IDs to list the caller's personal tasks.",
   input: whoamiInputSchema,
   output: whoamiOutputSchema,
 } as const;

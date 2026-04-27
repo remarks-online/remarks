@@ -33,6 +33,7 @@ function makeAnnotation(overrides: Partial<AnnotationResponse> = {}): Annotation
   return {
     id: overrides.id ?? "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     projectId: PROJECT_ID,
+    projectSlug: "acme",
     branchId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
     branchName: "main",
     status: "to_do",

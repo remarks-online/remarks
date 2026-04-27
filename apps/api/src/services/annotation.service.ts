@@ -107,11 +107,22 @@ export async function createAnnotation(
     };
   }
 
-  const { annotationRow, assetRow } = await db.transaction(async (tx) => {
+  const { annotationRow, assetRow, projectSlug } = await db.transaction(async (tx) => {
     const branchId =
       input.projectId && input.branch
         ? await findOrCreateBranch(tx, input.projectId, input.branch)
         : null;
+
+    // Loaded inside the tx so the response carries the slug without a second
+    // round-trip after commit. Personal (no projectId) keeps it null.
+    const projectSlug = input.projectId
+      ? ((
+          await tx.query.projects.findFirst({
+            where: eq(schema.projects.id, input.projectId),
+            columns: { slug: true },
+          })
+        )?.slug ?? null)
+      : null;
 
     const [insertedAnnotation] = await tx
       .insert(schema.annotations)
@@ -160,7 +171,7 @@ export async function createAnnotation(
       payload: {},
     });
 
-    return { annotationRow: insertedAnnotation, assetRow: insertedAsset };
+    return { annotationRow: insertedAnnotation, assetRow: insertedAsset, projectSlug };
   });
 
   const resolvedAssets: ResolvedAsset[] = assetRow
@@ -194,6 +205,7 @@ export async function createAnnotation(
   return toAnnotationResponse({
     annotationRow,
     branchName: input.branch ?? null,
+    projectSlug,
     author,
     assets: resolvedAssets,
   });
@@ -274,6 +286,7 @@ export async function listAnnotations(
     where,
     with: {
       branch: { columns: { name: true } },
+      project: { columns: { slug: true } },
       author: { columns: { id: true, name: true, email: true, avatarUrl: true } },
       assets: true,
     },
@@ -298,6 +311,7 @@ export async function listAnnotations(
       return toAnnotationResponse({
         annotationRow: row,
         branchName: row.branch?.name ?? null,
+        projectSlug: row.project?.slug ?? null,
         author: row.author,
         assets: resolvedAssets,
       });
@@ -322,15 +336,22 @@ export interface ListAnnotationsForUserArgs {
     statuses?: AnnotationStatus[] | undefined;
     cursor?: string | undefined;
     limit: number;
-    // When set, restricts to personal-only. Default: include personal + member projects.
-    scope?: "personal" | "all" | undefined;
+    // Scope selector:
+    // - "personal" → only the caller's personal annotations (project_id IS NULL)
+    // - "org"      → only annotations across the caller's projects within `orgId`
+    // - "all" / undefined → personal + every project the caller is a member of
+    scope?: "personal" | "org" | "all" | undefined;
+    // Required when scope === "org"; the Remarks organization UUID
+    // (organizations.id). Matches what the MCP `org_id` input carries.
+    orgId?: string | undefined;
   };
   r2: R2Client;
   assetTtlSeconds?: number;
 }
 
 // List annotations the user can see across personal + project scopes. Used by
-// the user-scoped REST endpoint and the dashboard's personal view.
+// the user-scoped REST endpoint, the dashboard's personal view, and the
+// MCP-internal personal/org annotation endpoints.
 export async function listAnnotationsForUser(
   db: DB,
   args: ListAnnotationsForUserArgs
@@ -339,15 +360,36 @@ export async function listAnnotationsForUser(
   const ttlSeconds = args.assetTtlSeconds ?? ANNOTATION_ASSET_GET_TTL_SECONDS;
   const scope = query.scope ?? "all";
 
+  if (scope === "org" && !query.orgId) {
+    throw new ValidationError("orgId is required when scope is 'org'");
+  }
+
+  // Resolve the set of projects the caller can see for this scope. Personal
+  // scope skips the lookup entirely; org scope filters projects by org id so
+  // the IN clause is already narrowed.
   const memberProjectIds =
     scope === "personal"
       ? []
-      : (
-          await db.query.projectMembers.findMany({
-            where: eq(schema.projectMembers.userId, userId),
-            columns: { projectId: true },
-          })
-        ).map((m) => m.projectId);
+      : scope === "org"
+        ? (
+            await db
+              .select({ projectId: schema.projectMembers.projectId })
+              .from(schema.projectMembers)
+              .innerJoin(schema.projects, eq(schema.projects.id, schema.projectMembers.projectId))
+              .where(
+                and(
+                  eq(schema.projectMembers.userId, userId),
+                  // biome-ignore lint/style/noNonNullAssertion: validated above
+                  eq(schema.projects.orgId, query.orgId!)
+                )
+              )
+          ).map((row) => row.projectId)
+        : (
+            await db.query.projectMembers.findMany({
+              where: eq(schema.projectMembers.userId, userId),
+              columns: { projectId: true },
+            })
+          ).map((m) => m.projectId);
 
   const personalPredicate = and(
     eq(schema.annotations.authorId, userId),
@@ -358,12 +400,21 @@ export async function listAnnotationsForUser(
       ? inArray(schema.annotations.projectId, memberProjectIds)
       : undefined;
 
+  // Org scope is project-only — personal annotations don't belong to any org,
+  // so they're explicitly excluded even though the caller could see them in
+  // "all" mode. If the caller has no member projects in the org, short-circuit
+  // to an empty page rather than building a query with no satisfiable predicate.
+  if (scope === "org" && projectPredicate === undefined) {
+    return { items: [], nextCursor: null };
+  }
   const visibilityPredicate =
     scope === "personal"
       ? personalPredicate
-      : projectPredicate
-        ? or(personalPredicate, projectPredicate)
-        : personalPredicate;
+      : scope === "org"
+        ? projectPredicate
+        : projectPredicate
+          ? or(personalPredicate, projectPredicate)
+          : personalPredicate;
 
   const cursor: AnnotationListCursor | null = query.cursor
     ? decodeAnnotationListCursor(query.cursor)
@@ -394,6 +445,7 @@ export async function listAnnotationsForUser(
     where,
     with: {
       branch: { columns: { name: true } },
+      project: { columns: { slug: true } },
       author: { columns: { id: true, name: true, email: true, avatarUrl: true } },
       assets: true,
     },
@@ -418,6 +470,7 @@ export async function listAnnotationsForUser(
       return toAnnotationResponse({
         annotationRow: row,
         branchName: row.branch?.name ?? null,
+        projectSlug: row.project?.slug ?? null,
         author: row.author,
         assets: resolvedAssets,
       });
@@ -471,6 +524,7 @@ export async function getAnnotationById(
     where: eq(schema.annotations.id, annotationId),
     with: {
       branch: { columns: { name: true } },
+      project: { columns: { slug: true } },
       author: { columns: { id: true, name: true, email: true, avatarUrl: true } },
       assets: true,
     },
@@ -490,6 +544,7 @@ export async function getAnnotationById(
   return toAnnotationResponse({
     annotationRow: row,
     branchName: row.branch?.name ?? null,
+    projectSlug: row.project?.slug ?? null,
     author: row.author,
     assets: resolvedAssets,
   });
@@ -644,13 +699,15 @@ interface ResolvedAsset {
 function toAnnotationResponse(args: {
   annotationRow: AnnotationRow;
   branchName: string | null;
+  projectSlug: string | null;
   author: AnnotationResponse["author"];
   assets: ResolvedAsset[];
 }): AnnotationResponse {
-  const { annotationRow: row, branchName, author, assets } = args;
+  const { annotationRow: row, branchName, projectSlug, author, assets } = args;
   return {
     id: row.id,
     projectId: row.projectId,
+    projectSlug: row.projectId ? (projectSlug ?? null) : null,
     branchId: row.branchId,
     branchName: row.projectId ? (branchName ?? null) : null,
     status: row.status,

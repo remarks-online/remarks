@@ -9,9 +9,13 @@ import type { AuthContext } from "../types/auth.js";
 export interface ApiClient {
   assertProjectAccess: typeof apiClient.assertProjectAccess;
   listAccessibleProjects: typeof apiClient.listAccessibleProjects;
+  assertOrgAccess: typeof apiClient.assertOrgAccess;
+  listAccessibleOrgs: typeof apiClient.listAccessibleOrgs;
   fetchWhoami: typeof apiClient.fetchWhoami;
   fetchProjectContext: typeof apiClient.fetchProjectContext;
   fetchListAnnotations: typeof apiClient.fetchListAnnotations;
+  fetchListPersonalAnnotations: typeof apiClient.fetchListPersonalAnnotations;
+  fetchListOrgAnnotations: typeof apiClient.fetchListOrgAnnotations;
   fetchAnnotation: typeof apiClient.fetchAnnotation;
   updateAnnotationStatus: typeof apiClient.updateAnnotationStatus;
   addAnnotationComment: typeof apiClient.addAnnotationComment;

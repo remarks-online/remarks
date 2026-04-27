@@ -55,6 +55,7 @@ function validAnnotationResponse(overrides: Record<string, unknown> = {}): Recor
   return {
     id: ANNOTATION_ID,
     projectId: PROJECT_ID,
+    projectSlug: "acme",
     branchId: BRANCH_ID,
     branchName: "main",
     status: "to_do",

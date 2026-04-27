@@ -484,3 +484,30 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: Independent of A16 for the dashboard surface; **after A16** for the prod-extension surface (otherwise prod-built extensions still hit dev Clerk).
 - **Estimated size**: `s` once the Apple Developer account is in place; otherwise blocked on enrolment.
 - **Status**: `open`.
+
+## A21 — Personal + org scopes for `remarks_list_tasks`
+
+| # | Done when | Complete |
+|---|---|---|
+| A21 ✓ | `remarks_list_tasks` returns personal tasks when `project_id`/`org_id` are omitted, and org-rolled-up tasks when `org_id` is set; `remarks_whoami` exposes `orgs` so the agent can drive both | [x] |
+
+- **Spec reference**: Phase 2 spec §6.1 — "one OAuth login covers every project the user is a member of plus their personal annotations." The personal-annotation half of that promise existed in the schema/REST/dashboard but had no MCP surface; the org-scoped variant is a natural extension once whoami can advertise org IDs.
+- **Problem**: Before this change, `remarks_list_tasks` required `project_id` and rejected anything else. An MCP user (e.g. an agent talking to `remarks.online` itself) with no project memberships had no way to see their personal annotations through MCP, and there was no way to sweep across all of one organisation's projects without hand-iterating IDs returned from `remarks_whoami`.
+- **Proposed deliverable**:
+  - **Schema (`packages/mcp-schema`)**: make `project_id` optional on `listTasksInputSchema`, add optional `org_id` (UUID), enforce mutual exclusion + `branch` requires `project_id` via `superRefine`. Make `mcpTaskSummarySchema.branch` nullable and add `project: { id, slug } | null`. Add `orgs` to `whoamiOutputSchema`.
+  - **API (`apps/api`)**: extend `listAnnotationsForUser` with a `scope: "org"` mode + `orgId` filter, load the project relation so callers can populate the new `project` field. Add `AnnotationResponse.projectSlug` (mirrors `branchName`). Register `GET /internal/mcp/users/:clerkUserId/personal-annotations`, `GET /internal/mcp/users/:clerkUserId/orgs/:orgId/annotations`, `GET /internal/users/:clerkUserId/orgs`, and `GET /internal/users/:clerkUserId/orgs/:orgId`.
+  - **MCP server (`apps/mcp`)**: three-way dispatch in `list-tasks` handler (project / org / personal); add `requireOrgAccess` shared helper; add `listAccessibleOrgs` + `assertOrgAccess` + `fetchListPersonalAnnotations` + `fetchListOrgAnnotations` to the api-client. Whoami fans out to projects + orgs in parallel.
+- **Done when**:
+  - [x] `remarks_list_tasks` (no args) returns personal tasks with `branch: null` and `project: null`
+  - [x] `remarks_list_tasks` with `org_id` returns rows from every project the caller is a member of in that org, each row carrying its own `project: { id, slug }`
+  - [x] `remarks_list_tasks` with `project_id` is unchanged behaviorally (output gains `project` populated for consistency)
+  - [x] `remarks_list_tasks` with `branch` but no `project_id` → `VALIDATION_ERROR`
+  - [x] `remarks_list_tasks` with both `project_id` and `org_id` → `VALIDATION_ERROR`
+  - [x] `remarks_whoami` surfaces `orgs: [{ id, clerk_org_id, name, slug, role }]`
+  - [x] Non-member org → `NOT_FOUND` (existence-leak posture)
+  - [x] All three modes covered by unit tests; both new internal routes covered by integration tests
+- **Conflicts / overlaps with spec**: None directly. The `branch` field on `mcpTaskSummarySchema` going from `string` to `string | null` is a soft-breaking output change, but the existing handler already filtered out null-branch rows defensively, so no shipping client has ever observed a null branch from this tool.
+- **Affected tasks / components**: `packages/mcp-schema/src/{common,tools}.ts`, `packages/shared/src/schemas/annotation.ts`, `apps/api/src/services/{annotation,mcp}.service.ts`, `apps/api/src/routes/internal/{annotations,projects,user-orgs,index}.ts`, `apps/mcp/src/lib/api-client.ts`, `apps/mcp/src/tools/{list-tasks,whoami,shared,types}.ts`, `apps/mcp/src/routes/mcp.test.ts` (mocks).
+- **Dependencies**: Independent. Lays useful groundwork for any future cross-project triage UX (e.g. an "all my tasks" dashboard view) but doesn't block A15 (org-membership sync).
+- **Estimated size**: `m`.
+- **Status**: `done in PR (this branch)`.

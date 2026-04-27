@@ -76,6 +76,46 @@ export async function assertProjectAccess(
   return true;
 }
 
+// --- Org membership ---
+
+export interface OrgSummary {
+  id: string;
+  clerkOrgId: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
+// Lists every org the Clerk user belongs to. Backs `remarks_whoami`'s `orgs`
+// field; lets agents discover org IDs without first poking at the dashboard.
+export async function listAccessibleOrgs(clerkUserId: string): Promise<OrgSummary[]> {
+  const result = await getJson<{ orgs: OrgSummary[] }>(
+    `/internal/users/${encodeURIComponent(clerkUserId)}/orgs`,
+    "accessible orgs"
+  );
+  return result?.orgs ?? [];
+}
+
+// Returns true iff the user belongs to the org. `orgId` is the Remarks UUID
+// (organizations.id) — the same id surfaced by `remarks_whoami` and accepted by
+// `remarks_list_tasks` in org mode. 404 → false (existence-leak posture).
+export async function assertOrgAccess(clerkUserId: string, orgId: string): Promise<boolean> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${env.API_INTERNAL_URL}/internal/users/${encodeURIComponent(clerkUserId)}/orgs/${encodeURIComponent(orgId)}`,
+      { method: "GET", headers: { "x-internal-auth": env.INTERNAL_API_TOKEN } }
+    );
+  } catch (cause) {
+    throw new InternalError("Failed to reach Remarks API for org access check", cause);
+  }
+  if (response.status === 404) return false;
+  if (!response.ok) {
+    throw new InternalError(`org access check failed with status ${response.status}`);
+  }
+  return true;
+}
+
 // --- Whoami / project context / annotation reads ---
 
 export interface UserSummary {
@@ -142,6 +182,44 @@ export async function fetchListAnnotations(
   return getJson<AnnotationListResponse>(
     `/internal/mcp/projects/${projectId}/annotations${query}`,
     "annotation list"
+  );
+}
+
+// Personal-mode list params: branch is project-specific, so it's not accepted.
+export interface ListUserAnnotationsParams {
+  statuses?: string[];
+  limit?: number;
+  cursor?: string;
+}
+
+function buildUserListQuery(params: ListUserAnnotationsParams): string {
+  const search = new URLSearchParams();
+  if (params.statuses && params.statuses.length > 0) {
+    search.set("statuses", params.statuses.join(","));
+  }
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.cursor !== undefined) search.set("cursor", params.cursor);
+  return search.size > 0 ? `?${search.toString()}` : "";
+}
+
+export async function fetchListPersonalAnnotations(
+  clerkUserId: string,
+  params: ListUserAnnotationsParams
+): Promise<AnnotationListResponse | null> {
+  return getJson<AnnotationListResponse>(
+    `/internal/mcp/users/${encodeURIComponent(clerkUserId)}/personal-annotations${buildUserListQuery(params)}`,
+    "personal annotation list"
+  );
+}
+
+export async function fetchListOrgAnnotations(
+  clerkUserId: string,
+  orgId: string,
+  params: ListUserAnnotationsParams
+): Promise<AnnotationListResponse | null> {
+  return getJson<AnnotationListResponse>(
+    `/internal/mcp/users/${encodeURIComponent(clerkUserId)}/orgs/${encodeURIComponent(orgId)}/annotations${buildUserListQuery(params)}`,
+    "org annotation list"
   );
 }
 

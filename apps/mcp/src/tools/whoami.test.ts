@@ -20,9 +20,13 @@ function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     assertProjectAccess: vi.fn().mockResolvedValue(true),
     listAccessibleProjects: vi.fn().mockResolvedValue([]),
+    assertOrgAccess: vi.fn().mockResolvedValue(true),
+    listAccessibleOrgs: vi.fn().mockResolvedValue([]),
     fetchWhoami: vi.fn(),
     fetchProjectContext: vi.fn(),
     fetchListAnnotations: vi.fn(),
+    fetchListPersonalAnnotations: vi.fn(),
+    fetchListOrgAnnotations: vi.fn(),
     fetchAnnotation: vi.fn(),
     updateAnnotationStatus: vi.fn(),
     addAnnotationComment: vi.fn(),
@@ -35,12 +39,22 @@ function makeIdempotency(): IdempotencyCache {
 }
 
 describe("whoamiHandler", () => {
-  it("returns user, projects, oauth client name, and version metadata on success", async () => {
+  it("returns user, projects, orgs, oauth client name, and version metadata on success", async () => {
     const fetchWhoami = vi.fn().mockResolvedValue({
       user: { id: USER_ID, email: "alice@example.com", name: "Alice" },
       projects: [{ id: PROJECT_ID, name: "Acme", slug: "acme" }],
     });
-    const api = makeApi({ fetchWhoami });
+    const ORG_ID = "77777777-7777-4777-8777-777777777777";
+    const listAccessibleOrgs = vi.fn().mockResolvedValue([
+      {
+        id: ORG_ID,
+        clerkOrgId: "org_abc",
+        name: "Acme Corp",
+        slug: "acme-corp",
+        role: "member",
+      },
+    ]);
+    const api = makeApi({ fetchWhoami, listAccessibleOrgs });
 
     const result = await whoamiHandler(
       {},
@@ -48,13 +62,39 @@ describe("whoamiHandler", () => {
     );
 
     expect(fetchWhoami).toHaveBeenCalledWith(CLERK_USER_ID);
+    expect(listAccessibleOrgs).toHaveBeenCalledWith(CLERK_USER_ID);
     const parsed = whoamiOutputSchema.parse(result.structuredContent);
     expect(parsed.user).toEqual({ id: USER_ID, email: "alice@example.com", name: "Alice" });
     expect(parsed.projects).toEqual([{ id: PROJECT_ID, name: "Acme", slug: "acme" }]);
+    expect(parsed.orgs).toEqual([
+      {
+        id: ORG_ID,
+        clerk_org_id: "org_abc",
+        name: "Acme Corp",
+        slug: "acme-corp",
+        role: "member",
+      },
+    ]);
     expect(parsed.oauth_client_name).toBe("Claude Code");
     expect(parsed.granted_scopes).toEqual(STUB_AUTH.scopes);
     expect(parsed.server_version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(parsed.skill_version).toBeTypeOf("string");
+  });
+
+  it("returns empty orgs when the user belongs to none", async () => {
+    const fetchWhoami = vi.fn().mockResolvedValue({
+      user: { id: USER_ID, email: null, name: null },
+      projects: [],
+    });
+    const api = makeApi({ fetchWhoami, listAccessibleOrgs: vi.fn().mockResolvedValue([]) });
+
+    const result = await whoamiHandler(
+      {},
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+    );
+
+    const parsed = whoamiOutputSchema.parse(result.structuredContent);
+    expect(parsed.orgs).toEqual([]);
   });
 
   it("throws NOT_FOUND when api returns null", async () => {

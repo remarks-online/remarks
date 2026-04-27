@@ -65,6 +65,19 @@ export async function requireProjectAccess(
   }
 }
 
+// Same shape as requireProjectAccess but for org-scoped tool calls. Used by
+// `remarks_list_tasks` when the agent passes `org_id` (Remarks UUID).
+export async function requireOrgAccess(
+  auth: AuthContext,
+  api: ApiClient,
+  orgId: string
+): Promise<void> {
+  const allowed = await api.assertOrgAccess(auth.clerkUserId, orgId);
+  if (!allowed) {
+    throw new McpToolError("NOT_FOUND", "Organization not found");
+  }
+}
+
 // Wrap a structured payload into the SDK's CallToolResult envelope. Modern
 // clients read `structuredContent`; the JSON-text content is a fallback for
 // clients that haven't adopted structuredContent yet (still in the spec for

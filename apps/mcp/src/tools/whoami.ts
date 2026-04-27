@@ -6,13 +6,18 @@ import { parseToolInput, structuredToolResult } from "./shared.js";
 import type { ToolHandler } from "./types.js";
 
 // remarks_whoami — Phase 2 spec §3.2 Health, ADR-0015. Cheap probe the agent
-// calls at session start to confirm "I'm connected; here's the user and the
-// projects I can act on." Under the OAuth model one grant covers every
-// project the Clerk user is a member of, so the response is plural.
+// calls at session start to confirm "I'm connected; here's the user, the
+// projects I can act on, and the orgs they can roll up to." Under the OAuth
+// model one grant covers every project the Clerk user is a member of and
+// every org they belong to, so both lists are plural. Fans out to projects
+// and orgs in parallel.
 export const whoamiHandler: ToolHandler = async (args, ctx) => {
   parseToolInput(whoamiInputSchema, args, "remarks_whoami");
 
-  const payload = await ctx.api.fetchWhoami(ctx.auth.clerkUserId);
+  const [payload, orgs] = await Promise.all([
+    ctx.api.fetchWhoami(ctx.auth.clerkUserId),
+    ctx.api.listAccessibleOrgs(ctx.auth.clerkUserId),
+  ]);
   if (!payload) {
     // The token verified (we got past the auth middleware) but the user has
     // no row in our DB yet — Clerk webhook lag. Surface as NOT_FOUND so the
@@ -27,6 +32,13 @@ export const whoamiHandler: ToolHandler = async (args, ctx) => {
       name: payload.user.name,
     },
     projects: payload.projects,
+    orgs: orgs.map((o) => ({
+      id: o.id,
+      clerk_org_id: o.clerkOrgId,
+      name: o.name,
+      slug: o.slug,
+      role: o.role,
+    })),
     oauth_client_name: ctx.auth.oauthClientName,
     granted_scopes: ctx.auth.scopes,
     server_version: SERVER_VERSION,
