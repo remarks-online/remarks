@@ -18,11 +18,15 @@ test("popup surfaces project picker for signed-in user with seeded project", asy
     timeout: 30_000,
   });
 
-  // ProjectPicker fetches via trpc.projects.list and renders SelectItems whose
-  // labels are `${name} — ${slug}` (apps/extension/src/entrypoints/popup/ProjectPicker.tsx:114-117).
-  // The selected item shows the same label in the SelectTrigger via SelectValue.
-  // Generous timeout: covers Clerk session sync + tRPC roundtrip.
-  await expect(popup.getByText(TEST_PROJECT_NAME, { exact: false })).toBeVisible({
-    timeout: 30_000,
+  // ProjectPicker defaults to "Personal (private)" so a brand-new sign-in can
+  // capture without picking a team — the seeded project is one of the dropdown
+  // options. Wait for the picker label first so we know the picker mounted,
+  // then expand the trigger and assert the seeded project is selectable.
+  await expect(popup.getByText("Capture to")).toBeVisible({ timeout: 30_000 });
+  await expect(popup.getByText("Personal (private)").first()).toBeVisible();
+
+  await popup.getByRole("combobox", { name: "Capture to" }).click();
+  await expect(popup.getByRole("option", { name: new RegExp(TEST_PROJECT_NAME) })).toBeVisible({
+    timeout: 10_000,
   });
 });
