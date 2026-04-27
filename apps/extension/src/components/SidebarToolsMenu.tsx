@@ -42,7 +42,7 @@ export function SidebarToolsMenu({ compact }: Props) {
         >
           <MousePointer2 />
           Pick an element
-          <DropdownMenuShortcut>C</DropdownMenuShortcut>
+          <DropdownMenuShortcut>⌘⇧E</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem
           disabled={!signedIn}
@@ -50,7 +50,7 @@ export function SidebarToolsMenu({ compact }: Props) {
         >
           <SquareDashed />
           Draw a rectangle
-          <DropdownMenuShortcut>R</DropdownMenuShortcut>
+          <DropdownMenuShortcut>⌘⇧X</DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

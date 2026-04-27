@@ -56,7 +56,7 @@ test("my new scenario", async ({ signedInExtensionContext }) => {
 
 - **Annotation creation end-to-end** (capture → presign → PUT to R2 → POST `/annotations` → sidebar thread reflects). Crosses every Phase 1 surface; tracked as future work below.
 - **Clerk sign-in / sign-out UI flows** — the ticket-redemption fixture is the canonical shortcut. Drive the UI only when the spec is explicitly about it.
-- **Element / rectangle picker keyboard shortcuts** — flaky against shadow-root focus boundaries; covered by `apps/extension/src/lib/picker-controller.test.ts` at the unit layer.
+- **Picker keyboard shortcuts** (⌘⇧E pick, ⌘⇧X draw, ⌘⇧F toggle sidebar, ⌘⇧D cycle dock) — flaky against shadow-root focus boundaries; covered by `apps/extension/src/lib/picker-controller.test.ts` and `apps/extension/src/lib/sidebar-shortcuts.test.ts` at the unit layer.
 - **Service-worker auth handshake / screenshot crop** — these live in `apps/extension/verify/` and stay out of CI. The split is intentional; preserve it.
 - **Firefox / MV2** — `wxt build -b firefox` runs at build time; doubling the Playwright matrix isn't worth the cost yet.
 

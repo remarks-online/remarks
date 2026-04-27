@@ -77,15 +77,15 @@ export function SidebarMoreMenu({ compact }: Props) {
         <div className="px-2 pb-2 text-xs text-muted-foreground">
           <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
             <dt>Pick element</dt>
-            <dd className="font-mono">C</dd>
+            <dd className="font-mono">⌘⇧E</dd>
             <dt>Draw rectangle</dt>
-            <dd className="font-mono">R</dd>
-            <dt>Focus comment</dt>
-            <dd className="font-mono">F</dd>
+            <dd className="font-mono">⌘⇧X</dd>
             <dt>Toggle sidebar</dt>
             <dd className="font-mono">⌘⇧F</dd>
             <dt>Cycle dock</dt>
             <dd className="font-mono">⌘⇧D</dd>
+            <dt>Post comment</dt>
+            <dd className="font-mono">⌘⏎</dd>
             <dt>Cancel picker</dt>
             <dd className="font-mono">Esc</dd>
           </dl>

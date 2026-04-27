@@ -39,7 +39,7 @@ export function SidebarPickerHint({ mode }: SidebarPickerHintProps) {
 
   return (
     <p className="text-xs leading-relaxed text-muted-foreground">
-      Press <Kbd>C</Kbd> to pick an element · <Kbd>R</Kbd> to draw a rectangle.
+      <Kbd>⌘⇧E</Kbd> pick an element · <Kbd>⌘⇧X</Kbd> draw a rectangle.
     </p>
   );
 }

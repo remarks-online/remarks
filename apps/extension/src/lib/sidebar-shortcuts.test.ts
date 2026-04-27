@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerSidebarShortcuts } from "./sidebar-shortcuts";
 import { sidebarStore } from "./sidebar-store";
 
@@ -10,12 +10,10 @@ function keydown(init: KeyboardEventInit & { target?: EventTarget | null } = {})
 }
 
 let teardown: (() => void) | null = null;
-let onFocusCompose: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   sidebarStore.getState().reset();
-  onFocusCompose = vi.fn();
-  teardown = registerSidebarShortcuts({ onFocusCompose });
+  teardown = registerSidebarShortcuts();
 });
 
 afterEach(() => {
@@ -23,7 +21,7 @@ afterEach(() => {
   teardown = null;
 });
 
-describe("Cmd/Ctrl+Shift+F — toggle visible", () => {
+describe("⌘⇧F — toggle visible", () => {
   it("flips visibility on Meta+Shift+F", () => {
     sidebarStore.getState().setVisible(true);
     keydown({ key: "F", code: "KeyF", metaKey: true, shiftKey: true });
@@ -36,8 +34,9 @@ describe("Cmd/Ctrl+Shift+F — toggle visible", () => {
     expect(sidebarStore.getState().visible).toBe(false);
   });
 
-  it("is accepted case-insensitively", () => {
+  it("matches by event.code so a Shift-mangled key still works", () => {
     sidebarStore.getState().setVisible(true);
+    // Some keyboards/IMEs emit a different `key` under Shift but `code` is stable.
     keydown({ key: "f", code: "KeyF", metaKey: true, shiftKey: true });
     expect(sidebarStore.getState().visible).toBe(false);
   });
@@ -47,48 +46,38 @@ describe("Cmd/Ctrl+Shift+F — toggle visible", () => {
     keydown({ key: "F", code: "KeyF", metaKey: true });
     expect(sidebarStore.getState().visible).toBe(true);
   });
+
+  it("ignores ⌘⇧F when typing in a textarea inside a shadow root", () => {
+    // Regression for the same shadow-retargeting class of bug as the picker
+    // controller — composedPath()[0] resolves the deep target.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const textarea = document.createElement("textarea");
+    shadow.appendChild(textarea);
+
+    sidebarStore.getState().setVisible(true);
+    const ev = new KeyboardEvent("keydown", {
+      key: "F",
+      code: "KeyF",
+      metaKey: true,
+      shiftKey: true,
+      cancelable: true,
+      bubbles: true,
+      composed: true,
+    });
+    textarea.dispatchEvent(ev);
+    expect(sidebarStore.getState().visible).toBe(true);
+
+    host.remove();
+  });
 });
 
-describe("Cmd/Ctrl+Shift+D — cycle dock", () => {
+describe("⌘⇧D — cycle dock", () => {
   it("advances the dock", () => {
     sidebarStore.getState().setDock("right");
     keydown({ key: "D", code: "KeyD", metaKey: true, shiftKey: true });
     expect(sidebarStore.getState().dock).toBe("left");
-  });
-});
-
-describe("F — focus compose", () => {
-  it("calls onFocusCompose for a plain F", () => {
-    keydown({ key: "F", code: "KeyF" });
-    expect(onFocusCompose).toHaveBeenCalledTimes(1);
-  });
-
-  it("ignores F when the target is an input", () => {
-    const input = document.createElement("input");
-    document.body.append(input);
-    try {
-      keydown({ key: "F", code: "KeyF", target: input });
-      expect(onFocusCompose).not.toHaveBeenCalled();
-    } finally {
-      input.remove();
-    }
-  });
-
-  it("ignores F when the target is a contentEditable node", () => {
-    const div = document.createElement("div");
-    div.setAttribute("contenteditable", "true");
-    document.body.append(div);
-    try {
-      keydown({ key: "F", code: "KeyF", target: div });
-      expect(onFocusCompose).not.toHaveBeenCalled();
-    } finally {
-      div.remove();
-    }
-  });
-
-  it("ignores F when combined with a modifier", () => {
-    keydown({ key: "F", code: "KeyF", metaKey: true });
-    expect(onFocusCompose).not.toHaveBeenCalled();
   });
 });
 

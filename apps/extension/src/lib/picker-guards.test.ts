@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { isInSidebarUi, isTypingTarget } from "./picker-guards";
+import { isInSidebarUi, isTypingEvent, isTypingTarget } from "./picker-guards";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -93,5 +93,60 @@ describe("isTypingTarget", () => {
   it("returns false for plain elements", () => {
     expect(isTypingTarget(document.createElement("button"))).toBe(false);
     expect(isTypingTarget(document.createElement("div"))).toBe(false);
+  });
+});
+
+describe("isTypingEvent", () => {
+  // composedPath() returns the live path only during dispatch — after the
+  // event finishes, the array is empty. Capture the result inside a listener.
+  function checkDuringDispatch(target: EventTarget, event: KeyboardEvent): boolean {
+    let result = false;
+    const listener = (e: Event) => {
+      result = isTypingEvent(e);
+    };
+    target.addEventListener("keydown", listener, { capture: true });
+    try {
+      target.dispatchEvent(event);
+    } finally {
+      target.removeEventListener("keydown", listener, { capture: true });
+    }
+    return result;
+  }
+
+  it("detects a textarea inside a shadow root via composedPath", () => {
+    // The original bug: a window-level listener saw event.target as the
+    // shadow host, and document.activeElement also pointed at the host — so
+    // `isTypingTarget(document.activeElement)` returned false and the bare
+    // 'r' hotkey ate keystrokes meant for the textarea.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const textarea = document.createElement("textarea");
+    shadow.appendChild(textarea);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "r",
+      bubbles: true,
+      composed: true,
+    });
+    expect(checkDuringDispatch(textarea, event)).toBe(true);
+  });
+
+  it("falls back to document.activeElement when the path skips the input", () => {
+    // Synthetic events dispatched directly on `window` have a composedPath
+    // that doesn't include the focused element. Real keyboard events never
+    // look like this, but tests use the pattern, so the fallback keeps the
+    // guard correct in both cases.
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+
+    const event = new KeyboardEvent("keydown", { key: "r" });
+    expect(checkDuringDispatch(window, event)).toBe(true);
+  });
+
+  it("returns false when nothing is focused and the path is plain DOM", () => {
+    const event = new KeyboardEvent("keydown", { key: "r" });
+    expect(checkDuringDispatch(document.body, event)).toBe(false);
   });
 });
