@@ -1,6 +1,6 @@
 import { buildDomContext } from "./dom-context";
 import { elementAtPoint } from "./elements-at-point";
-import { isInSidebarUi, isTypingTarget } from "./picker-guards";
+import { isInSidebarUi, isTypingEvent } from "./picker-guards";
 import {
   type Capture,
   type ElementCapture,
@@ -553,12 +553,18 @@ export function initPickerController({
   };
 
   const onGlobalKeyDown = (event: KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (isTypingTarget(document.activeElement)) return;
+    // Element picker: ⌘⇧E / Ctrl+Shift+E. Rectangle: ⌘⇧X / Ctrl+Shift+X.
+    // Bare letters got eaten while typing in the popover textarea — multi-key
+    // combos plus the shadow-root-aware typing guard prevent that class of bug.
+    const hasShortcutMods = (event.metaKey || event.ctrlKey) && event.shiftKey;
+    if (!hasShortcutMods) return;
+    if (event.altKey) return;
 
-    const isPickerKey =
-      event.key === "c" || event.key === "C" || event.key === "r" || event.key === "R";
-    if (!isPickerKey) return;
+    const isElement = event.code === "KeyE";
+    const isRect = event.code === "KeyX";
+    if (!isElement && !isRect) return;
+
+    if (isTypingEvent(event)) return;
 
     if (!isSignedIn()) {
       // Eat the key so the user doesn't get a hidden no-op; surface the
@@ -568,17 +574,15 @@ export function initPickerController({
       return;
     }
 
-    if (event.key === "c" || event.key === "C") {
+    if (isElement) {
       if (pickerStore.getState().mode === "element") return;
       event.preventDefault();
       pickerStore.getState().enterElementMode();
       return;
     }
-    if (event.key === "r" || event.key === "R") {
-      if (pickerStore.getState().mode === "rect") return;
-      event.preventDefault();
-      pickerStore.getState().enterRectMode();
-    }
+    if (pickerStore.getState().mode === "rect") return;
+    event.preventDefault();
+    pickerStore.getState().enterRectMode();
   };
 
   window.addEventListener("keydown", onGlobalKeyDown);

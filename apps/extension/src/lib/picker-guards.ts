@@ -1,5 +1,16 @@
 const TYPING_ROLES = new Set(["textbox", "searchbox", "combobox", "spinbutton"]);
 
+// True if the user is typing when this event fires. Walks `composedPath()` so
+// retargeted events out of a shadow root (the popover textarea lives in one)
+// still resolve to the real input, and falls back to `document.activeElement`
+// for events dispatched on `window` directly (e.g. synthetic test events).
+export function isTypingEvent(event: Event): boolean {
+  for (const node of event.composedPath()) {
+    if (isTypingTarget(node as Node)) return true;
+  }
+  return isTypingTarget(document.activeElement);
+}
+
 export function isInSidebarUi(event: Event, sidebarRoot: Node | null): boolean {
   if (!sidebarRoot) return false;
   const path = event.composedPath();

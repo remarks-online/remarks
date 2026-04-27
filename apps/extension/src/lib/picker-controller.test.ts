@@ -8,7 +8,16 @@ function resetStore() {
     mode: "idle",
     hovered: null,
     capture: null,
+    popoverDismissed: false,
   });
+}
+
+function pressElement(init: KeyboardEventInit = {}) {
+  press("E", { code: "KeyE", metaKey: true, shiftKey: true, ...init });
+}
+
+function pressRect(init: KeyboardEventInit = {}) {
+  press("X", { code: "KeyX", metaKey: true, shiftKey: true, ...init });
 }
 
 function setScroll(x: number, y: number) {
@@ -76,31 +85,68 @@ function mouse(type: "mousedown" | "mousemove" | "mouseup", clientX: number, cli
 }
 
 describe("initPickerController — element mode", () => {
-  it("enters element mode when C is pressed", () => {
+  it("enters element mode when ⌘⇧E is pressed", () => {
     setupController({ sidebarRoot: null });
-    press("c");
+    pressElement();
     expect(pickerStore.getState().mode).toBe("element");
   });
 
-  it("ignores C when focus is on a text input", () => {
+  it("also accepts Ctrl+Shift+E", () => {
+    setupController({ sidebarRoot: null });
+    pressElement({ metaKey: false, ctrlKey: true });
+    expect(pickerStore.getState().mode).toBe("element");
+  });
+
+  it("ignores bare 'e' (no modifiers)", () => {
+    setupController({ sidebarRoot: null });
+    press("e");
+    expect(pickerStore.getState().mode).toBe("idle");
+  });
+
+  it("ignores ⌘⇧E when focus is on a text input", () => {
     document.body.innerHTML = '<input type="text" />';
     const input = q<HTMLInputElement>("input");
     input.focus();
 
     setupController({ sidebarRoot: null });
-    press("c");
+    pressElement();
     expect(pickerStore.getState().mode).toBe("idle");
   });
 
-  it("ignores C when a modifier key is held", () => {
+  it("ignores ⌘⇧E when typing in a textarea inside a shadow root", () => {
+    // Regression for the original bug: window-level keydowns from inside a
+    // shadow root retarget — `document.activeElement` is the shadow host, but
+    // `event.composedPath()[0]` is the actual textarea. The guard must use the
+    // composedPath-derived target, not activeElement.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const textarea = document.createElement("textarea");
+    shadow.appendChild(textarea);
+
     setupController({ sidebarRoot: null });
-    press("c", { metaKey: true });
+    const ev = new KeyboardEvent("keydown", {
+      key: "E",
+      code: "KeyE",
+      metaKey: true,
+      shiftKey: true,
+      cancelable: true,
+      bubbles: true,
+      composed: true,
+    });
+    textarea.dispatchEvent(ev);
+    expect(pickerStore.getState().mode).toBe("idle");
+  });
+
+  it("ignores ⌘⇧E when Alt is also held", () => {
+    setupController({ sidebarRoot: null });
+    pressElement({ altKey: true });
     expect(pickerStore.getState().mode).toBe("idle");
   });
 
   it("cancels on Escape", () => {
     setupController({ sidebarRoot: null });
-    press("c");
+    pressElement();
     expect(pickerStore.getState().mode).toBe("element");
     press("Escape");
     expect(pickerStore.getState().mode).toBe("idle");
@@ -109,7 +155,7 @@ describe("initPickerController — element mode", () => {
   it("attaches the overlay body class only while active", () => {
     setupController({ sidebarRoot: null });
     expect(document.body.classList.contains("rmk-picker-active")).toBe(false);
-    press("c");
+    pressElement();
     expect(document.body.classList.contains("rmk-picker-active")).toBe(true);
     press("Escape");
     expect(document.body.classList.contains("rmk-picker-active")).toBe(false);
@@ -121,7 +167,7 @@ describe("initPickerController — element mode", () => {
     vi.spyOn(document, "elementFromPoint").mockReturnValue(btn);
 
     setupController({ sidebarRoot: null });
-    press("c");
+    pressElement();
 
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 10, clientY: 10 }));
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -138,43 +184,55 @@ describe("initPickerController — element mode", () => {
 
   it("teardown removes listeners and overlay", () => {
     const { teardown } = setupController({ sidebarRoot: null });
-    press("c");
+    pressElement();
     expect(document.getElementById("rmk-picker-overlay")).not.toBeNull();
     teardown();
     expect(document.getElementById("rmk-picker-overlay")).toBeNull();
     resetStore();
-    press("c");
+    pressElement();
     expect(pickerStore.getState().mode).toBe("idle");
   });
 });
 
 describe("initPickerController — rect mode", () => {
-  it("enters rect mode when R is pressed", () => {
+  it("enters rect mode when ⌘⇧X is pressed", () => {
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     expect(pickerStore.getState().mode).toBe("rect");
     expect(document.body.classList.contains("rmk-rect-active")).toBe(true);
     expect(document.getElementById("rmk-rect-overlay")).not.toBeNull();
   });
 
-  it("ignores R when focus is on a text input", () => {
+  it("also accepts Ctrl+Shift+X", () => {
+    setupController({ sidebarRoot: null });
+    pressRect({ metaKey: false, ctrlKey: true });
+    expect(pickerStore.getState().mode).toBe("rect");
+  });
+
+  it("ignores bare 'x' (no modifiers)", () => {
+    setupController({ sidebarRoot: null });
+    press("x");
+    expect(pickerStore.getState().mode).toBe("idle");
+  });
+
+  it("ignores ⌘⇧X when focus is on a text input", () => {
     document.body.innerHTML = '<input type="text" />';
     q<HTMLInputElement>("input").focus();
 
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     expect(pickerStore.getState().mode).toBe("idle");
   });
 
-  it("ignores R when a modifier key is held", () => {
+  it("ignores ⌘⇧X when Alt is also held", () => {
     setupController({ sidebarRoot: null });
-    press("r", { ctrlKey: true });
+    pressRect({ altKey: true });
     expect(pickerStore.getState().mode).toBe("idle");
   });
 
   it("Escape cancels rect mode", () => {
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     expect(pickerStore.getState().mode).toBe("rect");
     press("Escape");
     expect(pickerStore.getState().mode).toBe("idle");
@@ -184,7 +242,7 @@ describe("initPickerController — rect mode", () => {
 
   it("commits a rect capture on a successful drag", () => {
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     mouse("mousedown", 100, 200);
     mouse("mousemove", 300, 350);
     mouse("mouseup", 300, 350);
@@ -200,7 +258,7 @@ describe("initPickerController — rect mode", () => {
 
   it("normalizes a drag that goes up-and-left into positive width/height", () => {
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     mouse("mousedown", 400, 400);
     mouse("mousemove", 100, 100);
     mouse("mouseup", 100, 100);
@@ -214,7 +272,7 @@ describe("initPickerController — rect mode", () => {
 
   it("cancels a sub-threshold drag without committing", () => {
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     mouse("mousedown", 100, 100);
     mouse("mousemove", 103, 103);
     mouse("mouseup", 103, 103);
@@ -225,7 +283,7 @@ describe("initPickerController — rect mode", () => {
 
   it("stores rect coordinates in document space when scrolled mid-drag", () => {
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     setScroll(0, 500);
     mouse("mousedown", 100, 100);
     setScroll(0, 800);
@@ -247,7 +305,7 @@ describe("initPickerController — rect mode", () => {
 
   it("right-click cancels mid-drag", () => {
     setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     mouse("mousedown", 100, 100);
     mouse("mousemove", 200, 200);
     window.dispatchEvent(new MouseEvent("contextmenu", { cancelable: true, bubbles: true }));
@@ -265,7 +323,7 @@ describe("initPickerController — rect mode", () => {
     const shadow = host.attachShadow({ mode: "open" });
 
     setupController({ sidebarRoot: shadow });
-    press("r");
+    pressRect();
 
     host.dispatchEvent(
       new MouseEvent("mousedown", {
@@ -283,12 +341,12 @@ describe("initPickerController — rect mode", () => {
     expect(pickerStore.getState().capture).toBeNull();
   });
 
-  it("R while in element mode switches to rect (single overlay only)", () => {
+  it("⌘⇧X while in element mode switches to rect (single overlay only)", () => {
     setupController({ sidebarRoot: null });
-    press("c");
+    pressElement();
     expect(pickerStore.getState().mode).toBe("element");
     expect(document.getElementById("rmk-picker-overlay")).not.toBeNull();
-    press("r");
+    pressRect();
     expect(pickerStore.getState().mode).toBe("rect");
     expect(document.getElementById("rmk-picker-overlay")).toBeNull();
     expect(document.getElementById("rmk-rect-overlay")).not.toBeNull();
@@ -296,7 +354,7 @@ describe("initPickerController — rect mode", () => {
 
   it("teardown removes rect overlay and body class", () => {
     const { teardown } = setupController({ sidebarRoot: null });
-    press("r");
+    pressRect();
     expect(document.getElementById("rmk-rect-overlay")).not.toBeNull();
     teardown();
     expect(document.getElementById("rmk-rect-overlay")).toBeNull();
@@ -305,7 +363,7 @@ describe("initPickerController — rect mode", () => {
 });
 
 describe("initPickerController — auth gate", () => {
-  it("ignores C and R while signed out, and surfaces the sign-in CTA", () => {
+  it("ignores ⌘⇧E and ⌘⇧X while signed out, and surfaces the sign-in CTA", () => {
     const onActivateBlocked = vi.fn();
     setupController({
       sidebarRoot: null,
@@ -313,9 +371,9 @@ describe("initPickerController — auth gate", () => {
       onActivateBlocked,
     });
 
-    press("c");
+    pressElement();
     expect(pickerStore.getState().mode).toBe("idle");
-    press("r");
+    pressRect();
     expect(pickerStore.getState().mode).toBe("idle");
 
     expect(onActivateBlocked).toHaveBeenCalledTimes(2);
@@ -347,7 +405,7 @@ describe("initPickerController — auth gate", () => {
     expect(onActivateBlocked).toHaveBeenCalledTimes(1);
   });
 
-  it("permits C and R when signed in", () => {
+  it("permits ⌘⇧E and ⌘⇧X when signed in", () => {
     const onActivateBlocked = vi.fn();
     setupController({
       sidebarRoot: null,
@@ -355,7 +413,7 @@ describe("initPickerController — auth gate", () => {
       onActivateBlocked,
     });
 
-    press("c");
+    pressElement();
     expect(pickerStore.getState().mode).toBe("element");
     expect(onActivateBlocked).not.toHaveBeenCalled();
   });

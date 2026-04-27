@@ -1,4 +1,4 @@
-import { type Capture, type CaptureScreenshot, pickerStore } from "@/lib/picker-store";
+import { type Capture, type CaptureScreenshot, pickerStore, usePicker } from "@/lib/picker-store";
 import { Badge, Button } from "@remarks/ui";
 import { useState } from "react";
 
@@ -9,6 +9,16 @@ interface SidebarCapturePanelProps {
 export function SidebarCapturePanel({ capture }: SidebarCapturePanelProps) {
   if (capture.kind === "rect") return <RectCapturePanel capture={capture} />;
   return <ElementCapturePanel capture={capture} />;
+}
+
+function ResumeButton() {
+  const dismissed = usePicker((s) => s.popoverDismissed);
+  if (!dismissed) return null;
+  return (
+    <Button variant="default" size="sm" onClick={() => pickerStore.getState().resumePopover()}>
+      Resume editing
+    </Button>
+  );
 }
 
 function ScreenshotPreview({
@@ -80,6 +90,7 @@ function ElementCapturePanel({ capture }: { capture: Extract<Capture, { kind: "e
         <Button variant="outline" size="sm" onClick={handleCopy}>
           {copied ? "Copied" : "Copy selector"}
         </Button>
+        <ResumeButton />
       </div>
     </div>
   );
@@ -129,6 +140,7 @@ function RectCapturePanel({ capture }: { capture: Extract<Capture, { kind: "rect
         <Button variant="outline" size="sm" onClick={handleCopy}>
           {copied ? "Copied" : "Copy bounds"}
         </Button>
+        <ResumeButton />
       </div>
     </div>
   );

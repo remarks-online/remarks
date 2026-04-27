@@ -50,6 +50,10 @@ export interface PickerState {
   mode: PickerMode;
   hovered: HoveredPreview | null;
   capture: Capture | null;
+  // True when the user pressed Esc on the capture popover. The capture itself
+  // is preserved (so accidental Esc doesn't lose typed work) — the sidebar's
+  // capture panel exposes a Resume affordance that flips this back to false.
+  popoverDismissed: boolean;
   enterElementMode: () => void;
   enterRectMode: () => void;
   cancel: () => void;
@@ -57,17 +61,21 @@ export interface PickerState {
   commit: (capture: Capture) => void;
   setScreenshot: (screenshot: CaptureScreenshot | null) => void;
   clearCapture: () => void;
+  dismissPopover: () => void;
+  resumePopover: () => void;
 }
 
 export const pickerStore = createStore<PickerState>((set) => ({
   mode: "idle",
   hovered: null,
   capture: null,
-  enterElementMode: () => set({ mode: "element", hovered: null, capture: null }),
-  enterRectMode: () => set({ mode: "rect", hovered: null, capture: null }),
+  popoverDismissed: false,
+  enterElementMode: () =>
+    set({ mode: "element", hovered: null, capture: null, popoverDismissed: false }),
+  enterRectMode: () => set({ mode: "rect", hovered: null, capture: null, popoverDismissed: false }),
   cancel: () => set({ mode: "idle", hovered: null }),
   setHovered: (preview) => set({ hovered: preview }),
-  commit: (capture) => set({ mode: "idle", hovered: null, capture }),
+  commit: (capture) => set({ mode: "idle", hovered: null, capture, popoverDismissed: false }),
   setScreenshot: (screenshot) =>
     set((state) => {
       if (!state.capture) return {};
@@ -77,7 +85,9 @@ export const pickerStore = createStore<PickerState>((set) => ({
       const { screenshot: _discard, ...rest } = state.capture;
       return { capture: rest as Capture };
     }),
-  clearCapture: () => set({ capture: null }),
+  clearCapture: () => set({ capture: null, popoverDismissed: false }),
+  dismissPopover: () => set({ popoverDismissed: true }),
+  resumePopover: () => set({ popoverDismissed: false }),
 }));
 
 export function usePicker<T>(selector: (state: PickerState) => T): T {

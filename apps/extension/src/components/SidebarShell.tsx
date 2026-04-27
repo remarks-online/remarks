@@ -1,6 +1,6 @@
 import { CapturePromptPopover } from "@/components/CapturePromptPopover";
 import { SidebarBranchSelector } from "@/components/SidebarBranchSelector";
-import { SidebarComposeBox, type SidebarComposeBoxHandle } from "@/components/SidebarComposeBox";
+import { SidebarCapturePanel } from "@/components/SidebarCapturePanel";
 import { SidebarHeader } from "@/components/SidebarHeader";
 import { SidebarLauncher } from "@/components/SidebarLauncher";
 import { SidebarOutboxBanner } from "@/components/SidebarOutboxBanner";
@@ -30,7 +30,7 @@ import { useResolvedTheme } from "@/lib/use-host-theme";
 import { triggerOutboxDrain, useOutboxDrain } from "@/lib/use-outbox-drain";
 import { cn } from "@remarks/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface DockStyle {
   container: string;
@@ -72,6 +72,14 @@ export function SidebarShell() {
   // Sibling of the panel frame; Radix overlays (DropdownMenu, future Select/
   // Popover) portal here so they share `.rmk-root`'s stacking context.
   const [popoverEl, setPopoverEl] = useState<HTMLDivElement | null>(null);
+
+  // Global keyboard shortcuts (⌘⇧F toggle, ⌘⇧D cycle dock). Registered at the
+  // shell level so the listener stays alive while the sidebar is hidden — the
+  // body unmounts in that case, so registering there made ⌘⇧F unable to bring
+  // the sidebar back.
+  useEffect(() => {
+    return registerSidebarShortcuts();
+  }, []);
 
   // Persist prefs whenever anything persistable changes.
   useEffect(() => {
@@ -177,7 +185,6 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
   const capture = usePicker((s) => s.capture);
   const mode = usePicker((s) => s.mode);
   const queryClient = useQueryClient();
-  const composeRef = useRef<SidebarComposeBoxHandle | null>(null);
   const [branch, setBranch] = useState<string>(DEFAULT_BRANCH);
 
   // Hydrate selected branch for the active project, then watch for cross-tab
@@ -204,14 +211,6 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
     },
     [projectId]
   );
-
-  // Shortcut: F focuses the compose textarea. Lives here so the ref stays
-  // colocated with the component that owns it.
-  useEffect(() => {
-    return registerSidebarShortcuts({
-      onFocusCompose: () => composeRef.current?.focus(),
-    });
-  }, []);
 
   // Literal tRPC v10 query key for `annotations.list`. task 1.29 can switch
   // to `getQueryKey(trpc.annotations.list)` if it wants finer-grained filters.
@@ -274,11 +273,11 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
         clerkOrgId={clerkOrgId}
         compact={compact}
       />
-      <SidebarComposeBox
-        ref={composeRef}
-        capture={capture}
-        onSubmit={capture ? onSubmit : undefined}
-      />
+      {capture ? (
+        <div className="border-t border-border bg-card p-2">
+          <SidebarCapturePanel capture={capture} />
+        </div>
+      ) : null}
       <CapturePromptPopover onSubmit={onSubmit} />
     </>
   );

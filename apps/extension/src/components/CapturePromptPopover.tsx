@@ -20,11 +20,14 @@ function targetDocRectFor(capture: Capture): DocRect {
 
 export function CapturePromptPopover({ onSubmit }: Props) {
   const capture = usePicker((s) => s.capture);
+  const dismissed = usePicker((s) => s.popoverDismissed);
   const draft = useSidebar((s) => s.draftComment);
 
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const visible = Boolean(capture) && !dismissed;
 
   const recompute = useCallback(() => {
     if (!capture) return;
@@ -42,12 +45,13 @@ export function CapturePromptPopover({ onSubmit }: Props) {
   // Position synchronously after the first render so the popover paints in the
   // right spot — useLayoutEffect avoids a one-frame flash at (0, 0).
   useLayoutEffect(() => {
+    if (!visible) return;
     recompute();
-  }, [recompute]);
+  }, [recompute, visible]);
 
   // Re-position on scroll/resize. rAF-throttled so we don't thrash.
   useEffect(() => {
-    if (!capture) return;
+    if (!visible) return;
     let rafId: number | null = null;
     const schedule = () => {
       if (rafId !== null) return;
@@ -63,34 +67,36 @@ export function CapturePromptPopover({ onSubmit }: Props) {
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
     };
-  }, [capture, recompute]);
+  }, [visible, recompute]);
 
-  // Auto-focus the textarea when a capture appears so the user can start
-  // typing without an extra click. Re-runs when capture identity changes
-  // (e.g., user re-picked a different element).
+  // Auto-focus the textarea when the popover becomes visible so the user can
+  // start typing without an extra click. Re-runs when capture identity changes
+  // (e.g., user re-picked a different element) or when they Resume after Esc.
   useEffect(() => {
-    if (!capture) return;
+    if (!visible) return;
     textareaRef.current?.focus();
-  }, [capture]);
+  }, [visible]);
 
-  // Esc dismisses the popover (same as Discard).
+  // Esc hides the popover but preserves capture + draft so accidental Esc
+  // doesn't destroy in-progress work — the sidebar's capture panel exposes a
+  // Resume button to bring the popover back. Discard explicitly clears.
   useEffect(() => {
-    if (!capture) return;
+    if (!visible) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       // Only act when focus is inside the popover, otherwise picker-controller
       // may want to handle Escape itself (e.g., to cancel an active session).
-      const active = document.activeElement;
-      if (active && popoverRef.current?.contains(active)) {
+      const path = event.composedPath();
+      if (popoverRef.current && path.includes(popoverRef.current)) {
         event.preventDefault();
-        handleDiscard();
+        pickerStore.getState().dismissPopover();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [capture]);
+  }, [visible]);
 
-  if (!capture) return null;
+  if (!visible || !capture) return null;
 
   const canSubmit = draft.trim().length > 0;
   const caption = capture.kind === "element" ? "Annotate this element" : "Annotate this region";
