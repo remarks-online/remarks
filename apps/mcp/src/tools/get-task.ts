@@ -61,6 +61,10 @@ export const getTaskHandler: ToolHandler = async (args, ctx) => {
     id: annotation.id,
     status: annotation.status,
     branch: annotation.branchName,
+    project:
+      annotation.projectId && annotation.projectSlug
+        ? { id: annotation.projectId, slug: annotation.projectSlug }
+        : null,
     url: annotation.url,
     comment: annotation.commentText,
     target,
