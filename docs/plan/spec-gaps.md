@@ -365,3 +365,97 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: `in task 1.33` (this is the implementation of that task — bundled).
 - **Estimated size**: `m`.
 - **Status**: `done in task 1.33`. Webhook sync + create-time fan-out + auth-plugin backstop all landed together. Role-mapping question (whether `org:admin` should imply project `admin`) was deliberately deferred — Phase 1's project-admin role still tracks the project creator, and there's no UI to escalate. Revisit if a beta partner asks for "all org admins manage all projects".
+
+## A16 — Extension production build env + prod Clerk allowlist
+
+| # | Done when | Complete |
+|---|---|---|
+| A16 | A `build:prod` of the extension talks to the prod Clerk instance + `app.remarks.online`, and the deterministic chrome-extension origin is in `remarks-prod`'s `allowed_origins` | [ ] |
+
+- **Spec reference**: §13/§14 don't define an extension production-build flow; ADR 0014 (`docs/adr/remarks-adr-0014-clerk-sync.md`) covers the syncHost design but not how the extension swaps environments at build time.
+- **Problem**: `apps/extension/.env` is the only env file the extension reads, and it's hard-coded for dev (`pk_test_…` against the `remarks-dev` Clerk instance, `WXT_CLERK_SYNC_HOST=http://localhost:3000`). There was no `build:prod` script and no `.env.production` template, so a Web-Store-distributed build today would still talk to dev Clerk and the local dashboard. Symptom that surfaced this gap: enabling Google on `remarks-prod` shows the button on `app.remarks.online/sign-in` but a "prod" extension build still hits `remarks-dev` and never sees the new providers (the same trap applies to any future prod-only Clerk config — webhooks, MFA, etc.).
+- **Proposed deliverable** (this task, A16):
+  - `pnpm --filter @remarks/extension build:prod` runs `wxt build --mode production` via the existing `prepare-with-exit.cjs` wrapper, which makes Vite layer `apps/extension/.env.production` over `.env`.
+  - `apps/extension/.env.example` documents the `.env.production` shape (`pk_live_…`, `https://api.remarks.online`, `https://clerk.remarks.online` — see syncHost gotcha below) and the one-time allowlist invocation.
+  - **syncHost gotcha (the one that took a debug round to find):** in dev, `WXT_CLERK_SYNC_HOST` points at the **dashboard** (`http://localhost:3000`) because Clerk's dev-browser-token lives there. In prod it points at the **Clerk Frontend API** (`https://clerk.remarks.online`), because that's where the production `__client` cookie is set — `@clerk/chrome-extension` looks for that exact cookie name on syncHost (chunk-SYSWCRXO.js: `var CLIENT_JWT_KEY = "__client"`). Setting prod syncHost to the dashboard reads zero relevant cookies and the popup silently reports `signedIn: false` with no errors. Source: https://clerk.com/docs/chrome-extension/getting-started/quickstart.
+  - One-time `CLERK_SECRET_KEY=sk_live_… pnpm --filter @remarks/scripts exec tsx tools/scripts/clerk-allowlist-extension.ts baikikfefeheiildmfoaicbjbnbecgjd` — the script (`tools/scripts/clerk-allowlist-extension.ts:1-69`) is idempotent and the extension ID is deterministic via `manifest.key` in `wxt.config.ts:9`.
+  - **Enable the Clerk "Native API" toggle on the prod instance.** The `@clerk/chrome-extension` SDK runs in Native API mode (the failing URL ends in `?_is_native=1`); without the toggle, every popup load 400s with `Native API is disabled for this instance`. Dev was already on; prod was not. Verify with `curl -s -o /dev/null -w '%{http_code}' 'https://clerk.remarks.online/v1/environment?_is_native=1'` returning `200`.
+- **Done when**:
+  - `apps/extension/package.json` has a `build:prod` script
+  - `apps/extension/.env.example` documents the prod env shape and the allowlist command
+  - The prod Clerk instance's `allowed_origins` contains `chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd` (run the script with `sk_live_…` once)
+  - The prod Clerk instance has the **Native API** feature enabled
+  - A `build:prod` artifact loaded in Chrome successfully completes a sign-in via `app.remarks.online` and the popup flips to the `Show when="signed-in"` branch in `apps/extension/src/entrypoints/popup/App.tsx:68`
+- **Conflicts / overlaps with spec**: None. Phase 0/1 spec is silent on extension prod packaging; this just documents and codifies the missing wiring.
+- **Affected tasks / components**: `apps/extension/.env.example`, `apps/extension/package.json`, `apps/extension/src/{entrypoints/popup/App.tsx,entrypoints/background.ts}` (no source changes — only behavior verified), `tools/scripts/clerk-allowlist-extension.ts` (executed once with `sk_live_`).
+- **Dependencies**: Independent. Pre-requisite for any task that exercises prod Clerk config from the extension (e.g., A17 below).
+- **Estimated size**: `xs`.
+- **Status**: `in progress` — bundled with the Google-social-connection rollout.
+
+## A19 — Sidebar injection policy: dogfood on dashboard, exclude auth pages
+
+| # | Done when | Complete |
+|---|---|---|
+| A19 ✓ | Sidebar injects on `app.remarks.online` + `localhost:3000` for dogfooding; excluded on Google/Apple/Clerk auth pages | [x] |
+
+- **Spec reference**: not specified.
+- **Problem**: Original `apps/extension/src/entrypoints/content.tsx:17` excluded `app.remarks.online` and `localhost:3000` from content-script injection ("double-UI"; HMR-reload errors). That decision blocked dogfooding — we couldn't use Remarks to annotate Remarks. Conversely, `<all_urls>` matches with no auth-provider exclusions meant the sidebar **flashed mid-OAuth on `accounts.google.com` / `appleid.apple.com`** and **persisted whenever users visited `clerk.remarks.online` directly** (the new prod syncHost endpoint per A16). The OAuth flash had been deferred earlier in this session ("leave it") but the persistent FAPI case made it visible enough to address.
+- **Proposed deliverable**:
+  - Drop `app.remarks.online` and `localhost:3000` from `excludeMatches` (sidebar now injects on the dashboard for dogfooding).
+  - Add `accounts.google.com`, `appleid.apple.com`, `clerk.remarks.online`, `*.clerk.accounts.dev` to `excludeMatches` (sidebar stays out of OAuth/FAPI flows).
+  - Update the leading comment to document the dogfooding rationale + the auth-page exclusion rationale.
+- **Done when**:
+  - Loading the prod extension on `https://app.remarks.online/app/projects` shows the sidebar
+  - Loading on `https://accounts.google.com` does not show the sidebar
+  - Loading on `https://clerk.remarks.online/` does not show the sidebar
+  - HMR errors during `pnpm dev` on `localhost:3000` are still tolerable (the existing `isExtensionContextValid` guard mitigates them)
+- **Conflicts / overlaps with spec**: None.
+- **Affected tasks / components**: `apps/extension/src/entrypoints/content.tsx`. No other files.
+- **Dependencies**: After A16 (the prod syncHost change in A16 is what made `clerk.remarks.online` visit-able as a sidebar-injected page in the first place).
+- **Estimated size**: `xs`.
+- **Status**: `done in this PR`. Bundled with the Google-social-connection rollout.
+
+## A18 — Localhost dev origins baked into prod extension bundle
+
+| # | Done when | Complete |
+|---|---|---|
+| A18 | A `build:prod` artifact contains no `localhost:3000` references in `manifest.json`, `background.js`, or content scripts | [ ] |
+
+- **Spec reference**: not specified. ADR 0014 covers syncHost but not bundle hygiene across modes.
+- **Problem**: `apps/extension/wxt.config.ts:38-50` declares `http://localhost:3000/*` statically in `externally_connectable.matches` and (transitively, via WXT) in `content_scripts.exclude_matches`. `apps/extension/src/entrypoints/background.ts:190-193` hardcodes the same origin into `EXTERNAL_PING_ALLOWED_ORIGINS`. Result: a `pnpm --filter @remarks/extension build:prod` artifact still ships with `localhost:3000` in the manifest and the runtime allowlist. Not auth-coupled (auth uses env-driven `WXT_CLERK_SYNC_HOST`, which is correctly `https://app.remarks.online` in prod bundles), but a Web-Store-distributed prod extension would let a local dev dashboard at `localhost:3000` `chrome.runtime.sendMessage` it for the spec §7.5 install-detection ping. Tiny info-leak surface (a malicious local origin pretending to be localhost:3000 could probe whether a user has the extension installed); the explicit origin check in `background.ts:207` is the only gate.
+- **Proposed deliverable**:
+  - Drive the manifest matches and `EXTERNAL_PING_ALLOWED_ORIGINS` from a build-time env or the `import.meta.env.MODE === 'production'` flag, so prod bundles drop the localhost entry.
+  - Verify with the same grep checks that confirmed prod-key/syncHost baking: `grep -rl "localhost:3000" .output/chrome-mv3` should return zero matches in a prod build.
+- **Done when**:
+  - Prod build artifact has zero `localhost:3000` references
+  - Dev build artifact retains them (so onboarding handshake still works locally)
+  - One smoke run of `pnpm --filter @remarks/dashboard dev` + `pnpm --filter @remarks/extension dev` confirms the dashboard's install-detection ping still works in dev
+- **Conflicts / overlaps with spec**: None.
+- **Affected tasks / components**: `apps/extension/wxt.config.ts`, `apps/extension/src/entrypoints/background.ts:190-193`. Possibly a tiny helper in `apps/extension/src/env.ts` for the mode branching.
+- **Dependencies**: After A16 (the build:prod plumbing).
+- **Estimated size**: `xs`.
+- **Status**: `open`.
+
+## A17 — Apple sign-in on dev + prod Clerk instances
+
+| # | Done when | Complete |
+|---|---|---|
+| A17 | `app.remarks.online/sign-in` and the dev dashboard both render an Apple button that completes a real sign-in | [ ] |
+
+- **Spec reference**: not specified. ADR 0003 (`docs/adr/0003-clerk-for-auth.md`) commits to Clerk for auth but doesn't enumerate social providers.
+- **Problem**: Both the dashboard's `<SignIn>` / `<SignUp>` and the extension popup (which opens `${WXT_CLERK_SYNC_HOST}/sign-in` per `apps/extension/src/entrypoints/popup/App.tsx:42-48`) defer to whichever providers Clerk has enabled on the active instance. We want Apple alongside Google, but Apple — unlike Google in the dev instance — has no Clerk-shared OAuth credentials, so even the dev instance needs custom credentials. That requires an Apple Developer account ($99/yr) and is gated on org-level signup, so it was deferred from the Google rollout.
+- **Proposed deliverable**:
+  - **Apple Developer Console:** create a Service ID with Sign in with Apple enabled, add the Clerk callback URLs to its Return URLs, and generate a Sign-in-with-Apple key (.p8). Capture Service ID, Team ID, Key ID, and the .p8 contents.
+    - Dev callback: `https://sweeping-cattle-24.clerk.accounts.dev/v1/oauth_callback`
+    - Prod callback: `https://clerk.remarks.online/v1/oauth_callback`
+  - **Clerk dev instance → SSO Connections → Add → Apple:** paste credentials, save.
+  - **Clerk prod instance → SSO Connections → Add → Apple:** paste the same credentials (Apple keys are tied to the Apple Service ID, not to a Clerk environment).
+  - Verify via the same matrix as Google: dev dashboard `/sign-in`, dev extension popup → dashboard sign-in tab, prod dashboard `/sign-in`, prod extension popup (depends on A16).
+- **Done when**:
+  - Both Clerk instances have an active Apple SSO connection
+  - Dev dashboard, dev extension popup, prod dashboard, and prod extension popup all render an Apple button and complete a real Sign in with Apple round-trip
+- **Conflicts / overlaps with spec**: None. Configuration inside the existing ADR-0003 ("Clerk for auth") decision; no new architectural choice.
+- **Affected tasks / components**: Clerk instance config only — no repo files. Same dashboard `<SignIn>` / `<SignUp>` (`apps/dashboard/src/app/sign-in/[[...sign-in]]/page.tsx`, `apps/dashboard/src/app/sign-up/[[...sign-up]]/page.tsx`) and extension popup will pick up the new provider with no source changes.
+- **Dependencies**: Independent of A16 for the dashboard surface; **after A16** for the prod-extension surface (otherwise prod-built extensions still hit dev Clerk).
+- **Estimated size**: `s` once the Apple Developer account is in place; otherwise blocked on enrolment.
+- **Status**: `open`.

@@ -11,10 +11,16 @@ import "@/styles/content.css";
 
 export default defineContentScript({
   matches: ["<all_urls>"],
-  // The dashboard is the Remarks app itself — overlaying our own sidebar on
-  // it is double-UI and also the place users were most likely to see
-  // "Extension context invalidated" after an HMR reload.
-  excludeMatches: ["http://localhost:3000/*", "https://app.remarks.online/*"],
+  // Sidebar injects on the dashboard too — we dogfood by annotating
+  // app.remarks.online (and localhost:3000 in dev) with Remarks itself.
+  // Exclude OAuth provider + Clerk FAPI pages so the sidebar doesn't flash
+  // mid-redirect or persist when users visit clerk.remarks.online directly.
+  excludeMatches: [
+    "https://accounts.google.com/*",
+    "https://appleid.apple.com/*",
+    "https://clerk.remarks.online/*",
+    "https://*.clerk.accounts.dev/*",
+  ],
   cssInjectionMode: "ui",
   allFrames: false,
   async main(ctx) {
