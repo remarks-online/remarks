@@ -6,9 +6,10 @@ const envSchema = z.object({
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_"),
   NEXT_PUBLIC_API_BASE_URL: z.string().url(),
   // Public URL of the hosted MCP server. The "Connect Agent" guide page
-  // renders this into install commands and config snippets. Local dev:
-  // http://localhost:4001/mcp. Production: https://mcp.remarks.online/mcp.
-  NEXT_PUBLIC_MCP_SERVER_URL: z.string().url().default("http://localhost:4001/mcp"),
+  // renders this into install commands and config snippets. Default targets
+  // production so a missing Vercel env var doesn't ship localhost snippets to
+  // app.remarks.online; local dev overrides via .env.local.
+  NEXT_PUBLIC_MCP_SERVER_URL: z.string().url().default("https://mcp.remarks.online/mcp"),
   // PostHog browser SDK key. Optional in dev; analytics no-ops when unset so
   // local dev / preview deploys without a configured project don't crash. Set
   // to the `remarks` project's project key in Vercel Production.

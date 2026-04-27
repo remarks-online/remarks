@@ -89,8 +89,19 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
       // fire on warm requests where membership is already in sync.
       await provisionProjectMembersFromOrgMemberships(fastify.db, userRow.id, memberships);
     } catch (err) {
-      request.log.error({ err }, "failed to fetch clerk org memberships");
-      throw new UnauthorizedError("Failed to load org memberships");
+      // Tolerate the case where Clerk's Organizations feature is disabled at
+      // the instance level: personal-first users don't need orgs, and a single
+      // dashboard toggle shouldn't 401 every authenticated request.
+      if (isClerkOrgsDisabledError(err)) {
+        request.log.warn(
+          { clerkUserId },
+          "clerk organizations feature disabled; treating user as personal-only"
+        );
+        memberships = [];
+      } else {
+        request.log.error({ err }, "failed to fetch clerk org memberships");
+        throw new UnauthorizedError("Failed to load org memberships");
+      }
     }
 
     request.auth = {
@@ -105,6 +116,16 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
     };
   });
 };
+
+// True when the Clerk SDK throws because the Organizations feature is off in
+// the current Clerk instance. The SDK surfaces this as a 403 with a code of
+// `organization_not_enabled_in_instance` inside the `errors` array.
+function isClerkOrgsDisabledError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const errors = (err as { errors?: Array<{ code?: string }> }).errors;
+  if (!Array.isArray(errors)) return false;
+  return errors.some((e) => e?.code === "organization_not_enabled_in_instance");
+}
 
 // Wrap with fastify-plugin so the onRequest hook propagates to the registration
 // scope (e.g. the `authenticated` child in server.ts) rather than being trapped

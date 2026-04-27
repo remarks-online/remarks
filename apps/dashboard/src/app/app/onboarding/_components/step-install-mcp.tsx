@@ -1,9 +1,9 @@
 "use client";
 
-import { CopySnippet } from "@/components/copy-snippet";
-import { type AgentPreset, buildAgentPresets } from "@/lib/agent-presets";
+import { AgentPresetDetails } from "@/components/agent-preset-details";
+import { buildAgentPresets } from "@/lib/agent-presets";
 import { capture } from "@/lib/analytics";
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@remarks/ui";
+import { Button } from "@remarks/ui";
 import { useState } from "react";
 
 // Read NEXT_PUBLIC_* directly — see analytics.ts for why we don't import the
@@ -55,7 +55,7 @@ export function StepInstallMcp({ onAdvance, onSkip }: Props) {
         ))}
       </div>
 
-      {selected ? <PresetDetails preset={selected} /> : null}
+      {selected ? <AgentPresetDetails preset={selected} /> : null}
 
       <div className="flex items-center justify-between gap-3">
         <Button variant="ghost" onClick={onSkip}>
@@ -64,33 +64,5 @@ export function StepInstallMcp({ onAdvance, onSkip }: Props) {
         <Button onClick={confirm}>I've installed it</Button>
       </div>
     </div>
-  );
-}
-
-function PresetDetails({ preset }: { preset: AgentPreset }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{preset.name}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {preset.installCommand ? (
-          <div className="space-y-1.5">
-            <p className="text-sm font-medium">Install (one line)</p>
-            <CopySnippet value={preset.installCommand} variant="inline" />
-          </div>
-        ) : null}
-
-        <div className="space-y-1.5">
-          <p className="text-sm font-medium">
-            {preset.installCommand ? "Or paste manually into" : "Paste into"}{" "}
-            <code className="rounded bg-slate-100 px-1 font-mono text-xs">{preset.configFile}</code>
-          </p>
-          <CopySnippet value={preset.configSnippet} />
-        </div>
-
-        <p className="text-sm text-muted-foreground">{preset.postInstallNote}</p>
-      </CardContent>
-    </Card>
   );
 }
