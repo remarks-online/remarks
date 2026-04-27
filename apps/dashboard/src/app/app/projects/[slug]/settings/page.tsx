@@ -58,7 +58,7 @@ export default async function ProjectSettingsPage({ params }: { params: Params }
           your behalf.
         </p>
         <Link
-          href={`/app/projects/${project.slug}/settings/connect-agent`}
+          href="/app/connect-agent"
           className="mt-3 inline-flex items-center text-sm font-medium underline"
         >
           Open the install guide →

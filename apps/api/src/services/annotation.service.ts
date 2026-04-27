@@ -9,7 +9,7 @@ import {
   type UpdateAnnotationRequest,
   ValidationError,
 } from "@remarks/shared";
-import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import {
   type AnnotationListCursor,
   decodeAnnotationListCursor,
@@ -67,6 +67,13 @@ export async function createAnnotation(
 ): Promise<AnnotationResponse> {
   const { author, input, r2 } = args;
 
+  // The shared schema's refine guarantees these are paired; assert the invariant
+  // here so the rest of the function can branch cleanly.
+  const isProjectScoped = Boolean(input.projectId);
+  if (isProjectScoped !== Boolean(input.branch)) {
+    throw new ValidationError("projectId and branch must both be provided or both omitted");
+  }
+
   // Resolve screenshot metadata BEFORE opening the transaction so we don't
   // hold a DB connection open during the R2 round-trip. If the asset is
   // missing, fail fast with 400 before any writes.
@@ -77,11 +84,17 @@ export async function createAnnotation(
     sizeBytes: number;
   } | null = null;
   if (input.screenshotAssetId) {
-    const key = buildAssetR2Key({
-      projectId: input.projectId,
-      kind: "screenshot",
-      assetId: input.screenshotAssetId,
-    });
+    const key = input.projectId
+      ? buildAssetR2Key({
+          projectId: input.projectId,
+          kind: "screenshot",
+          assetId: input.screenshotAssetId,
+        })
+      : buildAssetR2Key({
+          userId: author.id,
+          kind: "screenshot",
+          assetId: input.screenshotAssetId,
+        });
     const head = await headObject(r2, { key });
     if (!head) {
       throw new ValidationError("Screenshot upload not found for given screenshotAssetId");
@@ -95,12 +108,15 @@ export async function createAnnotation(
   }
 
   const { annotationRow, assetRow } = await db.transaction(async (tx) => {
-    const branchId = await findOrCreateBranch(tx, input.projectId, input.branch);
+    const branchId =
+      input.projectId && input.branch
+        ? await findOrCreateBranch(tx, input.projectId, input.branch)
+        : null;
 
     const [insertedAnnotation] = await tx
       .insert(schema.annotations)
       .values({
-        projectId: input.projectId,
+        projectId: input.projectId ?? null,
         branchId,
         authorId: author.id,
         targetType: input.targetType,
@@ -177,7 +193,7 @@ export async function createAnnotation(
 
   return toAnnotationResponse({
     annotationRow,
-    branchName: input.branch,
+    branchName: input.branch ?? null,
     author,
     assets: resolvedAssets,
   });
@@ -281,7 +297,127 @@ export async function listAnnotations(
       );
       return toAnnotationResponse({
         annotationRow: row,
-        branchName: row.branch.name,
+        branchName: row.branch?.name ?? null,
+        author: row.author,
+        assets: resolvedAssets,
+      });
+    })
+  );
+
+  const last = hasMore ? pageRows[pageRows.length - 1] : undefined;
+  const nextCursor = last
+    ? encodeAnnotationListCursor({
+        createdAt: last.createdAt.toISOString(),
+        id: last.id,
+      })
+    : null;
+
+  return { items, nextCursor };
+}
+
+export interface ListAnnotationsForUserArgs {
+  userId: string;
+  query: {
+    url?: string | undefined;
+    statuses?: AnnotationStatus[] | undefined;
+    cursor?: string | undefined;
+    limit: number;
+    // When set, restricts to personal-only. Default: include personal + member projects.
+    scope?: "personal" | "all" | undefined;
+  };
+  r2: R2Client;
+  assetTtlSeconds?: number;
+}
+
+// List annotations the user can see across personal + project scopes. Used by
+// the user-scoped REST endpoint and the dashboard's personal view.
+export async function listAnnotationsForUser(
+  db: DB,
+  args: ListAnnotationsForUserArgs
+): Promise<AnnotationListResponse> {
+  const { userId, query, r2 } = args;
+  const ttlSeconds = args.assetTtlSeconds ?? ANNOTATION_ASSET_GET_TTL_SECONDS;
+  const scope = query.scope ?? "all";
+
+  const memberProjectIds =
+    scope === "personal"
+      ? []
+      : (
+          await db.query.projectMembers.findMany({
+            where: eq(schema.projectMembers.userId, userId),
+            columns: { projectId: true },
+          })
+        ).map((m) => m.projectId);
+
+  const personalPredicate = and(
+    eq(schema.annotations.authorId, userId),
+    isNull(schema.annotations.projectId)
+  );
+  const projectPredicate =
+    memberProjectIds.length > 0
+      ? inArray(schema.annotations.projectId, memberProjectIds)
+      : undefined;
+
+  const visibilityPredicate =
+    scope === "personal"
+      ? personalPredicate
+      : projectPredicate
+        ? or(personalPredicate, projectPredicate)
+        : personalPredicate;
+
+  const cursor: AnnotationListCursor | null = query.cursor
+    ? decodeAnnotationListCursor(query.cursor)
+    : null;
+  const cursorPredicate = cursor
+    ? or(
+        lt(schema.annotations.createdAt, new Date(cursor.createdAt)),
+        and(
+          eq(schema.annotations.createdAt, new Date(cursor.createdAt)),
+          lt(schema.annotations.id, cursor.id)
+        )
+      )
+    : undefined;
+
+  const statusPredicate =
+    query.statuses && query.statuses.length > 0
+      ? inArray(schema.annotations.status, query.statuses)
+      : undefined;
+
+  const where = and(
+    visibilityPredicate,
+    query.url ? eq(schema.annotations.url, query.url) : undefined,
+    statusPredicate,
+    cursorPredicate
+  );
+
+  const rows = await db.query.annotations.findMany({
+    where,
+    with: {
+      branch: { columns: { name: true } },
+      author: { columns: { id: true, name: true, email: true, avatarUrl: true } },
+      assets: true,
+    },
+    orderBy: [desc(schema.annotations.createdAt), desc(schema.annotations.id)],
+    limit: query.limit + 1,
+  });
+
+  const hasMore = rows.length > query.limit;
+  const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
+
+  const items = await Promise.all(
+    pageRows.map(async (row) => {
+      const resolvedAssets: ResolvedAsset[] = await Promise.all(
+        row.assets.map(async (asset) => ({
+          row: asset,
+          url: await getPresignedGetUrl(r2, {
+            key: asset.r2Key,
+            ttlSeconds,
+          }),
+        }))
+      );
+      return toAnnotationResponse({
+        annotationRow: row,
+        branchName: row.branch?.name ?? null,
         author: row.author,
         assets: resolvedAssets,
       });
@@ -300,7 +436,8 @@ export async function listAnnotations(
 }
 
 export interface AnnotationOwnership {
-  projectId: string;
+  // Null for personal (URL-keyed) annotations.
+  projectId: string | null;
   authorId: string;
 }
 
@@ -352,7 +489,7 @@ export async function getAnnotationById(
 
   return toAnnotationResponse({
     annotationRow: row,
-    branchName: row.branch.name,
+    branchName: row.branch?.name ?? null,
     author: row.author,
     assets: resolvedAssets,
   });
@@ -371,7 +508,7 @@ export async function updateAnnotation(
 ): Promise<AnnotationResponse> {
   const { annotationId, actorId, input, r2 } = args;
 
-  type StatusTransition = { from: string; to: string; projectId: string };
+  type StatusTransition = { from: string; to: string; projectId: string | null };
 
   const statusTransition = await db.transaction<StatusTransition | null>(async (tx) => {
     const current = await tx.query.annotations.findFirst({
@@ -506,7 +643,7 @@ interface ResolvedAsset {
 
 function toAnnotationResponse(args: {
   annotationRow: AnnotationRow;
-  branchName: string;
+  branchName: string | null;
   author: AnnotationResponse["author"];
   assets: ResolvedAsset[];
 }): AnnotationResponse {
@@ -515,7 +652,7 @@ function toAnnotationResponse(args: {
     id: row.id,
     projectId: row.projectId,
     branchId: row.branchId,
-    branchName,
+    branchName: row.projectId ? (branchName ?? null) : null,
     status: row.status,
     targetType: row.targetType,
     url: row.url,

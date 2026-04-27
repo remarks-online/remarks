@@ -33,3 +33,30 @@ export async function assertProjectMember(
   }
   return { role: row.role };
 }
+
+export interface AnnotationAccessResult {
+  // Null for personal annotations (caller is the owner). Project role for
+  // project-scoped annotations.
+  role: ProjectRole | null;
+  isOwner: boolean;
+}
+
+// Pure (no FastifyRequest) variant of authorizeAnnotationAccess for tRPC
+// callers. Personal annotations: the caller must be the author. Project
+// annotations: the caller must be a project member meeting `minRole`.
+// Existence-leak posture: NotFoundError on any deny.
+export async function assertAnnotationAccess(
+  db: DB,
+  userId: string,
+  ownership: { projectId: string | null; authorId: string },
+  opts: { minRole?: ProjectRole } = {}
+): Promise<AnnotationAccessResult> {
+  if (ownership.projectId === null) {
+    if (ownership.authorId !== userId) {
+      throw new NotFoundError("Annotation");
+    }
+    return { role: null, isOwner: true };
+  }
+  const { role } = await assertProjectMember(db, userId, ownership.projectId, opts);
+  return { role, isOwner: ownership.authorId === userId };
+}

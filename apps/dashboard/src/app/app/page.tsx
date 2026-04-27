@@ -1,36 +1,24 @@
-import { getTrpcServer } from "@/lib/trpc-server";
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 // Routing rule:
-//   - No active org             → /app/projects (page handles the empty case).
-//   - Active org with projects  → /app/projects.
-//   - Active org, zero projects,
-//     never skipped              → /app/onboarding (first-run wizard).
+//   - Signed-in user, never skipped/finished onboarding → /app/onboarding.
+//   - Signed-in user, skip cookie present              → /app/projects.
+//   - Signed-out                                       → middleware sends to /sign-in.
 //
 // The skip flag is a cookie so this server-side check works on first paint —
 // localStorage isn't available here. The wizard sets the cookie when the user
-// clicks "Skip onboarding"; from then on, /app routes straight to /app/projects.
+// clicks "Skip onboarding" or completes the success step. Keyed by userId only:
+// onboarding is per-person, not per-workspace, so creating or joining an org
+// later doesn't re-trigger the wizard.
 export default async function AppIndexPage(): Promise<never> {
-  const { orgId, userId } = await auth();
-  if (orgId && userId) {
+  const { userId } = await auth();
+  if (userId) {
     const cookieStore = await cookies();
-    const skipCookieName = `remarks-onboarding-skipped:${userId}:${orgId}`;
+    const skipCookieName = `remarks-onboarding-skipped:${userId}`;
     const skipped = cookieStore.get(skipCookieName)?.value === "1";
-
-    if (!skipped) {
-      let zeroProjects = false;
-      try {
-        const trpc = await getTrpcServer();
-        const { items } = await trpc.projects.list.query({ orgId });
-        zeroProjects = items.length === 0;
-      } catch {
-        // API down / tRPC error — don't block the user. Fall through to
-        // /app/projects, which has its own error state.
-      }
-      if (zeroProjects) redirect("/app/onboarding");
-    }
+    if (!skipped) redirect("/app/onboarding");
   }
   redirect("/app/projects");
 }

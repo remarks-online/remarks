@@ -1,4 +1,4 @@
-import { ForbiddenError } from "@remarks/shared";
+import { ForbiddenError, NotFoundError } from "@remarks/shared";
 import type { FastifyRequest } from "fastify";
 import {
   PROJECT_ROLE_RANK,
@@ -37,4 +37,30 @@ export async function requireProjectMember(
   opts: { minRole?: ProjectRole } = {}
 ): Promise<{ role: ProjectRole }> {
   return assertProjectMember(request.server.db, request.auth.user.id, projectId, opts);
+}
+
+export interface AnnotationAuthorization {
+  // null for personal annotations (caller owns it); the caller's role for
+  // project-scoped annotations. Lets the caller gate edit/delete on role.
+  role: ProjectRole | null;
+  isOwner: boolean;
+}
+
+// Authorize access to a specific annotation. Personal annotations (projectId
+// null) are accessible only to the author; project-scoped annotations are
+// accessible per the project_members gate. Mirrors the NotFoundError-on-deny
+// pattern of requireProjectMember so existence isn't leaked.
+export async function authorizeAnnotationAccess(
+  request: FastifyRequest,
+  ownership: { projectId: string | null; authorId: string },
+  opts: { minRole?: ProjectRole } = {}
+): Promise<AnnotationAuthorization> {
+  if (ownership.projectId === null) {
+    if (ownership.authorId !== request.auth.user.id) {
+      throw new NotFoundError("Annotation");
+    }
+    return { role: null, isOwner: true };
+  }
+  const { role } = await requireProjectMember(request, ownership.projectId, opts);
+  return { role, isOwner: ownership.authorId === request.auth.user.id };
 }

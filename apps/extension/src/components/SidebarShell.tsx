@@ -3,7 +3,6 @@ import { SidebarBranchSelector } from "@/components/SidebarBranchSelector";
 import { SidebarComposeBox, type SidebarComposeBoxHandle } from "@/components/SidebarComposeBox";
 import { SidebarHeader } from "@/components/SidebarHeader";
 import { SidebarLauncher } from "@/components/SidebarLauncher";
-import { SidebarNoProject } from "@/components/SidebarNoProject";
 import { SidebarOutboxBanner } from "@/components/SidebarOutboxBanner";
 import { SidebarPickerHint } from "@/components/SidebarPickerHint";
 import { SidebarResizeHandle } from "@/components/SidebarResizeHandle";
@@ -132,16 +131,12 @@ export function SidebarShell() {
     <SidebarSignedOut />
   ) : (
     <SidebarTrpcProvider token={auth.token}>
-      {projectId ? (
-        <SidebarBody
-          projectId={projectId}
-          token={auth.token}
-          clerkOrgId={auth.clerkOrgId}
-          compact={compact}
-        />
-      ) : (
-        <SidebarNoProject clerkOrgId={auth.clerkOrgId} />
-      )}
+      <SidebarBody
+        projectId={projectId}
+        token={auth.token}
+        clerkOrgId={auth.clerkOrgId}
+        compact={compact}
+      />
     </SidebarTrpcProvider>
   );
 
@@ -171,7 +166,8 @@ export function SidebarShell() {
 }
 
 interface SidebarBodyProps {
-  projectId: string;
+  // Null = personal mode (no team selected). Non-null = team-share mode.
+  projectId: string | null;
   token: string | null;
   clerkOrgId: string | null;
   compact: boolean;
@@ -186,7 +182,9 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
 
   // Hydrate selected branch for the active project, then watch for cross-tab
   // edits so a second tab editing the same project's branch reflects here.
+  // Personal mode has no branch concept so this is a no-op there.
   useEffect(() => {
+    if (!projectId) return;
     let cancelled = false;
     void getSelectedBranch(projectId).then((b) => {
       if (!cancelled) setBranch(b);
@@ -200,6 +198,7 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
 
   const onBranchChange = useCallback(
     (next: string) => {
+      if (!projectId) return;
       setBranch(next);
       void setSelectedBranch(projectId, next);
     },
@@ -235,7 +234,7 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
         clerkOrgId,
         projectId,
         payload: {
-          branch,
+          branch: projectId ? branch : null,
           capture: cap,
           commentText: text,
         },
@@ -259,10 +258,10 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
 
   return (
     <>
-      <SidebarBranchSelector value={branch} onChange={onBranchChange} />
+      {projectId ? <SidebarBranchSelector value={branch} onChange={onBranchChange} /> : null}
       <SidebarStatusTabs compact={compact} />
       <div className="flex-1 overflow-y-auto">
-        <SidebarThreadList projectId={projectId} branch={branch} />
+        <SidebarThreadList projectId={projectId} branch={projectId ? branch : null} />
       </div>
       {mode !== "idle" && !capture ? (
         <div className="border-t border-border bg-muted/40 px-2 py-1.5">

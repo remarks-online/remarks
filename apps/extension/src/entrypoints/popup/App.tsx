@@ -82,10 +82,11 @@ export function App() {
             }
           >
             <ActiveOrgSync />
-            <OrganizationSwitcher hidePersonal />
+            <OrganizationSwitcher />
             <ProjectPicker />
             <p className="text-xs text-muted-foreground">
-              The sidebar is injected on every page. Open a tab to start annotating.
+              The Remarks sidebar is injected on every page. Open any tab to start annotating — your
+              captures save to whatever scope you pick above.
             </p>
             <Button size="sm" variant="ghost" type="button" onClick={pingBackground}>
               Ping background

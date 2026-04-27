@@ -497,7 +497,7 @@ For each preset agent the page renders:
 3. **A short "What happens next"** explanation: "On first use, your agent will open a browser to log into Remarks. The first tool call may be `remarks_whoami` — once that succeeds, you're connected."
 4. **A "Verify Connection" button** that polls the membership cache (same Redis-based last-seen mechanism we already use). On success: ✓ Connected. On timeout (2 minutes): a troubleshooting block.
 
-The page lives at `/projects/[slug]/settings/connect-agent` for now; because grants are per-user, a near-identical guide page also lives at `/account/connections/mcp` so the user can land there from account settings.
+The canonical page lives at `/app/connect-agent` (header nav), since grants are per-user and one OAuth login covers every project the user is a member of plus their personal annotations. Per-project settings link to the same page.
 
 ### 6.2 Snippet examples (for the dashboard to render)
 

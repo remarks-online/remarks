@@ -5,23 +5,21 @@ import { trpc } from "@/lib/trpc-client";
 import type { AnnotationResponse } from "@remarks/shared";
 import { Button } from "@remarks/ui";
 import { CheckCircle2, Loader2 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 interface Props {
-  project: { id: string; slug: string; name: string };
   onAnnotationCaptured: (annotation: AnnotationResponse) => void;
   onSkip: () => void;
 }
 
-// Polls the same procedure / cadence as the project detail page so we
-// inherit task 1.18's behavior (5s interval, paused when tab is backgrounded).
-// Limit=1 keeps the poll cheap.
-export function StepFirstAnnotation({ project, onAnnotationCaptured, onSkip }: Props) {
+// Polls the user's personal annotations every 5s. Limit=1 keeps the poll
+// cheap; scope=personal restricts to URL-keyed rows so a project annotation
+// captured before onboarding doesn't accidentally satisfy this step.
+export function StepFirstAnnotation({ onAnnotationCaptured, onSkip }: Props) {
   const advancedRef = useRef(false);
 
-  const query = trpc.annotations.list.useQuery(
-    { projectId: project.id, limit: 1 },
+  const query = trpc.annotations.listForUser.useQuery(
+    { limit: 1, scope: "personal" },
     {
       refetchInterval: 5000,
       refetchIntervalInBackground: false,
@@ -33,18 +31,17 @@ export function StepFirstAnnotation({ project, onAnnotationCaptured, onSkip }: P
   useEffect(() => {
     if (!firstItem || advancedRef.current) return;
     advancedRef.current = true;
-    capture("onboarding_step_completed", { step: 3, projectId: project.id });
+    capture("onboarding_step_completed", { step: 2 });
     onAnnotationCaptured(firstItem);
-  }, [firstItem, onAnnotationCaptured, project.id]);
+  }, [firstItem, onAnnotationCaptured]);
 
   return (
     <div className="space-y-6 rounded-md border border-border p-6">
       <div>
-        <h2 className="text-lg font-semibold">
-          Capture your first annotation in <span className="font-mono">{project.name}</span>
-        </h2>
+        <h2 className="text-lg font-semibold">Capture your first annotation</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Open the page you want to annotate, click the Remarks icon, and pick a target:
+          Open any page you want to annotate, click the Remarks icon, and pick a target. Your first
+          capture lands in your private space — no team setup needed.
         </p>
         <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
           <li>
@@ -78,15 +75,15 @@ export function StepFirstAnnotation({ project, onAnnotationCaptured, onSkip }: P
           <>
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
             <span className="text-muted-foreground">
-              Waiting for your first annotation in this project…
+              Waiting for your first personal annotation…
             </span>
           </>
         )}
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <Button variant="ghost" asChild onClick={onSkip}>
-          <Link href={`/app/projects/${project.slug}`}>I&apos;ll come back to this later</Link>
+        <Button variant="ghost" onClick={onSkip}>
+          I'll come back to this later
         </Button>
       </div>
     </div>

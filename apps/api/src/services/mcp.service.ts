@@ -1,6 +1,6 @@
 import { type DB, schema } from "@remarks/db";
 import { type AnnotationResponse, type AnnotationStatus, NotFoundError } from "@remarks/shared";
-import { and, asc, desc, eq, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { capture as captureAnalytics } from "../lib/posthog.js";
 import type { R2Client } from "../lib/r2.js";
 import { getAnnotationById } from "./annotation.service.js";
@@ -156,17 +156,34 @@ export interface McpAnnotationPayload {
   relatedTasks: RelatedTaskRow[];
 }
 
-async function userIsProjectMember(
+// Agent access gate. Mirrors authorizeAnnotationAccess in lib/authorization.ts
+// but operates on a Clerk user id rather than a Fastify request, since the MCP
+// internal endpoints have already exchanged the OAuth token for a Clerk id.
+//
+// - Project-scoped (projectId set): must be a member of that project.
+// - Personal (projectId null): caller must be the author. The author lookup is
+//   keyed on the local users.id, so we resolve clerkUserId → users.id once.
+async function userCanAccessAnnotation(
   db: DB,
   clerkUserId: string,
-  projectId: string
+  ownership: { projectId: string | null; authorId: string }
 ): Promise<boolean> {
+  if (ownership.projectId === null) {
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.clerkUserId, clerkUserId),
+      columns: { id: true },
+    });
+    return user !== undefined && user.id === ownership.authorId;
+  }
   const [row] = await db
     .select({ projectId: schema.projectMembers.projectId })
     .from(schema.projectMembers)
     .innerJoin(schema.users, eq(schema.users.id, schema.projectMembers.userId))
     .where(
-      and(eq(schema.users.clerkUserId, clerkUserId), eq(schema.projectMembers.projectId, projectId))
+      and(
+        eq(schema.users.clerkUserId, clerkUserId),
+        eq(schema.projectMembers.projectId, ownership.projectId)
+      )
     )
     .limit(1);
   return row !== undefined;
@@ -187,6 +204,7 @@ export async function getMcpAnnotationById(
     columns: {
       id: true,
       projectId: true,
+      authorId: true,
       url: true,
       targetSelector: true,
       domContext: true,
@@ -194,9 +212,8 @@ export async function getMcpAnnotationById(
     },
   });
   if (!row) throw new NotFoundError("Annotation");
-  const allowed = await userIsProjectMember(db, clerkUserId, row.projectId);
+  const allowed = await userCanAccessAnnotation(db, clerkUserId, row);
   if (!allowed) throw new NotFoundError("Annotation");
-  const projectId = row.projectId;
 
   const annotation = await getAnnotationById(db, annotationId, r2, {
     assetTtlSeconds: MCP_SCREENSHOT_GET_TTL_SECONDS,
@@ -214,6 +231,15 @@ export async function getMcpAnnotationById(
         )
       : undefined;
 
+  // Scope siblings to the same visibility bucket as the source annotation:
+  // project peers if the source is project-scoped, the author's other personal
+  // annotations otherwise. Privacy rule: personal annotations never leak into
+  // someone else's related-tasks set.
+  const scopePredicate =
+    row.projectId !== null
+      ? eq(schema.annotations.projectId, row.projectId)
+      : and(isNull(schema.annotations.projectId), eq(schema.annotations.authorId, row.authorId));
+
   const relatedRows = await db
     .select({
       id: schema.annotations.id,
@@ -223,7 +249,7 @@ export async function getMcpAnnotationById(
     .from(schema.annotations)
     .where(
       and(
-        eq(schema.annotations.projectId, projectId),
+        scopePredicate,
         ne(schema.annotations.id, annotationId),
         or(eq(schema.annotations.url, row.url), targetSelectorMatch)
       )
@@ -286,16 +312,16 @@ export async function agentUpdateAnnotationStatus(
   type StatusTransition = {
     from: AnnotationStatus;
     to: AnnotationStatus;
-    projectId: string;
+    projectId: string | null;
   } | null;
 
   const transition = await db.transaction<StatusTransition>(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
-      columns: { id: true, status: true, projectId: true },
+      columns: { id: true, status: true, projectId: true, authorId: true },
     });
     if (!current) throw new NotFoundError("Annotation");
-    const allowed = await userIsProjectMember(tx as unknown as DB, clerkUserId, current.projectId);
+    const allowed = await userCanAccessAnnotation(tx as unknown as DB, clerkUserId, current);
     if (!allowed) throw new NotFoundError("Annotation");
 
     if (current.status === status) return null;
@@ -372,10 +398,10 @@ export async function agentAddAnnotationComment(
   return db.transaction(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
-      columns: { id: true, projectId: true },
+      columns: { id: true, projectId: true, authorId: true },
     });
     if (!current) throw new NotFoundError("Annotation");
-    const allowed = await userIsProjectMember(tx as unknown as DB, clerkUserId, current.projectId);
+    const allowed = await userCanAccessAnnotation(tx as unknown as DB, clerkUserId, current);
     if (!allowed) throw new NotFoundError("Annotation");
 
     const [row] = await tx

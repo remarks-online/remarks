@@ -1,66 +1,24 @@
+import { CopySnippet } from "@/components/copy-snippet";
 import { env } from "@/env";
 import { buildAgentPresets } from "@/lib/agent-presets";
-import { getTrpcServer } from "@/lib/trpc-server";
-import { auth } from "@clerk/nextjs/server";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@remarks/ui";
-import { TRPCClientError } from "@trpc/client";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { CopySnippet } from "./_components/copy-snippet";
 
-type Params = Promise<{ slug: string }>;
-
-// "Connect Agent" — a guide page explaining how to install the Remarks MCP
-// server in popular AI coding agents (Claude Code, Cursor, Windsurf, …).
-// ADR-0015: no token is generated. The user runs an install command; the
-// agent's first MCP request gets a 401, runs OAuth 2.1 + DCR + PKCE against
-// Clerk, the user logs in via the browser, the agent caches its access
-// token. We never see plaintext credentials.
-export default async function ConnectAgentPage({ params }: { params: Params }) {
-  const { slug } = await params;
-  const { orgId } = await auth();
-
-  if (!orgId) {
-    return (
-      <section>
-        <h1 className="text-2xl font-semibold">{slug}</h1>
-        <p className="mt-2 text-muted-foreground">
-          Select an organization from the switcher to view this project.
-        </p>
-      </section>
-    );
-  }
-
-  // Validate the project exists and the user has access. Mirrors the parent
-  // settings page's resolution so an unknown slug returns 404 instead of
-  // streaming a half-rendered page.
-  const trpc = await getTrpcServer();
-  let project: Awaited<ReturnType<typeof trpc.projects.getBySlug.query>>;
-  try {
-    project = await trpc.projects.getBySlug.query({ orgId, slug });
-  } catch (err) {
-    if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND") {
-      notFound();
-    }
-    throw err;
-  }
-
+// User-level "Connect Agent" install guide. Grants are per-user (ADR-0015) and
+// one OAuth login covers every Remarks project the user is a member of, so the
+// instructions don't depend on a specific project. Linked from the dashboard
+// header and from per-project settings.
+export default function ConnectAgentPage() {
   const presets = buildAgentPresets(env.NEXT_PUBLIC_MCP_SERVER_URL);
 
   return (
     <section className="mx-auto max-w-3xl space-y-6">
       <div>
-        <Link
-          href={`/app/projects/${project.slug}/settings`}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to {project.name} settings
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">Connect an agent</h1>
+        <h1 className="text-2xl font-semibold">Connect an agent</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Hook up Claude Code, Cursor, or any MCP-compatible client to your Remarks projects. There
-          are no tokens to copy — the agent will open a browser window the first time it calls a
-          Remarks tool, you sign in, and you're connected.
+          Hook up Claude Code, Cursor, or any MCP-compatible client to your Remarks tasks. There are
+          no tokens to copy — the agent will open a browser window the first time it calls a Remarks
+          tool, you sign in, and you're connected.
         </p>
       </div>
 
@@ -69,7 +27,8 @@ export default async function ConnectAgentPage({ params }: { params: Params }) {
           <CardTitle className="text-base">How it works</CardTitle>
           <CardDescription>
             Remarks uses OAuth 2.1 with PKCE and Dynamic Client Registration. One sign-in covers
-            every Remarks project you're a member of in this organization.
+            every Remarks task you can see — your personal annotations and any team projects you're
+            a member of.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
@@ -148,15 +107,15 @@ export default async function ConnectAgentPage({ params }: { params: Params }) {
             restart the agent and try again.
           </p>
           <p>
-            <strong className="font-medium text-foreground">Wrong project showing up.</strong> The
-            agent has access to every project you're a member of. Tell it which project to use by
-            passing the project name or by pinning it in your prompt.
+            <strong className="font-medium text-foreground">Wrong scope showing up.</strong> The
+            agent has access to every project you're a member of, plus your personal annotations.
+            Tell it which scope to use by passing the project name or by pinning it in your prompt.
           </p>
           <p>
             <strong className="font-medium text-foreground">Disconnect an agent.</strong> Visit{" "}
             <Link href="/app/settings/account" className="underline">
               Account settings → Connected apps
-            </Link>
+            </Link>{" "}
             and revoke the grant. The agent will be locked out within 5 minutes (the membership
             cache TTL).
           </p>

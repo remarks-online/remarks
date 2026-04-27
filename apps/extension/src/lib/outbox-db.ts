@@ -13,7 +13,8 @@ export interface OutboxRecordError {
 // time — `token` and `apiUrl` are resolved fresh so expired bearers don't
 // get persisted and so a re-deployed API URL is picked up.
 export interface OutboxPayload {
-  branch: string;
+  // Null when the enqueued record is a personal (URL-keyed) annotation.
+  branch: string | null;
   capture: Capture;
   commentText: string;
 }
@@ -24,7 +25,8 @@ export interface OutboxRecord {
   // Active Clerk org at enqueue time — used so an org-switch mid-flight
   // doesn't drain records belonging to the previous org.
   clerkOrgId: string | null;
-  projectId: string;
+  // Null for personal (URL-keyed) annotations; the project id otherwise.
+  projectId: string | null;
   payload: OutboxPayload;
   state: OutboxState;
   attempts: number;
@@ -98,7 +100,8 @@ function toPromise<T>(req: IDBRequest<T>): Promise<T> {
 export interface EnqueueArgs {
   id: string;
   clerkOrgId: string | null;
-  projectId: string;
+  // Null for personal (URL-keyed) annotations; the project id otherwise.
+  projectId: string | null;
   payload: OutboxPayload;
   now?: number;
 }

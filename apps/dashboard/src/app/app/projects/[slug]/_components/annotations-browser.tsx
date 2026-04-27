@@ -121,9 +121,12 @@ function groupByBranch(
 ): Array<{ branchName: string; annotations: AnnotationResponse[] }> {
   const map = new Map<string, AnnotationResponse[]>();
   for (const item of items) {
-    const existing = map.get(item.branchName);
+    // Project endpoints never return personal (null-branch) rows; fall back
+    // defensively if one slips through so the UI doesn't crash.
+    const key = item.branchName ?? primaryBranch;
+    const existing = map.get(key);
     if (existing) existing.push(item);
-    else map.set(item.branchName, [item]);
+    else map.set(key, [item]);
   }
   const entries = Array.from(map.entries());
   entries.sort(([a], [b]) => {
