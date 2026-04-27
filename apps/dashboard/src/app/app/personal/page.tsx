@@ -1,7 +1,7 @@
 import { getTrpcServer } from "@/lib/trpc-server";
 import { auth } from "@clerk/nextjs/server";
 import type { AnnotationResponse } from "@remarks/shared";
-import Link from "next/link";
+import { PersonalList } from "./_components/personal-list";
 
 export default async function PersonalAnnotationsPage() {
   const { userId } = await auth();
@@ -68,72 +68,6 @@ function PersonalErrorState({ message }: { message: string }) {
         Try refreshing in a moment. If the problem persists, the API may be unreachable.
       </p>
       <p className="mt-2 font-mono text-xs text-muted-foreground">{message}</p>
-    </div>
-  );
-}
-
-interface NormalizedRow {
-  id: string;
-  href: string;
-  pathname: string;
-  title: string;
-  createdAt: string;
-}
-
-function normalize(items: AnnotationResponse[]): Array<{ host: string; rows: NormalizedRow[] }> {
-  const byHost = new Map<string, NormalizedRow[]>();
-  for (const item of items) {
-    let host = "(unknown)";
-    let pathname = item.url;
-    try {
-      const u = new URL(item.url);
-      host = u.host;
-      pathname = u.pathname || "/";
-    } catch {
-      // keep fallbacks
-    }
-    let createdAt = item.createdAt;
-    const parsed = new Date(item.createdAt);
-    if (!Number.isNaN(parsed.getTime())) {
-      createdAt = parsed.toLocaleString();
-    }
-    const row: NormalizedRow = {
-      id: item.id,
-      href: item.url,
-      pathname,
-      title: item.commentText.split("\n")[0] || "(no comment)",
-      createdAt,
-    };
-    const existing = byHost.get(host);
-    if (existing) existing.push(row);
-    else byHost.set(host, [row]);
-  }
-  return Array.from(byHost.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([host, rows]) => ({ host, rows }));
-}
-
-function PersonalList({ items }: { items: AnnotationResponse[] }) {
-  const grouped = normalize(items);
-  return (
-    <div className="mt-6 flex flex-col gap-6">
-      {grouped.map(({ host, rows }) => (
-        <div key={host}>
-          <h2 className="text-sm font-semibold text-muted-foreground">{host}</h2>
-          <ul className="mt-2 divide-y divide-border rounded-md border border-border">
-            {rows.map((row) => (
-              <li key={row.id} className="px-4 py-3">
-                <Link href={row.href} className="text-sm font-medium hover:underline">
-                  {row.title}
-                </Link>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {row.pathname} · {row.createdAt}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
     </div>
   );
 }

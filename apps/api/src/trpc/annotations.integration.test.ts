@@ -637,3 +637,204 @@ describe("tRPC annotations.update (integration)", () => {
     expect(res.json().error.data.code).toBe("NOT_FOUND");
   });
 });
+
+async function seedPersonalAnnotation(authorId: string): Promise<string> {
+  const db = await getIntegrationDb();
+  const [annotation] = await db
+    .insert(schema.annotations)
+    .values({
+      projectId: null,
+      branchId: null,
+      authorId,
+      targetType: "element",
+      url: "https://example.com/personal",
+      targetSelector: "#personal",
+      viewport: { width: 1920, height: 1080, dpr: 2 },
+      commentText: "Personal note",
+    })
+    .returning();
+  if (!annotation) throw new Error("personal annotation seed failed");
+  return annotation.id;
+}
+
+describe("tRPC annotations.delete (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    await truncateAll();
+  });
+
+  const deleteUrl = "/trpc/annotations.delete";
+
+  test("personal annotation, author → 200 and row gone", async () => {
+    const db = await getIntegrationDb();
+    const author = await seedUser(db);
+    // Personal callers don't need a project membership, but the auth backstop
+    // still expects them to be members of at least one Clerk org. Seed one.
+    const org = await seedOrg(db);
+    const annotationId = await seedPersonalAnnotation(author.id);
+
+    mockAuth({
+      clerkUserId: author.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: deleteUrl,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { id: annotationId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result.data).toEqual({ ok: true });
+    const row = await db.query.annotations.findFirst({
+      where: (a, { eq }) => eq(a.id, annotationId),
+    });
+    expect(row).toBeUndefined();
+  });
+
+  test("personal annotation, non-author → 404 NOT_FOUND (existence not leaked)", async () => {
+    const db = await getIntegrationDb();
+    const author = await seedUser(db);
+    const stranger = await seedUser(db);
+    const strangerOrg = await seedOrg(db);
+    const annotationId = await seedPersonalAnnotation(author.id);
+
+    mockAuth({
+      clerkUserId: stranger.clerkUserId,
+      memberships: [{ clerkOrgId: strangerOrg.clerkOrgId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: deleteUrl,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { id: annotationId },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.data.code).toBe("NOT_FOUND");
+    // Row still exists.
+    const row = await db.query.annotations.findFirst({
+      where: (a, { eq }) => eq(a.id, annotationId),
+    });
+    expect(row).toBeDefined();
+  });
+
+  test("project editor (not author) → 200, row gone", async () => {
+    const db = await getIntegrationDb();
+    const author = await seedUser(db);
+    const { orgClerkId, userClerkId, projectId } = await seedProjectWithMember({ role: "editor" });
+    await db.insert(schema.projectMembers).values({ projectId, userId: author.id, role: "editor" });
+    const annotationId = await seedAnnotationOnProject(projectId, author.id);
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: deleteUrl,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { id: annotationId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const row = await db.query.annotations.findFirst({
+      where: (a, { eq }) => eq(a.id, annotationId),
+    });
+    expect(row).toBeUndefined();
+  });
+
+  test("project viewer who is the author → 200", async () => {
+    const { orgClerkId, userClerkId, userId, projectId } = await seedProjectWithMember({
+      role: "viewer",
+    });
+    const annotationId = await seedAnnotationOnProject(projectId, userId);
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: deleteUrl,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { id: annotationId },
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  test("project viewer who is NOT the author → 403 FORBIDDEN", async () => {
+    const db = await getIntegrationDb();
+    const author = await seedUser(db);
+    const { orgClerkId, userClerkId, projectId } = await seedProjectWithMember({ role: "viewer" });
+    await db.insert(schema.projectMembers).values({ projectId, userId: author.id, role: "editor" });
+    const annotationId = await seedAnnotationOnProject(projectId, author.id);
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: deleteUrl,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { id: annotationId },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+  });
+
+  test("non-member of project → 404 NOT_FOUND", async () => {
+    const { userId, projectId } = await seedProjectWithMember({ role: "viewer" });
+    const annotationId = await seedAnnotationOnProject(projectId, userId);
+    const outsider = await seedUser(await getIntegrationDb());
+    const outsiderOrg = await seedOrg(await getIntegrationDb());
+
+    mockAuth({
+      clerkUserId: outsider.clerkUserId,
+      memberships: [{ clerkOrgId: outsiderOrg.clerkOrgId, role: "org:admin" }],
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: deleteUrl,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { id: annotationId },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.data.code).toBe("NOT_FOUND");
+  });
+
+  test("unknown id → 404 NOT_FOUND", async () => {
+    const { orgClerkId, userClerkId } = await seedProjectWithMember({ role: "editor" });
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "POST",
+      url: deleteUrl,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { id: randomUUID() },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.data.code).toBe("NOT_FOUND");
+  });
+});
