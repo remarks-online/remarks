@@ -9,8 +9,10 @@ import { MessageSquarePlus } from "lucide-react";
 const PAGE_SIZE = 50;
 
 interface Props {
-  projectId: string;
-  branch: string;
+  // Null = personal mode (no project selected); list is the caller's accessible
+  // annotations on this URL across personal + their member-projects.
+  projectId: string | null;
+  branch: string | null;
 }
 
 export function SidebarThreadList({ projectId, branch }: Props) {
@@ -19,13 +21,31 @@ export function SidebarThreadList({ projectId, branch }: Props) {
   const compact = useSidebar((s) => s.compact);
   const status = statusFilter === "all" ? undefined : statusFilter;
 
-  const query = trpc.annotations.list.useInfiniteQuery(
-    { projectId, branch, url, status, limit: PAGE_SIZE },
+  const projectQuery = trpc.annotations.list.useInfiniteQuery(
     {
+      projectId: projectId ?? "",
+      branch: branch ?? "",
+      url,
+      status,
+      limit: PAGE_SIZE,
+    },
+    {
+      enabled: projectId !== null && branch !== null,
       getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
       initialCursor: undefined,
     }
   );
+
+  const userQuery = trpc.annotations.listForUser.useInfiniteQuery(
+    { url, status, limit: PAGE_SIZE, scope: "all" },
+    {
+      enabled: projectId === null,
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+      initialCursor: undefined,
+    }
+  );
+
+  const query = projectId !== null ? projectQuery : userQuery;
 
   if (query.isPending) {
     return <SidebarThreadListSkeleton />;

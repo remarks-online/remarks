@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mockUseInfiniteQuery = vi.fn();
+const mockUseInfiniteQueryUser = vi.fn();
 const mockUseCurrentUrl = vi.fn(() => "https://acme.com/page");
 
 vi.mock("@/lib/trpc", () => ({
@@ -11,6 +12,9 @@ vi.mock("@/lib/trpc", () => ({
     annotations: {
       list: {
         useInfiniteQuery: (...args: unknown[]) => mockUseInfiniteQuery(...args),
+      },
+      listForUser: {
+        useInfiniteQuery: (...args: unknown[]) => mockUseInfiniteQueryUser(...args),
       },
     },
   },
@@ -79,6 +83,10 @@ describe("SidebarThreadList", () => {
   beforeEach(() => {
     sidebarStore.getState().reset();
     mockUseInfiniteQuery.mockReset();
+    mockUseInfiniteQueryUser.mockReset();
+    // Default the personal-mode query to a stable empty result so tests that
+    // only stub the project-mode query don't hit "undefined.useInfiniteQuery".
+    mockUseInfiniteQueryUser.mockReturnValue(infiniteResult({ items: [] }));
     mockUseCurrentUrl.mockReset();
     mockUseCurrentUrl.mockReturnValue("https://acme.com/page");
   });

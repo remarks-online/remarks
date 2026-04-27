@@ -6,11 +6,10 @@ import { PartyPopper } from "lucide-react";
 import Link from "next/link";
 
 interface Props {
-  project: { id: string; slug: string; name: string };
   annotation: AnnotationResponse | null;
 }
 
-export function StepSuccess({ project, annotation }: Props) {
+export function StepSuccess({ annotation }: Props) {
   const preview = annotation?.commentText.slice(0, 80) ?? null;
   return (
     <div className="space-y-6 rounded-md border border-border p-6">
@@ -21,8 +20,8 @@ export function StepSuccess({ project, annotation }: Props) {
         <div className="flex-1">
           <h2 className="text-lg font-semibold">You&apos;re all set</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your first annotation is captured in <span className="font-medium">{project.name}</span>
-            . Invite teammates from the org switcher to share annotations across the team.
+            The extension captures, the dashboard organizes, and your AI agent picks up tasks.
+            Anything you capture stays private to you until you share it via a team project.
           </p>
           {preview ? (
             <p className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm italic">
@@ -33,9 +32,12 @@ export function StepSuccess({ project, annotation }: Props) {
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <Button asChild variant="outline">
+          <Link href="/app/projects">Create a team project</Link>
+        </Button>
         <Button asChild>
-          <Link href={`/app/projects/${project.slug}`}>View in {project.name}</Link>
+          <Link href="/app/personal">View my annotations</Link>
         </Button>
       </div>
     </div>

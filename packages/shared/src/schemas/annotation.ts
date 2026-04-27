@@ -43,8 +43,10 @@ export const domContextSchema = z.object({
 
 export const createAnnotationRequestSchema = z
   .object({
-    projectId: z.string().uuid(),
-    branch: z.string().min(1).max(MAX_BRANCH_NAME_LENGTH),
+    // Both omitted → personal (URL-keyed, owner-private) annotation. Both
+    // present → project-scoped. Half-and-half is rejected by the refine below.
+    projectId: z.string().uuid().optional(),
+    branch: z.string().min(1).max(MAX_BRANCH_NAME_LENGTH).optional(),
     targetType: annotationTargetTypeSchema,
     url: z.string().url(),
     targetSelector: z.string().max(MAX_SELECTOR_LENGTH).optional(),
@@ -62,15 +64,19 @@ export const createAnnotationRequestSchema = z
       return true;
     },
     { message: "Element annotations need selector; rectangle annotations need coords" }
-  );
+  )
+  .refine((data) => Boolean(data.projectId) === Boolean(data.branch), {
+    message: "projectId and branch must both be provided or both omitted",
+  });
 
 export type CreateAnnotationRequest = z.infer<typeof createAnnotationRequestSchema>;
 
 export const annotationResponseSchema = z.object({
   id: z.string().uuid(),
-  projectId: z.string().uuid(),
-  branchId: z.string().uuid(),
-  branchName: z.string(),
+  // Null for personal (URL-keyed) annotations; set for project-scoped ones.
+  projectId: z.string().uuid().nullable(),
+  branchId: z.string().uuid().nullable(),
+  branchName: z.string().nullable(),
   status: annotationStatusSchema,
   targetType: annotationTargetTypeSchema,
   url: z.string().url(),

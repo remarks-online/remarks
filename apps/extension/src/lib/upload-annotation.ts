@@ -51,8 +51,9 @@ export interface UploadAnnotationInput {
   token: string;
   // `env.WXT_API_URL`, no trailing slash.
   apiUrl: string;
-  projectId: string;
-  branch: string;
+  // Both undefined → personal (URL-keyed) annotation. Both set → project-scoped.
+  projectId?: string | undefined;
+  branch?: string | undefined;
   // Caller guarantees non-null (button is disabled unless capture present).
   capture: Capture;
   commentText: string;
@@ -110,14 +111,15 @@ function dataUrlToBlob(dataUrl: string, fallbackContentType: string): Blob {
 interface PresignArgs {
   token: string;
   apiUrl: string;
-  projectId: string;
+  // Omit for personal capture; the server keys the asset under the user's id.
+  projectId?: string | undefined;
   contentType: string;
   sizeBytes: number;
 }
 
 async function presign(args: PresignArgs): Promise<PresignedUploadResponse> {
   const body: PresignedUploadRequest = {
-    projectId: args.projectId,
+    ...(args.projectId ? { projectId: args.projectId } : {}),
     kind: "screenshot",
     contentType: args.contentType,
     sizeBytes: args.sizeBytes,
@@ -200,8 +202,9 @@ function buildCreateBody(
   screenshotAssetId: string | undefined
 ): CreateAnnotationRequest {
   const base = {
-    projectId: input.projectId,
-    branch: input.branch,
+    ...(input.projectId && input.branch
+      ? { projectId: input.projectId, branch: input.branch }
+      : {}),
     url: input.capture.url,
     viewport: input.capture.viewport,
     commentText: input.commentText,
@@ -225,14 +228,19 @@ function buildCreateBody(
 interface CreateArgs {
   token: string;
   apiUrl: string;
-  projectId: string;
+  // Omit for personal capture (POST /annotations); set for project-scoped
+  // (POST /projects/:projectId/annotations).
+  projectId?: string | undefined;
   body: CreateAnnotationRequest;
 }
 
 async function createAnnotation(args: CreateArgs): Promise<AnnotationResponse> {
+  const url = args.projectId
+    ? `${args.apiUrl}/projects/${args.projectId}/annotations`
+    : `${args.apiUrl}/annotations`;
   let res: Response;
   try {
-    res = await fetch(`${args.apiUrl}/projects/${args.projectId}/annotations`, {
+    res = await fetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${args.token}`,

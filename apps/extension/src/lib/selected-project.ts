@@ -16,8 +16,15 @@ export async function getSelectedProjectId(clerkOrgId: string): Promise<string |
   }
 }
 
-export async function setSelectedProjectId(clerkOrgId: string, projectId: string): Promise<void> {
+export async function setSelectedProjectId(
+  clerkOrgId: string,
+  projectId: string | null
+): Promise<void> {
   try {
+    if (projectId === null) {
+      await storage.removeItem(key(clerkOrgId));
+      return;
+    }
     await storage.setItem(key(clerkOrgId), projectId);
   } catch (err) {
     if (!isContextInvalidatedError(err)) throw err;

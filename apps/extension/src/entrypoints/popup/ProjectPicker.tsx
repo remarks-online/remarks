@@ -14,6 +14,8 @@ import {
 } from "@remarks/ui";
 import { useEffect, useState } from "react";
 
+const PERSONAL_VALUE = "__personal__";
+
 export function ProjectPicker() {
   const { organization } = useOrganization();
   const clerkOrgId = organization?.id;
@@ -23,79 +25,56 @@ export function ProjectPicker() {
     { enabled: Boolean(clerkOrgId) }
   );
 
+  // null means "Personal" (capture without sharing). Project id strings mean
+  // team-share scope. The local string state tracks the Select's value, which
+  // uses PERSONAL_VALUE for the personal sentinel since Select needs a string.
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Reconcile stored selection against the fetched list once both land.
-  // - If the stored id is still in the list, keep it.
-  // - Otherwise, fall back to the first project and persist.
+  // Hydrate stored selection on mount / org switch. With no org, the picker
+  // is implicitly Personal-only; with an org, the stored id (if any) wins.
   useEffect(() => {
-    if (!clerkOrgId) return;
-    const items = query.data?.items;
-    if (!items || items.length === 0) return;
-
+    if (!clerkOrgId) {
+      setSelectedId(null);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const stored = await getSelectedProjectId(clerkOrgId);
-      if (cancelled) return;
-      const storedStillValid = stored && items.some((p) => p.id === stored);
-      if (storedStillValid) {
-        setSelectedId(stored);
-      } else {
-        const first = items[0];
-        if (!first) return;
-        setSelectedId(first.id);
-        await setSelectedProjectId(clerkOrgId, first.id);
-      }
+      if (!cancelled) setSelectedId(stored);
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [clerkOrgId, query.data]);
+  }, [clerkOrgId]);
 
-  async function onValueChange(nextId: string) {
-    if (!clerkOrgId) return;
+  // Drop a stale selection if the stored project disappeared (org switch,
+  // project deleted) — fall back to Personal rather than silently capturing
+  // into the wrong scope.
+  useEffect(() => {
+    if (!clerkOrgId || !selectedId) return;
+    const items = query.data?.items;
+    if (!items) return;
+    if (!items.some((p) => p.id === selectedId)) {
+      setSelectedId(null);
+      void setSelectedProjectId(clerkOrgId, null);
+    }
+  }, [clerkOrgId, selectedId, query.data]);
+
+  async function onValueChange(next: string) {
+    const nextId = next === PERSONAL_VALUE ? null : next;
     setSelectedId(nextId);
-    await setSelectedProjectId(clerkOrgId, nextId);
+    if (clerkOrgId) {
+      await setSelectedProjectId(clerkOrgId, nextId);
+    }
   }
 
   function openNewProjectTab() {
     void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/app/projects/new` });
   }
 
-  if (!clerkOrgId) return null;
-
-  if (query.isLoading) {
-    return (
-      <div className="flex flex-col gap-1">
-        <p className="text-xs text-muted-foreground">Loading projects…</p>
-      </div>
-    );
-  }
-
-  if (query.isError) {
-    return (
-      <div className="flex flex-col gap-2">
-        <p className="text-sm text-destructive">Could not load projects.</p>
-        <Button size="sm" variant="outline" onClick={() => query.refetch()}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
   const items: ProjectResponse[] = query.data?.items ?? [];
-
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col gap-2">
-        <p className="text-xs text-muted-foreground">No projects in this organization yet.</p>
-        <Button size="sm" onClick={openNewProjectTab}>
-          Create project in dashboard
-        </Button>
-      </div>
-    );
-  }
+  const showProjects = clerkOrgId !== undefined;
+  const hasProjects = showProjects && items.length > 0;
 
   return (
     <div className="flex flex-col gap-1">
@@ -103,13 +82,14 @@ export function ProjectPicker() {
         htmlFor="popup-project-select"
         className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
       >
-        Project
+        Capture to
       </Label>
-      <Select {...(selectedId ? { value: selectedId } : {})} onValueChange={onValueChange}>
+      <Select value={selectedId ?? PERSONAL_VALUE} onValueChange={onValueChange}>
         <SelectTrigger id="popup-project-select">
-          <SelectValue placeholder="Select a project" />
+          <SelectValue />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value={PERSONAL_VALUE}>Personal (private)</SelectItem>
           {items.map((project) => (
             <SelectItem key={project.id} value={project.id}>
               {project.name} — {project.slug}
@@ -117,6 +97,16 @@ export function ProjectPicker() {
           ))}
         </SelectContent>
       </Select>
+      {showProjects && !hasProjects && !query.isLoading ? (
+        <Button size="sm" variant="ghost" className="self-start" onClick={openNewProjectTab}>
+          Create a project to share with a team
+        </Button>
+      ) : null}
+      {query.isError ? (
+        <Button size="sm" variant="outline" onClick={() => query.refetch()}>
+          Retry loading projects
+        </Button>
+      ) : null}
     </div>
   );
 }

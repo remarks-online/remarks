@@ -10,11 +10,18 @@ export default async function ProjectsPage() {
 
   if (!orgId) {
     return (
-      <section>
+      <section className="max-w-2xl">
         <h1 className="text-2xl font-semibold">Projects</h1>
         <p className="mt-2 text-muted-foreground">
-          Select an organization from the switcher to see its projects.
+          You're working in personal mode — captures from the extension save privately to you and
+          stay keyed by URL. Create or join a team via the organization switcher above to share
+          annotations as a project.
         </p>
+        <div className="mt-4 flex gap-2">
+          <Button asChild>
+            <Link href="/app/personal">View personal annotations</Link>
+          </Button>
+        </div>
       </section>
     );
   }

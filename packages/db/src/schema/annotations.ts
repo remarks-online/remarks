@@ -1,4 +1,5 @@
-import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { check, index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { branches } from "./branches.js";
 import { projects } from "./projects.js";
 import { users } from "./users.js";
@@ -20,12 +21,12 @@ export const annotations = pgTable(
   "annotations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    branchId: uuid("branch_id")
-      .notNull()
-      .references(() => branches.id),
+    // Null for personal (URL-keyed) annotations; set for project-scoped ones.
+    // Paired with branchId via the project_branch_consistency check below.
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branches.id),
+    // Owner of the annotation. For personal annotations (projectId null) this
+    // is also the only user who can read or mutate the row.
     authorId: uuid("author_id")
       .notNull()
       .references(() => users.id),
@@ -66,6 +67,11 @@ export const annotations = pgTable(
     branchIdx: index("annotations_branch_idx").on(table.branchId),
     authorIdx: index("annotations_author_idx").on(table.authorId),
     createdAtIdx: index("annotations_created_at_idx").on(table.createdAt),
+    authorUrlIdx: index("annotations_author_url_idx").on(table.authorId, table.url),
+    projectBranchConsistency: check(
+      "annotations_project_branch_consistency",
+      sql`(${table.projectId} IS NULL AND ${table.branchId} IS NULL) OR (${table.projectId} IS NOT NULL AND ${table.branchId} IS NOT NULL)`
+    ),
   })
 );
 

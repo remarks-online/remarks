@@ -100,8 +100,9 @@ async function processOne(
     const annotation = await args.upload({
       token: args.token,
       apiUrl: args.apiUrl,
-      projectId: record.projectId,
-      branch: record.payload.branch,
+      ...(record.projectId && record.payload.branch
+        ? { projectId: record.projectId, branch: record.payload.branch }
+        : {}),
       capture: record.payload.capture,
       commentText: record.payload.commentText,
     });

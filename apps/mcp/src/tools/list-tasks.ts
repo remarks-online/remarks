@@ -51,17 +51,22 @@ export const listTasksHandler: ToolHandler = async (args, ctx) => {
     throw new McpToolError("NOT_FOUND", "Project not found");
   }
 
-  const tasks: ListTasksOutput["tasks"] = result.items.map((row) => ({
-    id: row.id,
-    status: row.status,
-    branch: row.branchName,
-    url: row.url,
-    target_type: row.targetType,
-    comment_preview: commentPreview(row.commentText),
-    author: projectAuthor(row.author),
-    created_at: row.createdAt,
-    has_screenshot: row.assets.some((a) => a.kind === "screenshot"),
-  }));
+  // The project-scoped list endpoint only returns project annotations, all of
+  // which have a branch — but the response shape allows null (personal). Skip
+  // any null-branch row defensively rather than emit malformed output.
+  const tasks: ListTasksOutput["tasks"] = result.items
+    .filter((row): row is typeof row & { branchName: string } => row.branchName !== null)
+    .map((row) => ({
+      id: row.id,
+      status: row.status,
+      branch: row.branchName,
+      url: row.url,
+      target_type: row.targetType,
+      comment_preview: commentPreview(row.commentText),
+      author: projectAuthor(row.author),
+      created_at: row.createdAt,
+      has_screenshot: row.assets.some((a) => a.kind === "screenshot"),
+    }));
 
   const output = listTasksOutputSchema.parse({
     tasks,

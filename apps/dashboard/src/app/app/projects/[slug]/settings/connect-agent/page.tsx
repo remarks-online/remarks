@@ -1,3 +1,4 @@
+import { CopySnippet } from "@/components/copy-snippet";
 import { env } from "@/env";
 import { buildAgentPresets } from "@/lib/agent-presets";
 import { getTrpcServer } from "@/lib/trpc-server";
@@ -6,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@rema
 import { TRPCClientError } from "@trpc/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CopySnippet } from "./_components/copy-snippet";
 
 type Params = Promise<{ slug: string }>;
 

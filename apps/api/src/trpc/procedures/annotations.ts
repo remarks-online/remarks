@@ -5,17 +5,23 @@ import {
   annotationEventListResponseSchema,
   annotationListResponseSchema,
   annotationResponseSchema,
+  annotationStatusSchema,
   listAnnotationsQuerySchema,
   updateAnnotationRequestSchema,
 } from "@remarks/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { PROJECT_ROLE_RANK, assertProjectMember } from "../../lib/project-authorization.js";
+import {
+  PROJECT_ROLE_RANK,
+  assertAnnotationAccess,
+  assertProjectMember,
+} from "../../lib/project-authorization.js";
 import {
   getAnnotationById,
   getAnnotationOwnership,
   listAnnotationEvents,
   listAnnotations,
+  listAnnotationsForUser,
   updateAnnotation,
 } from "../../services/annotation.service.js";
 import { protectedProcedure, router } from "../trpc.js";
@@ -45,6 +51,14 @@ const updateInputSchema = z.object({
   input: updateAnnotationRequestSchema,
 });
 
+const listForUserInputSchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+  status: annotationStatusSchema.optional(),
+  url: z.string().url().optional(),
+  scope: z.enum(["personal", "all"]).optional(),
+});
+
 export const annotationsRouter = router({
   list: protectedProcedure.input(listInputSchema).query(async ({ ctx, input }) => {
     try {
@@ -67,7 +81,7 @@ export const annotationsRouter = router({
   get: protectedProcedure.input(annotationIdInputSchema).query(async ({ ctx, input }) => {
     try {
       const ownership = await getAnnotationOwnership(ctx.db, input.id);
-      await assertProjectMember(ctx.db, ctx.user.id, ownership.projectId);
+      await assertAnnotationAccess(ctx.db, ctx.user.id, ownership);
       const response = await getAnnotationById(ctx.db, input.id, ctx.r2);
       return annotationResponseSchema.parse(response);
     } catch (err) {
@@ -78,9 +92,27 @@ export const annotationsRouter = router({
   listEvents: protectedProcedure.input(annotationIdInputSchema).query(async ({ ctx, input }) => {
     try {
       const ownership = await getAnnotationOwnership(ctx.db, input.id);
-      await assertProjectMember(ctx.db, ctx.user.id, ownership.projectId);
+      await assertAnnotationAccess(ctx.db, ctx.user.id, ownership);
       const events = await listAnnotationEvents(ctx.db, input.id);
       return annotationEventListResponseSchema.parse({ events });
+    } catch (err) {
+      mapError(err);
+    }
+  }),
+
+  // Returns annotations the caller can see across personal + project scopes.
+  // The `url` filter scopes to a single page (used by the extension sidebar in
+  // personal mode); without it, this is the dashboard's "all my annotations"
+  // feed. Personal-only via scope: "personal".
+  listForUser: protectedProcedure.input(listForUserInputSchema).query(async ({ ctx, input }) => {
+    try {
+      const { status, ...rest } = input;
+      const result = await listAnnotationsForUser(ctx.db, {
+        userId: ctx.user.id,
+        query: { ...rest, statuses: status ? [status] : undefined },
+        r2: ctx.r2,
+      });
+      return annotationListResponseSchema.parse(result);
     } catch (err) {
       mapError(err);
     }
@@ -89,9 +121,8 @@ export const annotationsRouter = router({
   update: protectedProcedure.input(updateInputSchema).mutation(async ({ ctx, input }) => {
     try {
       const ownership = await getAnnotationOwnership(ctx.db, input.id);
-      const { role } = await assertProjectMember(ctx.db, ctx.user.id, ownership.projectId);
-      const isAuthor = ownership.authorId === ctx.user.id;
-      if (PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK.editor && !isAuthor) {
+      const { role, isOwner } = await assertAnnotationAccess(ctx.db, ctx.user.id, ownership);
+      if (role !== null && PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK.editor && !isOwner) {
         throw new ForbiddenError("Requires project editor role or annotation author");
       }
       const response = await updateAnnotation(ctx.db, {
