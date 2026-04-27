@@ -1,17 +1,24 @@
-import { createClerkClient } from "@clerk/backend";
+import { type JWTPayload, createRemoteJWKSet, jwtVerify } from "jose";
 import { env } from "../env.js";
+import { clerkIssuerFromPublishableKey } from "./clerk-issuer.js";
 
-// Clerk-backed JWT verifier for OAuth access tokens issued by Clerk's OAuth
-// provider (ADR-0015). Verifies signature against Clerk's JWKS, plus standard
-// claims (iss, aud, exp, nbf). Throws on any failure; the caller maps to 401.
-//
-// `aud` is checked against MCP_RESOURCE_URI per RFC 8707 — refuses tokens that
-// were issued for a different resource server.
+// JWT verifier for Clerk-issued OAuth access tokens (ADR-0015). Uses jose
+// directly against Clerk's JWKS — `@clerk/backend`'s `verifyToken()` is built
+// for Clerk *session* JWTs (`typ: "JWT"`) and rejects RFC 9068 OAuth access
+// tokens (`typ: "at+jwt"`), which is what Clerk's OAuth provider issues.
+// Verifies signature, issuer, audience (RFC 8707), and standard expiry/nbf.
 
-const clerk = createClerkClient({
-  secretKey: env.CLERK_SECRET_KEY,
-  publishableKey: env.CLERK_PUBLISHABLE_KEY,
-});
+// Lazy so module load doesn't try to parse the issuer URL — keeps tests with
+// stub publishable keys importable without hitting `new URL()` until a real
+// verification runs.
+let cached: { issuer: string; jwks: ReturnType<typeof createRemoteJWKSet> } | null = null;
+function getVerifierConfig(): { issuer: string; jwks: ReturnType<typeof createRemoteJWKSet> } {
+  if (cached !== null) return cached;
+  const issuer = clerkIssuerFromPublishableKey();
+  const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+  cached = { issuer, jwks };
+  return cached;
+}
 
 export interface VerifiedToken {
   clerkUserId: string;
@@ -19,9 +26,7 @@ export interface VerifiedToken {
   oauthClientName: string;
 }
 
-interface ClerkOAuthClaims {
-  sub: string;
-  aud?: string | string[];
+interface ClerkOAuthClaims extends JWTPayload {
   scope?: string;
   scopes?: string[];
   // Clerk's OAuth provider issues tokens with the OAuth client name in
@@ -59,26 +64,23 @@ function pickClientName(claims: ClerkOAuthClaims): string {
 }
 
 export async function verifyOAuthToken(jwt: string): Promise<VerifiedToken> {
-  // `verifyToken` validates signature + standard claims against Clerk's JWKS.
-  // Throws on signature/expiry/nbf failure.
-  const claims = (await clerk.authenticateRequest.constructor) as never;
-  // Use Clerk's exported verifier for raw JWTs:
-  const { verifyToken } = await import("@clerk/backend");
-  const result = (await verifyToken(jwt, {
-    secretKey: env.CLERK_SECRET_KEY,
-  })) as unknown as ClerkOAuthClaims;
+  // jose validates signature against JWKS, plus exp/nbf/iss when those options
+  // are set. It does not enforce a specific `typ` unless asked, so RFC 9068
+  // `at+jwt` tokens are accepted alongside legacy `JWT` typ.
+  const { issuer, jwks } = getVerifierConfig();
+  const { payload } = await jwtVerify(jwt, jwks, { issuer });
+  const claims = payload as ClerkOAuthClaims;
 
-  if (!audienceMatches(result.aud, env.MCP_RESOURCE_URI)) {
+  if (!audienceMatches(claims.aud, env.MCP_RESOURCE_URI)) {
     throw new Error("Token audience does not match this resource server");
   }
-  if (typeof result.sub !== "string" || result.sub.length === 0) {
+  if (typeof claims.sub !== "string" || claims.sub.length === 0) {
     throw new Error("Token missing `sub` claim");
   }
 
-  void claims;
   return {
-    clerkUserId: result.sub,
-    scopes: parseScopes(result),
-    oauthClientName: pickClientName(result),
+    clerkUserId: claims.sub,
+    scopes: parseScopes(claims),
+    oauthClientName: pickClientName(claims),
   };
 }

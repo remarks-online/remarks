@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { env } from "../env.js";
+import { clerkIssuerFromPublishableKey } from "../lib/clerk-issuer.js";
 
 // RFC 9728 Protected Resource Metadata. MCP clients fetch this on receiving a
 // 401 to discover the authorization server (Clerk) and the canonical resource
@@ -14,20 +15,6 @@ import { env } from "../env.js";
 // (roadmap as of 2026-04). The MCP server stubs `tasks:*` / `project:read`
 // onto verified Clerk JWTs in lib/jwt.ts so per-tool requireScope checks
 // keep working. Spec-gap A20 tracks unwinding the stub.
-
-function clerkIssuerFromPublishableKey(): string {
-  // Clerk publishable keys encode the frontend API host. For Phase 2 we pull
-  // it directly from CLERK_PUBLISHABLE_KEY by Base64-decoding the part after
-  // `pk_test_` or `pk_live_`. If that ever changes, override via env.
-  const segments = env.CLERK_PUBLISHABLE_KEY.split("_");
-  const encoded = segments[segments.length - 1] ?? "";
-  try {
-    const host = Buffer.from(encoded, "base64").toString("utf-8").replace(/\$$/, "");
-    return host.startsWith("http") ? host : `https://${host}`;
-  } catch {
-    return "https://clerk.com";
-  }
-}
 
 export async function wellKnownRoutes(fastify: FastifyInstance): Promise<void> {
   const issuer = clerkIssuerFromPublishableKey();
