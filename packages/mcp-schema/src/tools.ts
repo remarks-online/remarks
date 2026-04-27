@@ -7,6 +7,7 @@ import {
   mcpDomContextSchema,
   mcpRelatedTaskSchema,
   mcpTaskAuthorSchema,
+  mcpTaskProjectSchema,
   mcpTaskSummarySchema,
   openPrStatusSchema,
   rectSchema,
@@ -79,7 +80,12 @@ export type GetTaskInput = z.infer<typeof getTaskInputSchema>;
 export const getTaskOutputSchema = z.object({
   id: z.string().uuid(),
   status: taskStatusSchema,
-  branch: z.string(),
+  // Null for personal tasks (no project, therefore no branch). Always set
+  // for project-scoped tasks. Mirrors the same field on `mcpTaskSummarySchema`.
+  branch: z.string().nullable(),
+  // Null for personal tasks; populated for project-scoped tasks. Same shape
+  // as on the list endpoint.
+  project: mcpTaskProjectSchema.nullable(),
   url: z.string().url(),
   comment: z.string(),
   target: z.object({
@@ -103,7 +109,7 @@ export type GetTaskOutput = z.infer<typeof getTaskOutputSchema>;
 const getTaskTool = {
   name: "remarks_get_task",
   description:
-    "Returns full context for a single Remarks task. The `target.selector` is the primary targeting signal — it's the CSS selector of the element the user clicked. The `screenshot_url` is supplementary visual context; fetch it only if your model is multimodal. The `related_tasks` array lists other tasks on the same URL or targeting the same element; check them for dependencies before making changes (e.g., if one task says 'make blue' and another says 'add shadow', implement blue first).",
+    "Returns full context for a single Remarks task. Works for both project-scoped tasks (caller must be a project member) and personal tasks (caller must be the author). The `target.selector` is the primary targeting signal — it's the CSS selector of the element the user clicked. The `screenshot_url` is supplementary visual context; fetch it only if your model is multimodal. The `related_tasks` array lists other tasks on the same URL or targeting the same element; check them for dependencies before making changes (e.g., if one task says 'make blue' and another says 'add shadow', implement blue first). Personal tasks return `branch: null` and `project: null`.",
   input: getTaskInputSchema,
   output: getTaskOutputSchema,
 } as const;

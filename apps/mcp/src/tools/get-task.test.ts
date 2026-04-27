@@ -93,6 +93,8 @@ describe("getTaskHandler", () => {
     expect(fetchAnnotation).toHaveBeenCalledWith(TASK_ID, CLERK_USER_ID);
     const parsed = getTaskOutputSchema.parse(result.structuredContent);
     expect(parsed.id).toBe(TASK_ID);
+    expect(parsed.branch).toBe("feat/checkout");
+    expect(parsed.project).toEqual({ id: PROJECT_ID, slug: "acme" });
     expect(parsed.target).toEqual({ type: "element", selector: "button.submit" });
     expect(parsed.viewport).toEqual({ width: 1280, height: 720, dpr: 2 });
     expect(parsed.dom_context).toEqual({
@@ -109,6 +111,29 @@ describe("getTaskHandler", () => {
     if (!related) throw new Error("expected related");
     expect(related.id).toBe("77777777-7777-4777-8777-777777777777");
     expect(related.comment_preview).toBe("Add a shadow on hover");
+  });
+
+  it("personal task: branch + project null, still returns full context", async () => {
+    const personal = {
+      annotation: {
+        ...SAMPLE_PAYLOAD.annotation,
+        projectId: null,
+        projectSlug: null,
+        branchId: null,
+        branchName: null,
+      },
+      relatedTasks: [],
+    };
+    const api = makeApi({ fetchAnnotation: vi.fn().mockResolvedValue(personal) });
+
+    const result = await getTaskHandler(
+      { task_id: TASK_ID },
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+    );
+    const parsed = getTaskOutputSchema.parse(result.structuredContent);
+    expect(parsed.branch).toBeNull();
+    expect(parsed.project).toBeNull();
+    expect(parsed.id).toBe(TASK_ID);
   });
 
   it("returns null screenshot_url when no screenshot asset", async () => {
