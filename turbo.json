@@ -12,6 +12,7 @@
         "NEXT_PUBLIC_MCP_SERVER_URL",
         "WXT_CLERK_PUBLISHABLE_KEY",
         "WXT_CLERK_SYNC_HOST",
+        "WXT_DASHBOARD_URL",
         "WXT_API_URL"
       ]
     },
