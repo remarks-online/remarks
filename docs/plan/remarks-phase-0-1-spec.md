@@ -697,6 +697,16 @@ export const projectMembers = pgTable(
 
 Org membership comes from Clerk Orgs. Project membership is ours — this is what gets checked on every authorization decision.
 
+**Auto-sync from Clerk org membership.** Phase 1 has no project-level invitation UI; invitations are at the Clerk org tier. Three sync paths keep `project_members` aligned with Clerk org membership so an invited teammate can open every project in their org without a manual row insert:
+
+- **Webhooks.** `apps/api/src/routes/webhooks/clerk.ts` handles `organizationMembership.{created,updated,deleted}` and fans out `editor` rows for created/updated, removes them for deleted. `ON CONFLICT DO NOTHING` on insert preserves the project creator's `admin` row.
+- **Project creation.** `createProject` in `apps/api/src/services/project.service.ts` queries Clerk for the current org membership list and inserts an `editor` row for every member alongside the creator's `admin` row. Local `users` rows are lazily provisioned via `provisionUserFromClerk` if the `user.created` webhook hasn't yet landed.
+- **Auth-plugin backstop.** After provisioning org rows on each request, the auth plugin runs an anti-join + batch-insert to mint missing `editor` rows for the caller across every project in their Clerk-confirmed orgs. Two queries on cold state, zero on warm. Covers webhook lag (and local dev without ngrok).
+
+The project creator stays `admin`; `org:admin` does **not** auto-imply project `admin` in Phase 1. Revisit only if a beta partner asks for "all org admins manage all projects".
+
+**`myRole` in project read responses.** Read paths that return a project to a caller — `projects.list`, `projects.getBySlug`, REST `GET /projects/:id`, REST `GET /orgs/:orgId/projects` — include `myRole: "admin" | "editor" | "viewer" | null` on each row so the dashboard can gate destructive UI in-page (e.g., hide the Delete card from non-admins). The column joins `project_members` on the caller's `userId`; `null` means the caller is an org member but has no `project_members` row at the moment of the read (rare after the auto-sync paths above; still possible for non-org callers like extension API tokens). **Mutations remain authoritative server-side** via `assertProjectMember(..., { minRole })` — the UI gate is a UX nicety, not the access control.
+
 ### 3.7 Relations
 
 ```ts
@@ -1236,7 +1246,7 @@ Input shapes live in `packages/shared` per §4 (the tRPC router imports the same
 
 **Rate-limit boundary.** The §5.6 rate-limit middleware is a Fastify `preHandler` hook; tRPC mutations bypass it by design in Phase 1. Phase 1 dashboard traffic is internal-user traffic behind Clerk, so per-user mutation flooding isn't a realistic threat surface. Adding tRPC-layer rate-limiting is deferred and will need its own amendment (it would extend Context with a `redis` field and wrap mutations in a middleware that mirrors the bucket/identifier scheme in §5.6).
 
-**Adding a new procedure.** If the procedure needs a new ambient dependency (e.g., `redis`, `inngest`), extend the `Context` definition above, update `apps/api/src/trpc/trpc.ts` and `apps/api/src/trpc/context.ts` in the same PR, and add the row to the enumeration table. Don't thread raw Fastify request objects into tRPC procedures — keep authorization helpers pure (see `assertProjectMember` introduced by `spec-gaps.md` A5).
+**Adding a new procedure.** If the procedure needs a new ambient dependency (e.g., `redis`, `inngest`), extend the `Context` definition above, update `apps/api/src/trpc/trpc.ts` and `apps/api/src/trpc/context.ts` in the same PR, and add the row to the enumeration table. Don't thread raw Fastify request objects into tRPC procedures — authorization helpers are split into a pure `assertProjectMember(db, userId, projectId, opts?)` (in `apps/api/src/lib/project-authorization.ts`, called by tRPC) and a Fastify `requireProjectMember(request, projectId, opts?)` adapter (in `apps/api/src/lib/authorization.ts`) that wraps it. The two-file split keeps Fastify type augmentations out of the tRPC import graph — the dashboard's type-only `AppRouter` import would otherwise pull in `request.auth` / `fastify.db` decorations.
 
 ---
 
@@ -1254,9 +1264,29 @@ Input shapes live in `packages/shared` per §4 (the tRPC router imports the same
 
 ### 6.2 Entry points
 
-- **Background service worker** (`entrypoints/background.ts`): handles `chrome.tabs.captureVisibleTab`, responds to messages from content script.
-- **Content script** (`entrypoints/content.ts`): injected into every page. Runs the Remarks panel, element picker, rectangle drawer. Posts messages to background for screenshot capture.
+- **Background service worker** (`entrypoints/background.ts`): handles `chrome.tabs.captureVisibleTab`, responds to messages from content script. Also hosts the headless Clerk client for the auth flow described below.
+- **Content script** (`entrypoints/content.ts`): injected into every page (with auth-page exclusions, see "Injection policy"). Runs the Remarks panel, element picker, rectangle drawer. Posts messages to background for screenshot capture.
 - **Popup** (`entrypoints/popup/`): click the icon → small popup with sign-in status, current project, and an "Open Remarks panel" button. Keep it minimal; the real UI is the sidebar injected into the page.
+
+**Auth flow (popup ↔ background ↔ sidebar).** Clerk runs in two surfaces:
+
+- The popup hosts a full `<ClerkProvider syncHost={env.WXT_CLERK_SYNC_HOST}>` so signing into the dashboard signs the popup in too. `syncHost` is environment-keyed: dev points at the dashboard origin (`http://localhost:3000`); prod points at the Clerk Frontend API (`https://clerk.remarks.online`) because that's where the production `__client` cookie is set.
+- The MV3 service worker calls `createClerkClient({ publishableKey, syncHost, background: true })` from `@clerk/chrome-extension/client` lazily on first message. The `auth-status` handler returns `signedIn` / `token` / `clerkOrgId`; `clerk.addListener` pushes `auth-status-changed` to every tab whenever Clerk state moves (sign-in, sign-out, token refresh, org switch). Active org id is broadcast via `chrome.storage.local` (key `remarks.activeClerkOrgId`), written by the popup's `<ActiveOrgSync />` and consumed by every sidebar.
+- The sidebar consumes `useAuthStatus().token` from a content-script provider and re-materializes its tRPC client when the token changes. No `<ClerkProvider>` lives in the shadow root.
+
+**Manifest hardening.**
+
+- `manifest.key` (a base64 DER RSA public key in `wxt.config.ts`) pins the deterministic chrome-extension ID `baikikfefeheiildmfoaicbjbnbecgjd` across every "Load unpacked" install. The Web Store ID changes on store-side review; `clerk-allowlist-extension.ts` is re-run with the store-assigned ID at submission time.
+- Permissions: `["storage", "activeTab", "tabs", "cookies"]`. `cookies` is required because `@clerk/chrome-extension`'s background client throws `Missing 'permissions.cookies' entry in manifest.json` at first `getToken()` call without it.
+- One-time `tools/scripts/clerk-allowlist-extension.ts` adds `chrome-extension://<id>` to the Clerk instance's `allowed_origins` (idempotent; run once per Clerk environment with the corresponding `sk_test_…` / `sk_live_…`). The prod Clerk instance also needs the **Native API** feature toggled on — without it, popup loads 400 with `Native API is disabled for this instance`.
+- See `docs/runbooks/extension-clerk-synchost.md` for the keypair-generation and allowlist procedure.
+
+**Injection policy** (content script `excludeMatches`):
+
+- Excluded: `accounts.google.com`, `appleid.apple.com`, `clerk.remarks.online`, `*.clerk.accounts.dev`. Without these the sidebar flashes mid-OAuth and persists when users land directly on the FAPI host.
+- Included: `app.remarks.online` and `localhost:3000` so we dogfood Remarks-on-Remarks. The `isExtensionContextValid` guard mitigates HMR-reload errors in local dev.
+
+**Production build.** `pnpm --filter @remarks/extension build:prod` runs `wxt build --mode production` via `scripts/prepare-with-exit.cjs`, which makes Vite layer `apps/extension/.env.production` over `.env`. `wxt.config.ts` reads `process.env.NODE_ENV === "production"` to drop `http://localhost/*` and `http://localhost:3000/*` from `host_permissions` and `externally_connectable.matches` in prod manifests. `apps/extension/.env.example` documents the prod env shape.
 
 ### 6.3 Data flow
 
@@ -1282,7 +1312,7 @@ If the network fails at any step after capture, the annotation is queued in Inde
 - Respects host page's `html[data-theme]` / `prefers-color-scheme`, with Auto/Light/Dark override in the More menu.
 - Dockable: right (default), left, bottom. User-dragged width (320–520px vertical) and height (200–600px bottom) persist in `storage.sync`.
 - Compact mode triggers automatically below 420px viewport; manual override in More menu. Minimized → 40×40 launcher pill anchored to current dock.
-- States: signed out → "open popup to sign in" CTA; signed in, no project → "pick project in popup" CTA; signed in with project → status tabs (To Do / Doing / Done / Rejected), thread list (populated in task 1.29), compose box. Clerk session presence in the content script is learned via a background `auth-status` message + `chrome.cookies.onChanged` push; full `ClerkProvider` inside the shadow root is deferred (spec-gaps A10).
+- States: signed out → "open popup to sign in" CTA; signed in, no project → "pick project in popup" CTA; signed in with project → status tabs (To Do / Doing / Done / Rejected), thread list (populated in task 1.29), compose box. Clerk session is consumed via the content-script auth provider described in §6.2 ("Auth flow"); the shadow root never embeds a `ClerkProvider`.
 
 ### 6.5 Element picker
 
@@ -1367,6 +1397,8 @@ export const trpcServer = createTRPCProxyClient<AppRouter>({
   links: [httpBatchLink({ url: `${process.env.API_URL}/trpc`, headers: () => ({ /* forward auth */ }) })],
 });
 ```
+
+**Loading states with `notFound()` routes.** Don't add `loading.tsx` files alongside pages that may call `notFound()`: Next.js App Router flushes the response with HTTP 200 the instant streaming begins, and the status is locked before the page resolves to 404 (see [vercel/next.js#76474](https://github.com/vercel/next.js/issues/76474), [#45801](https://github.com/vercel/next.js/issues/45801)). Instead, do the validating fetch (`projects.getBySlug`, `projects.list`) inline in the page so any `notFound()` runs before streaming, then wrap slow children in `<Suspense fallback={<Skeleton />}>` around a child server component that does the second fetch. Skeletons stay inline (route-private `_components/` with `animate-pulse` + `bg-muted`); no new `packages/ui` primitive.
 
 ### 7.4 Realtime updates
 
@@ -1586,7 +1618,9 @@ pnpm --filter @remarks/db db:generate   # generates new migration SQL
 pnpm --filter @remarks/db db:migrate    # applies pending to $DATABASE_URL
 ```
 
-The API, on startup, checks migration status and refuses to start if migrations are pending. Migrations are applied manually (from your laptop against prod) for Phase 1 — automation comes later when you have enough of them to trust the process.
+The API, on startup, checks migration status and refuses to start if migrations are pending.
+
+Production migrations run inside `.github/workflows/deploy-api.yml` ahead of `flyctl deploy`. The workflow step uses `secrets.PROD_DATABASE_URL` — the Neon `main` **direct** endpoint, not the runtime pooled (pgbouncer) URL, because pgbouncer can't run DDL. Auto-migrating from API boot is explicitly avoided: it races with multi-machine deploys and the API's pgbouncer connection couldn't run the DDL anyway. Manual application from a workstation against the direct endpoint stays available as the incident escape hatch (`docs/runbooks/environments.md` documents it).
 
 ### 9.5 Extension releases
 
