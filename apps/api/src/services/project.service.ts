@@ -27,6 +27,13 @@ export interface UpdateProjectArgs {
   input: UpdateProjectRequest;
 }
 
+export interface TransferProjectToOrgArgs {
+  projectId: string;
+  targetClerkOrgId: string;
+  callerUserId: string;
+  clerk: ClerkClient;
+}
+
 function toProjectResponse(
   row: typeof schema.projects.$inferSelect,
   myRole: ProjectRole | null
@@ -167,6 +174,97 @@ export async function createProject(db: DB, args: CreateProjectArgs): Promise<Pr
 
     // Creator is always admin of the new project.
     return toProjectResponse(inserted, "admin");
+  });
+}
+
+export async function transferProjectToOrg(
+  db: DB,
+  args: TransferProjectToOrgArgs
+): Promise<ProjectResponse> {
+  const { projectId, targetClerkOrgId, callerUserId, clerk } = args;
+
+  // Load the project up front so we can enforce creator-only access and reject
+  // already-org projects before doing any Clerk network work. Non-creators get
+  // NotFoundError to avoid leaking existence (parallels assertProjectMember).
+  const project = await db.query.projects.findFirst({
+    where: eq(schema.projects.id, projectId),
+    columns: { id: true, orgId: true, creatorUserId: true, slug: true },
+  });
+  if (!project || project.creatorUserId !== callerUserId) {
+    throw new NotFoundError("Project");
+  }
+  if (project.orgId !== null) {
+    throw new ConflictError("Project already belongs to an organization");
+  }
+
+  // Fetch the target org's Clerk membership outside the DB transaction (network
+  // call). The fan-out below mirrors createProject's: every other Clerk member
+  // gets an `editor` row so the transferred project is visible immediately.
+  const memberships = await clerk.organizations.getOrganizationMembershipList({
+    organizationId: targetClerkOrgId,
+    limit: 500,
+  });
+  const otherClerkUserIds = memberships.data
+    .map((m) => m.publicUserData?.userId)
+    .filter((id): id is string => typeof id === "string");
+
+  const coMemberIds: string[] = [];
+  for (const clerkUserId of otherClerkUserIds) {
+    const existing = await db.query.users.findFirst({
+      where: eq(schema.users.clerkUserId, clerkUserId),
+      columns: { id: true },
+    });
+    if (existing) {
+      if (existing.id !== callerUserId) coMemberIds.push(existing.id);
+      continue;
+    }
+    const provisioned = await provisionUserFromClerk(db, clerk, clerkUserId);
+    if (provisioned && provisioned.id !== callerUserId) coMemberIds.push(provisioned.id);
+  }
+
+  return await db.transaction(async (tx) => {
+    const org = await tx.query.organizations.findFirst({
+      where: eq(schema.organizations.clerkOrgId, targetClerkOrgId),
+      columns: { id: true },
+    });
+    if (!org) {
+      throw new NotFoundError("Organization");
+    }
+
+    let updated: typeof schema.projects.$inferSelect;
+    try {
+      const [row] = await tx
+        .update(schema.projects)
+        .set({ orgId: org.id, updatedAt: new Date() })
+        .where(eq(schema.projects.id, projectId))
+        .returning();
+      if (!row) throw new NotFoundError("Project");
+      updated = row;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictError(
+          "A project with this slug already exists in the target organization"
+        );
+      }
+      throw err;
+    }
+
+    if (coMemberIds.length > 0) {
+      // onConflictDoNothing preserves the creator's existing admin row and
+      // skips any teammate already on the project.
+      await tx
+        .insert(schema.projectMembers)
+        .values(
+          coMemberIds.map((userId) => ({
+            projectId: updated.id,
+            userId,
+            role: "editor" as const,
+          }))
+        )
+        .onConflictDoNothing();
+    }
+
+    return toProjectResponse(updated, "admin");
   });
 }
 

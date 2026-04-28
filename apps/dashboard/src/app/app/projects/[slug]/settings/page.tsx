@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DeleteProjectForm } from "./_components/delete-project-form";
 import { EditProjectForm } from "./_components/edit-project-form";
+import { MoveToOrgForm } from "./_components/move-to-org-form";
 
 type Params = Promise<{ slug: string }>;
 
@@ -50,6 +51,10 @@ export default async function ProjectSettingsPage({ params }: { params: Params }
       </div>
 
       <EditProjectForm orgId={project.orgId !== null ? (orgId ?? null) : null} project={project} />
+
+      {project.orgId === null && project.myRole === "admin" ? (
+        <MoveToOrgForm project={project} />
+      ) : null}
 
       <div className="rounded-md border p-4">
         <h2 className="text-base font-medium">Connect an agent</h2>
