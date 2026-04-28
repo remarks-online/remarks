@@ -15,6 +15,7 @@ import { buildAssetR2Key } from "../../services/upload.service.js";
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
   getOrganizationMembershipList: vi.fn(),
+  publishR2Cleanup: vi.fn(async () => {}),
 }));
 
 vi.mock("@clerk/backend", () => ({
@@ -22,6 +23,14 @@ vi.mock("@clerk/backend", () => ({
   createClerkClient: () => ({
     users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
   }),
+}));
+
+// Replace the publish helper so the service captures intent without making
+// a network call. Mocking the client module would also break the Inngest
+// serve handler which needs `createFunction` from the same module — going
+// through publish.ts keeps the serve plumbing intact.
+vi.mock("../../inngest/publish.js", () => ({
+  publishR2Cleanup: mocks.publishR2Cleanup,
 }));
 
 const { buildServer } = await import("../../server.js");
@@ -173,6 +182,43 @@ describe("DELETE /annotations/:annotationId (integration)", () => {
       where: eq(schema.annotationAssets.annotationId, seeded.annotationId),
     });
     expect(assets).toHaveLength(0);
+
+    // R2 cleanup: the asset's r2Key must have been queued for cleanup.
+    expect(mocks.publishR2Cleanup).toHaveBeenCalledTimes(1);
+    const [, keys, origin] = mocks.publishR2Cleanup.mock.calls[0] as [
+      unknown,
+      string[],
+      string,
+    ];
+    expect(origin).toBe(`annotation:${seeded.annotationId}`);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toMatch(new RegExp(`^projects/${seeded.projectId}/screenshot/`));
+  });
+
+  test("annotation with no assets → 204, no R2 cleanup event published", async () => {
+    const seeded = await seedAnnotation({
+      role: "admin",
+      authorIsCurrentUser: true,
+      withAsset: false,
+    });
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:admin" }],
+    });
+
+    const res = await server.inject({
+      method: "DELETE",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER },
+    });
+
+    expect(res.statusCode).toBe(204);
+    // publishR2Cleanup is still invoked — it short-circuits internally on
+    // empty arrays — but no Inngest event ends up in flight.
+    const callsWithKeys = mocks.publishR2Cleanup.mock.calls.filter(
+      (c) => Array.isArray(c[1]) && (c[1] as string[]).length > 0
+    );
+    expect(callsWithKeys).toHaveLength(0);
   });
 
   test("author with viewer role → 204", async () => {

@@ -106,7 +106,7 @@ export async function projectRoutes(fastify: FastifyInstance): Promise<void> {
 
     await requireProjectMember(request, projectId, { minRole: "admin" });
 
-    await deleteProject(request.server.db, projectId);
+    await deleteProject(request.server.db, request.server.inngest, projectId);
     return reply.code(204).send();
   });
 }

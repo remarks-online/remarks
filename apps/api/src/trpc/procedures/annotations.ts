@@ -145,7 +145,7 @@ export const annotationsRouter = router({
       if (role !== null && PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK.editor && !isOwner) {
         throw new ForbiddenError("Requires project editor role or annotation author");
       }
-      await deleteAnnotation(ctx.db, input.id);
+      await deleteAnnotation(ctx.db, ctx.inngest, input.id);
       return { ok: true } as const;
     } catch (err) {
       mapError(err);

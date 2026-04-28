@@ -3,6 +3,8 @@ import { type DB, schema } from "@remarks/db";
 import type { ClerkOrgData, ClerkUserData } from "@remarks/shared";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
+import type { AppInngest } from "../inngest/client.js";
+import { publishR2Cleanup } from "../inngest/publish.js";
 import type { OrgMembership } from "../trpc/trpc.js";
 
 function pickEmail(data: ClerkUserData): string | null {
@@ -72,10 +74,33 @@ export async function upsertOrg(db: DB, data: ClerkOrgData): Promise<void> {
     });
 }
 
-export async function deleteOrg(db: DB, clerkOrgId: string): Promise<void> {
+export async function deleteOrg(db: DB, inngest: AppInngest, clerkOrgId: string): Promise<void> {
+  // Resolve to the local row first so the JOIN below can use the same id
+  // path we cascade through. If the org doesn't exist we no-op (matches
+  // pre-Inngest behavior — Clerk webhook deliveries can race).
+  const org = await db.query.organizations.findFirst({
+    where: eq(schema.organizations.clerkOrgId, clerkOrgId),
+    columns: { id: true },
+  });
+  if (!org) return;
+
+  // Walk org → projects → annotations → annotation_assets to capture every
+  // R2 key. The cascade fires on the DELETE below and will erase these rows.
+  const assetKeys = await db
+    .select({ r2Key: schema.annotationAssets.r2Key })
+    .from(schema.annotationAssets)
+    .innerJoin(schema.annotations, eq(schema.annotations.id, schema.annotationAssets.annotationId))
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.annotations.projectId))
+    .where(eq(schema.projects.orgId, org.id));
+
   // FK cascades handle projects → branches → annotations → events/assets.
-  // TODO(phase-2): publish to Inngest for R2 object cleanup per ADR-0014 §3.
   await db.delete(schema.organizations).where(eq(schema.organizations.clerkOrgId, clerkOrgId));
+
+  await publishR2Cleanup(
+    inngest,
+    assetKeys.map((k) => k.r2Key),
+    `org:${clerkOrgId}`
+  );
 }
 
 export function clerkUserToWebhookData(user: User): ClerkUserData {

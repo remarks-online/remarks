@@ -158,7 +158,7 @@ export const projectsRouter = router({
       await assertProjectMember(ctx.db, ctx.user.id, input.projectId, {
         minRole: "admin",
       });
-      await deleteProject(ctx.db, input.projectId);
+      await deleteProject(ctx.db, ctx.inngest, input.projectId);
       return { id: input.projectId };
     } catch (err) {
       if (err instanceof ForbiddenError) {

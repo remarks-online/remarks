@@ -28,6 +28,15 @@ export const envSchema = z.object({
   // secrets for production.
   POSTHOG_PROJECT_API_KEY: z.string().optional(),
   POSTHOG_HOST: z.string().url().default("https://us.i.posthog.com"),
+  // Inngest event API key — used by the Inngest SDK to authenticate events
+  // sent from this app. Required: phase-2 task 2.30 (R2 cleanup) is the first
+  // production use of Inngest, and we want startup to fail loudly if the
+  // secret isn't wired. Find under Inngest dashboard → Manage → Event Keys.
+  INNGEST_EVENT_KEY: z.string().min(1),
+  // Inngest signing key — Inngest signs HTTP calls into our /inngest serve
+  // handler with this; the SDK rejects unsigned requests. Required for the
+  // same reason as INNGEST_EVENT_KEY. Same dashboard, "Signing Key" tab.
+  INNGEST_SIGNING_KEY: z.string().min(1),
 });
 
 export type Env = z.infer<typeof envSchema>;

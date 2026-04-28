@@ -10,6 +10,8 @@ import {
   ValidationError,
 } from "@remarks/shared";
 import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import type { AppInngest } from "../inngest/client.js";
+import { publishR2Cleanup } from "../inngest/publish.js";
 import {
   type AnnotationListCursor,
   decodeAnnotationListCursor,
@@ -681,14 +683,30 @@ export async function listAnnotationEvents(
   }));
 }
 
-export async function deleteAnnotation(db: DB, annotationId: string): Promise<void> {
+export async function deleteAnnotation(
+  db: DB,
+  inngest: AppInngest,
+  annotationId: string
+): Promise<void> {
+  // Capture R2 keys *before* the delete — FK cascade on annotation_assets
+  // erases them otherwise.
+  const assetKeys = await db
+    .select({ r2Key: schema.annotationAssets.r2Key })
+    .from(schema.annotationAssets)
+    .where(eq(schema.annotationAssets.annotationId, annotationId));
+
   // FK cascades on annotation_events and annotation_assets handle children.
-  // TODO(phase-2 task 2.30): publish to Inngest for R2 object cleanup.
   const deleted = await db
     .delete(schema.annotations)
     .where(eq(schema.annotations.id, annotationId))
     .returning({ id: schema.annotations.id });
   if (deleted.length === 0) throw new NotFoundError("Annotation");
+
+  await publishR2Cleanup(
+    inngest,
+    assetKeys.map((k) => k.r2Key),
+    `annotation:${annotationId}`
+  );
 }
 
 interface ResolvedAsset {

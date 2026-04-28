@@ -9,6 +9,8 @@ import {
   type UpdateProjectRequest,
 } from "@remarks/shared";
 import { and, desc, eq, isNull } from "drizzle-orm";
+import type { AppInngest } from "../inngest/client.js";
+import { publishR2Cleanup } from "../inngest/publish.js";
 import { isUniqueViolation } from "../lib/db-errors.js";
 import { provisionUserFromClerk } from "./clerk-sync.service.js";
 
@@ -290,10 +292,17 @@ async function fetchCallerRole(
   return row?.role ?? null;
 }
 
-export async function deleteProject(db: DB, projectId: string): Promise<void> {
+export async function deleteProject(db: DB, inngest: AppInngest, projectId: string): Promise<void> {
+  // Capture every R2 key for assets attached to annotations under this
+  // project — FK cascade obliterates the rows otherwise.
+  const assetKeys = await db
+    .select({ r2Key: schema.annotationAssets.r2Key })
+    .from(schema.annotationAssets)
+    .innerJoin(schema.annotations, eq(schema.annotations.id, schema.annotationAssets.annotationId))
+    .where(eq(schema.annotations.projectId, projectId));
+
   // FK cascades on project_members, branches, annotations, annotation_assets,
   // annotation_events, project_api_tokens handle children.
-  // TODO(phase-2 task 2.30): publish to Inngest for R2 object cleanup.
   const deleted = await db
     .delete(schema.projects)
     .where(eq(schema.projects.id, projectId))
@@ -301,6 +310,12 @@ export async function deleteProject(db: DB, projectId: string): Promise<void> {
   if (deleted.length === 0) {
     throw new NotFoundError("Project");
   }
+
+  await publishR2Cleanup(
+    inngest,
+    assetKeys.map((k) => k.r2Key),
+    `project:${projectId}`
+  );
 }
 
 export async function getProjectBySlug(

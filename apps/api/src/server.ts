@@ -4,9 +4,11 @@ import { RemarksError, ValidationError } from "@remarks/shared";
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./env.js";
+import { inngestServeRoutes } from "./inngest/serve.js";
 import authPlugin from "./plugins/auth.js";
 import clerkPlugin from "./plugins/clerk.js";
 import dbPlugin from "./plugins/db.js";
+import inngestPlugin from "./plugins/inngest.js";
 import r2Plugin from "./plugins/r2.js";
 import rawBodyPlugin from "./plugins/raw-body.js";
 import { annotationRoutes } from "./routes/annotations/index.js";
@@ -76,9 +78,13 @@ export async function buildServer(): Promise<FastifyInstance> {
   await server.register(rawBodyPlugin);
   await server.register(dbPlugin);
   await server.register(r2Plugin);
+  await server.register(inngestPlugin);
   await server.register(clerkPlugin, {});
   await server.register(healthRoutes);
   await server.register(clerkWebhookRoutes);
+  // Inngest serve handler — signature-verified by the SDK, registered at the
+  // same scope as Clerk webhooks (no Clerk JWT required).
+  await server.register(inngestServeRoutes);
   // Internal MCP-only routes (Phase 2 task 2.5). Registered as its own
   // top-level scope — the internal-auth plugin's onRequest hook is
   // encapsulated here, so /health and /webhooks/* still work without an

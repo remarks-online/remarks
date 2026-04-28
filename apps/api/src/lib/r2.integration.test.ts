@@ -4,9 +4,11 @@ import { ensureBucket, readR2EnvOrThrow } from "../../test/integration/r2.js";
 import {
   type R2Client,
   createR2Client,
+  deleteObjects,
   getObject,
   getPresignedGetUrl,
   getPresignedPutUrl,
+  headObject,
   putObject,
 } from "./r2.js";
 
@@ -36,6 +38,34 @@ describe("r2 client (integration)", () => {
     const out = await getObject(client, { key });
     expect(Buffer.from(out.body).toString("utf8")).toBe(payload);
     expect(out.contentType).toBe("text/plain");
+  });
+
+  test("deleteObjects removes every key in one call and is idempotent", async () => {
+    const keys = [
+      `${testRunPrefix}/del-1.bin`,
+      `${testRunPrefix}/del-2.bin`,
+      `${testRunPrefix}/del-3.bin`,
+    ];
+    for (const key of keys) {
+      await putObject(client, {
+        key,
+        body: Buffer.from("x", "utf8"),
+        contentType: "application/octet-stream",
+      });
+    }
+
+    await deleteObjects(client, keys);
+    for (const key of keys) {
+      expect(await headObject(client, { key })).toBeNull();
+    }
+
+    // Re-deleting the same keys must not throw — DeleteObjects is idempotent
+    // and Inngest may retry the cleanup function on transient failures.
+    await expect(deleteObjects(client, keys)).resolves.toBeUndefined();
+  });
+
+  test("deleteObjects no-ops on empty arrays without contacting S3", async () => {
+    await expect(deleteObjects(client, [])).resolves.toBeUndefined();
   });
 
   test("presigned PUT upload then presigned GET returns the same bytes", async () => {
