@@ -15,6 +15,7 @@ import {
   getProjectBySlug,
   listPersonalProjects,
   listProjectsByOrg,
+  transferProjectToOrg,
   updateProject,
 } from "../../services/project.service.js";
 import { protectedProcedure, router } from "../trpc.js";
@@ -44,6 +45,11 @@ const updateInputSchema = z.object({
 
 const deleteInputSchema = z.object({
   projectId: z.string().uuid(),
+});
+
+const transferToOrgInputSchema = z.object({
+  projectId: z.string().uuid(),
+  targetClerkOrgId: z.string().min(1),
 });
 
 export const projectsRouter = router({
@@ -152,6 +158,43 @@ export const projectsRouter = router({
       throw err;
     }
   }),
+
+  transferToOrg: protectedProcedure
+    .input(transferToOrgInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      // Mirrors `create`: target-org-admin gates the procedure; the service
+      // additionally enforces caller-is-creator on the project.
+      const membership = ctx.orgMemberships.find(
+        (m) => m.clerkOrgId === input.targetClerkOrgId && m.role === "org:admin"
+      );
+      if (!membership) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Org admin role required to transfer a project into this organization",
+          cause: new ForbiddenError(
+            "Org admin role required to transfer a project into this organization"
+          ),
+        });
+      }
+
+      try {
+        const result = await transferProjectToOrg(ctx.db, {
+          projectId: input.projectId,
+          targetClerkOrgId: input.targetClerkOrgId,
+          callerUserId: ctx.user.id,
+          clerk: ctx.clerk,
+        });
+        return projectResponseSchema.parse(result);
+      } catch (err) {
+        if (err instanceof ConflictError) {
+          throw new TRPCError({ code: "CONFLICT", message: err.message, cause: err });
+        }
+        if (err instanceof NotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: err.message, cause: err });
+        }
+        throw err;
+      }
+    }),
 
   delete: protectedProcedure.input(deleteInputSchema).mutation(async ({ ctx, input }) => {
     try {

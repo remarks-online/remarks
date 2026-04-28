@@ -1230,3 +1230,225 @@ describe("tRPC projects.delete (integration)", () => {
     expect(remaining).toHaveLength(0);
   });
 });
+
+interface SeededPersonalProject {
+  user: typeof schema.users.$inferSelect;
+  project: typeof schema.projects.$inferSelect;
+}
+
+async function seedPersonalProject(
+  db: Awaited<ReturnType<typeof getIntegrationDb>>,
+  args: { clerkSuffix: string; slug?: string }
+): Promise<SeededPersonalProject> {
+  const user = await seedUser(db, { clerkUserId: `user_${args.clerkSuffix}` });
+  const project = await insertProject(db, {
+    orgId: null,
+    creatorUserId: user.id,
+    name: "Personal",
+    slug: args.slug ?? `personal-${args.clerkSuffix}`,
+  });
+  await db.insert(schema.projectMembers).values({
+    projectId: project.id,
+    userId: user.id,
+    role: "admin",
+  });
+  return { user, project };
+}
+
+describe("tRPC projects.transferToOrg (integration)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    await getIntegrationDb();
+    server = await buildServer();
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    await closeIntegrationDb();
+  });
+
+  beforeEach(async () => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    await truncateAll();
+  });
+
+  test("creator + target-org admin → 200, project moved and members fanned out", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_transfer_happy" });
+    const { user: creator, project } = await seedPersonalProject(db, {
+      clerkSuffix: "transfer_happy",
+    });
+    const teammate = await seedUser(db, { clerkUserId: "user_transfer_teammate" });
+
+    mockAuth({
+      clerkUserId: creator.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+    mocks.getOrgMembershipList.mockResolvedValueOnce({
+      data: [
+        { publicUserData: { userId: creator.clerkUserId } },
+        { publicUserData: { userId: teammate.clerkUserId } },
+      ],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.transferToOrg",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, targetClerkOrgId: org.clerkOrgId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json().result.data;
+    expect(body).toMatchObject({ id: project.id, orgId: org.id, myRole: "admin" });
+
+    const rows = await db.query.projectMembers.findMany({
+      where: eq(schema.projectMembers.projectId, project.id),
+    });
+    const byUserId = new Map(rows.map((r) => [r.userId, r.role]));
+    expect(byUserId.get(creator.id)).toBe("admin");
+    expect(byUserId.get(teammate.id)).toBe("editor");
+    expect(byUserId.size).toBe(2);
+  });
+
+  test("non-creator (even if target-org admin) → NOT_FOUND, existence not leaked", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_transfer_noncreator" });
+    const { project } = await seedPersonalProject(db, { clerkSuffix: "transfer_noncreator" });
+    const stranger = await seedUser(db, { clerkUserId: "user_transfer_stranger" });
+
+    mockAuth({
+      clerkUserId: stranger.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+    mocks.getOrgMembershipList.mockResolvedValueOnce({
+      data: [{ publicUserData: { userId: stranger.clerkUserId } }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.transferToOrg",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, targetClerkOrgId: org.clerkOrgId },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.data.code).toBe("NOT_FOUND");
+  });
+
+  test("creator without org:admin in target org → FORBIDDEN", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_transfer_member" });
+    const { user: creator, project } = await seedPersonalProject(db, {
+      clerkSuffix: "transfer_member",
+    });
+
+    mockAuth({
+      clerkUserId: creator.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.transferToOrg",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, targetClerkOrgId: org.clerkOrgId },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.data.code).toBe("FORBIDDEN");
+  });
+
+  test("slug already exists in target org → CONFLICT", async () => {
+    const db = await getIntegrationDb();
+    const org = await seedOrg(db, { clerkOrgId: "org_transfer_collide" });
+    const { user: creator, project } = await seedPersonalProject(db, {
+      clerkSuffix: "transfer_collide",
+      slug: "collide",
+    });
+    // Pre-existing org project with the same slug.
+    await insertProject(db, {
+      orgId: org.id,
+      creatorUserId: creator.id,
+      name: "Collide",
+      slug: "collide",
+    });
+
+    mockAuth({
+      clerkUserId: creator.clerkUserId,
+      memberships: [{ clerkOrgId: org.clerkOrgId, role: "org:admin" }],
+    });
+    mocks.getOrgMembershipList.mockResolvedValueOnce({
+      data: [{ publicUserData: { userId: creator.clerkUserId } }],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.transferToOrg",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, targetClerkOrgId: org.clerkOrgId },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.data.code).toBe("CONFLICT");
+
+    // Project remains personal — transfer txn rolled back on the unique violation.
+    const reloaded = await db.query.projects.findFirst({
+      where: eq(schema.projects.id, project.id),
+      columns: { orgId: true },
+    });
+    expect(reloaded?.orgId).toBeNull();
+  });
+
+  test("project already belongs to an organization → CONFLICT", async () => {
+    const db = await getIntegrationDb();
+    const sourceOrg = await seedOrg(db, { clerkOrgId: "org_transfer_source" });
+    const targetOrg = await seedOrg(db, { clerkOrgId: "org_transfer_target" });
+    const creator = await seedUser(db, { clerkUserId: "user_transfer_orgproj" });
+    const project = await insertProject(db, {
+      orgId: sourceOrg.id,
+      creatorUserId: creator.id,
+      name: "Already",
+      slug: "already-in-org",
+    });
+    await db.insert(schema.projectMembers).values({
+      projectId: project.id,
+      userId: creator.id,
+      role: "admin",
+    });
+
+    mockAuth({
+      clerkUserId: creator.clerkUserId,
+      memberships: [
+        { clerkOrgId: sourceOrg.clerkOrgId, role: "org:admin" },
+        { clerkOrgId: targetOrg.clerkOrgId, role: "org:admin" },
+      ],
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.transferToOrg",
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { projectId: project.id, targetClerkOrgId: targetOrg.clerkOrgId },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.data.code).toBe("CONFLICT");
+  });
+
+  test("missing Authorization → UNAUTHORIZED", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/trpc/projects.transferToOrg",
+      headers: { "content-type": "application/json" },
+      payload: {
+        projectId: "00000000-0000-0000-0000-000000000000",
+        targetClerkOrgId: "org_anything",
+      },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("UNAUTHORIZED");
+  });
+});
