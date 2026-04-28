@@ -2,7 +2,7 @@ import { env } from "@/env";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@remarks/ui";
 
 function openSignIn() {
-  void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/sign-in` });
+  void chrome.tabs.create({ url: `${env.WXT_DASHBOARD_URL}/sign-in` });
 }
 
 export function SidebarSignedOut() {

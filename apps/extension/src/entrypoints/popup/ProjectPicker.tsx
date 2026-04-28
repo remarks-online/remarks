@@ -70,7 +70,7 @@ export function ProjectPicker() {
   }
 
   function openNewProjectTab() {
-    void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/app/projects/new` });
+    void chrome.tabs.create({ url: `${env.WXT_DASHBOARD_URL}/app/projects/new` });
   }
 
   const items: ProjectResponse[] = query.data?.org ?? [];
