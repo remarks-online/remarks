@@ -119,16 +119,19 @@ Eight tools, total. Grouped by purpose.
 
 #### Discovery
 
-**`remarks_list_tasks`** — List tasks in a project, optionally filtered.
+**`remarks_list_tasks`** — List tasks across one of three scopes: a single project, every project in an org, or the caller's personal annotations.
 
 ```ts
 input: {
-  project_id: string (uuid),
-  branch?: string,                               // exact match; omit for all branches
+  project_id?: string (uuid),                    // project scope
+  org_id?: string (uuid),                        // org scope (rolls up every project the caller is a member of in that org)
+  branch?: string,                               // exact match; requires project_id
   status?: ("to_do" | "doing" | "done" | "rejected")[],  // default: ["to_do", "doing"]
   limit?: number (1–100, default 20),
   cursor?: string,                               // opaque pagination token
 }
+// Mutual exclusion: at most one of `project_id` / `org_id`. Omitting both → personal scope.
+// `branch` requires `project_id` (it has no defined meaning at org or personal scope).
 
 output: {
   tasks: Array<TaskSummary>,
@@ -138,17 +141,18 @@ output: {
 TaskSummary: {
   id: string (uuid),
   status: "to_do" | "doing" | "done" | "rejected",
-  branch: string,
+  branch: string | null,                         // null for personal annotations (no branch)
   url: string,
   target_type: "element" | "rectangle" | "route",
   comment_preview: string,                       // first 120 chars
   author: { name: string, email: string },
   created_at: string (ISO),
   has_screenshot: boolean,
+  project: { id: string, slug: string } | null,  // null when scope is personal
 }
 ```
 
-Description: *"Returns Remarks tasks for the given project. Tasks are visual feedback items that a human has left on a running web application. Default filter returns open (to_do) and in-progress (doing) tasks. Call `remarks_get_task` to get full context for a specific task."*
+Description: *"Returns Remarks tasks. With `project_id`, lists tasks for one project. With `org_id`, rolls up every project the caller can see in that org. With neither, returns the caller's personal (URL-keyed) annotations. Default filter returns open (to_do) and in-progress (doing) tasks. Call `remarks_get_task` to get full context for a specific task."*
 
 #### Working with a single task
 
@@ -303,13 +307,15 @@ Description: *"Signals that a set of Remarks tasks has been completed on a branc
 
 #### Health
 
-**`remarks_whoami`** — Who am I, what can I access? Useful for agents verifying their connection.
+**`remarks_whoami`** — Who am I, what can I access? Useful for agents verifying their connection and discovering the orgs/projects to drive subsequent calls against.
 
 ```ts
 input: {}
 
 output: {
-  project: { id, name, slug },                   // the project this token is scoped to
+  user: { id, name, email },
+  projects: Array<{ id, name, slug, role }>,     // every project the caller is a member of, across orgs
+  orgs: Array<{ id, clerk_org_id, name, slug, role }>,  // every org the caller is a member of
   token_name: string,
   token_scopes: string[],
   server_version: string,                        // e.g., "v1.0.3"
@@ -317,7 +323,7 @@ output: {
 }
 ```
 
-Description: *"Returns information about the current Remarks connection. Use this to verify connectivity and see which project this token accesses."*
+Description: *"Returns information about the current Remarks connection: the user, every org and project they can access, and the connected token's metadata. Use this to discover scope before calling `remarks_list_tasks` with a specific `project_id` or `org_id`."*
 
 ### 3.3 Errors
 
