@@ -138,6 +138,11 @@ jobs:
       # /internal/*, but env.ts validates at module load when Playwright
       # spins up the API webServer.
       INTERNAL_API_TOKEN: ci-internal-api-token-not-for-prod-32chars
+      # Required by env-schema (task 2.30 — first Inngest use). The e2e suite
+      # never publishes a cleanup event so the values are throwaways; they
+      # only need to satisfy the strict env parse on API boot.
+      INNGEST_EVENT_KEY: ci-placeholder-not-for-prod
+      INNGEST_SIGNING_KEY: signkey-test-ci-placeholder-not-for-prod
       # WXT bakes these into the extension bundle at build time. SYNC_HOST and
       # API_URL match the localhost ports the dashboard + api dev servers bind.
       WXT_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}

@@ -74,7 +74,7 @@ export const clerkWebhookRoutes: FastifyPluginAsync = async (fastify) => {
         await upsertOrg(fastify.db, event.data);
         break;
       case "organization.deleted":
-        await deleteOrg(fastify.db, event.data.id);
+        await deleteOrg(fastify.db, fastify.inngest, event.data.id);
         break;
       case "organizationMembership.created":
       case "organizationMembership.updated":

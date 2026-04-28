@@ -15,6 +15,7 @@ import { buildAssetR2Key } from "../../services/upload.service.js";
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
   getOrganizationMembershipList: vi.fn(),
+  publishR2Cleanup: vi.fn(async () => {}),
 }));
 
 vi.mock("@clerk/backend", () => ({
@@ -22,6 +23,13 @@ vi.mock("@clerk/backend", () => ({
   createClerkClient: () => ({
     users: { getOrganizationMembershipList: mocks.getOrganizationMembershipList },
   }),
+}));
+
+// Stub the publish helper — same rationale as in the annotation delete test.
+// We want to assert the cleanup was queued with all asset keys for every
+// annotation under the project, without going through the real Inngest SDK.
+vi.mock("../../inngest/publish.js", () => ({
+  publishR2Cleanup: mocks.publishR2Cleanup,
 }));
 
 const { buildServer } = await import("../../server.js");
@@ -180,6 +188,13 @@ describe("DELETE /projects/:projectId (integration)", () => {
       where: eq(schema.annotationAssets.annotationId, seeded.annotationId),
     });
     expect(assets).toHaveLength(0);
+
+    // R2 cleanup: every asset under the project must have its key queued.
+    expect(mocks.publishR2Cleanup).toHaveBeenCalledTimes(1);
+    const [, keys, origin] = mocks.publishR2Cleanup.mock.calls[0] as [unknown, string[], string];
+    expect(origin).toBe(`project:${seeded.projectId}`);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toMatch(new RegExp(`^projects/${seeded.projectId}/screenshot/`));
   });
 
   test("project editor → 403 FORBIDDEN, project still present", async () => {

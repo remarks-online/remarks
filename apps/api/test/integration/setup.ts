@@ -39,3 +39,11 @@ if (isLocalMinio) {
   process.env.R2_BUCKET_SCREENSHOTS =
     process.env.R2_BUCKET_SCREENSHOTS ?? "remarks-screenshots-test";
 }
+
+// Inngest env is required by envSchema; integration tests mock `inngest.send`
+// (or rely on the mock from individual test files) so the SDK never reaches
+// the network — placeholders satisfy parsing.
+process.env.INNGEST_EVENT_KEY =
+  process.env.INNGEST_EVENT_KEY ?? "integration-test-event-key";
+process.env.INNGEST_SIGNING_KEY =
+  process.env.INNGEST_SIGNING_KEY ?? "signkey-test-integration-key";

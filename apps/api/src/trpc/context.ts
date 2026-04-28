@@ -8,6 +8,7 @@ export function createContext({ req }: CreateFastifyContextOptions): Context {
     db: req.server.db,
     r2: req.server.r2,
     clerk: req.server.clerk,
+    inngest: req.server.inngest,
     requestId: req.id,
   };
 }

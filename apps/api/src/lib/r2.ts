@@ -1,4 +1,5 @@
 import {
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -108,6 +109,23 @@ export async function getPresignedGetUrl(
 export interface HeadObjectResult {
   contentType: string | undefined;
   contentLength: number;
+}
+
+// Bulk delete. Idempotent — keys that don't exist return success per S3
+// spec, so safe to retry. Caller must batch into <=1000-key chunks (the S3
+// ceiling); the helper rejects oversized arrays so we fail fast in tests
+// rather than silently truncating in prod.
+export async function deleteObjects(client: R2Client, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  if (keys.length > 1000) {
+    throw new Error(`r2: deleteObjects accepts <=1000 keys per call (got ${keys.length})`);
+  }
+  await client.s3.send(
+    new DeleteObjectsCommand({
+      Bucket: client.bucket,
+      Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
+    })
+  );
 }
 
 // Returns null when the object does not exist (404/NotFound). Other errors

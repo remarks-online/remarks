@@ -175,7 +175,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
       throw new ForbiddenError("Requires project admin role or annotation author");
     }
 
-    await deleteAnnotation(request.server.db, annotationId);
+    await deleteAnnotation(request.server.db, request.server.inngest, annotationId);
     return reply.code(204).send();
   });
 

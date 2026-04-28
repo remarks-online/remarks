@@ -46,6 +46,9 @@ function buildTestServer(): FastifyInstance {
   // Webhook handler reads fastify.clerk to forward into the membership-sync
   // service; tests don't exercise the SDK so a stub is sufficient.
   server.decorate("clerk", {} as never);
+  // deleteOrg now takes the Inngest client; the service is fully mocked here
+  // so a stub is enough.
+  server.decorate("inngest", {} as never);
   return server;
 }
 
@@ -159,7 +162,7 @@ describe("POST /webhooks/clerk", () => {
       payload: body,
     });
     expect(res.statusCode).toBe(200);
-    expect(mocks.deleteOrg).toHaveBeenCalledWith(expect.anything(), "org_123");
+    expect(mocks.deleteOrg).toHaveBeenCalledWith(expect.anything(), expect.anything(), "org_123");
   });
 
   test("organizationMembership.created syncs project_members for the new member", async () => {

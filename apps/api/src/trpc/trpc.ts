@@ -2,6 +2,7 @@ import type { ClerkClient } from "@clerk/backend";
 import type { DB } from "@remarks/db";
 import { RemarksError, UnauthorizedError, ValidationError } from "@remarks/shared";
 import { TRPCError, initTRPC } from "@trpc/server";
+import type { AppInngest } from "../inngest/client.js";
 import type { R2Client } from "../lib/r2.js";
 
 // User shape inlined (rather than imported from plugins/auth.ts) so the
@@ -27,6 +28,7 @@ export interface Context {
   db: DB;
   r2: R2Client;
   clerk: ClerkClient;
+  inngest: AppInngest;
   requestId: string;
 }
 
