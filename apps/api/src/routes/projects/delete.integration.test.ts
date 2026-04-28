@@ -191,11 +191,7 @@ describe("DELETE /projects/:projectId (integration)", () => {
 
     // R2 cleanup: every asset under the project must have its key queued.
     expect(mocks.publishR2Cleanup).toHaveBeenCalledTimes(1);
-    const [, keys, origin] = mocks.publishR2Cleanup.mock.calls[0] as [
-      unknown,
-      string[],
-      string,
-    ];
+    const [, keys, origin] = mocks.publishR2Cleanup.mock.calls[0] as [unknown, string[], string];
     expect(origin).toBe(`project:${seeded.projectId}`);
     expect(keys).toHaveLength(1);
     expect(keys[0]).toMatch(new RegExp(`^projects/${seeded.projectId}/screenshot/`));
