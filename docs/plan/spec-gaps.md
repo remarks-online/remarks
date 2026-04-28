@@ -511,3 +511,28 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: Independent. Lays useful groundwork for any future cross-project triage UX (e.g. an "all my tasks" dashboard view) but doesn't block A15 (org-membership sync).
 - **Estimated size**: `m`.
 - **Status**: `done in PR (this branch)`.
+
+## A22 — Terms of Service + DPA pages (deferred, blocks Phase 3 launch)
+
+| # | Done when | Complete |
+|---|---|---|
+| A22 | `app.remarks.online/terms` and `app.remarks.online/dpa` are live with lawyer-reviewed content; privacy policy footer + privacy policy text link to them | [ ] |
+
+- **Spec reference**: Phase 3 spec §11 deliverable 3D.5 — "Legal pages: Privacy Policy, Terms of Service, DPA (lawyer-reviewed) | Live at `/privacy`, `/terms`, `/dpa`".
+- **Problem**: The Chrome Web Store submission only requires a privacy policy URL, which this branch ships at `app.remarks.online/privacy` (markdown source at `docs/legal/privacy.md`). Terms of Service and the DPA are still missing. The privacy policy text references "our agreements" / "Terms of Service" in §4 and §6.2; those references currently point to a 404. Public launch (Phase 3) and any paid plan need the ToS shipped before billing collects a customer's credit card.
+- **Proposed deliverable**:
+  - **Markdown source:** `docs/legal/terms.md` and `docs/legal/dpa.md`, modeled on the same structure as `docs/legal/privacy.md` (comprehensive sections, US + EU posture, Vercel/Linear style).
+  - **Live routes:** `apps/dashboard/src/app/terms/page.tsx` and `apps/dashboard/src/app/dpa/page.tsx`, mirroring `apps/dashboard/src/app/privacy/page.tsx` (semantic HTML, same footer link style on the homepage).
+  - **Footer:** add `/terms` to the homepage footer alongside the existing `/privacy` link. DPA stays unlinked from the homepage; surface it from the privacy policy text instead.
+  - **Privacy policy edits:** wherever privacy.md / privacy/page.tsx says "our agreements" or refers to terms, link to `/terms`. Wherever it discusses subprocessor DPAs, link to `/dpa`.
+  - **Lawyer review:** out-of-band before public launch. Engineering ships the drafts; legal redlines happen separately and replace the doc text once finalized.
+- **Done when**:
+  - `docs/legal/terms.md` and `docs/legal/dpa.md` exist with complete content
+  - `/terms` and `/dpa` routes return 200 with full content rendered
+  - Homepage footer links `/privacy` and `/terms`; both navigate to live pages
+  - `docs/legal/privacy.md` and `apps/dashboard/src/app/privacy/page.tsx` no longer reference unlinked "Terms of Service" — they link `/terms` and `/dpa` consistently
+- **Conflicts / overlaps with spec**: None. Phase 3 §11 explicitly enumerates these as deliverables; this entry exists only because the CWS submission forces a privacy policy earlier than Phase 3 was planned, and the ToS/DPA naturally accompany it.
+- **Affected tasks / components**: New files only (`docs/legal/terms.md`, `docs/legal/dpa.md`, `apps/dashboard/src/app/terms/page.tsx`, `apps/dashboard/src/app/dpa/page.tsx`). Edits to `docs/legal/privacy.md`, `apps/dashboard/src/app/privacy/page.tsx`, `apps/dashboard/src/app/page.tsx` (footer).
+- **Dependencies**: Independent of `A22 — CWS submission` itself; CWS only requires the privacy URL. Blocks any paid-plan / public-launch task in Phase 3 that collects payment or signs up an organization on terms.
+- **Estimated size**: `m` for the drafts; lawyer review is out-of-band and not on the engineering critical path.
+- **Status**: `open`.

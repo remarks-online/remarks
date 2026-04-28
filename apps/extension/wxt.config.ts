@@ -9,6 +9,12 @@ import { defineConfig } from "wxt";
 const CRX_PUBLIC_KEY =
   "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmWGCfSBP85Y/nn8NpjDVM5ck6HLG05dYM7ksaA2JVrqL+ytsa7tTWVfSqH54TiELn1dRizvg7mRc5H9DZjfRHATWHgQHxGhA/3nyo3xP6pvucuD194hV3IFKgDXdXD5s8mKkLfh+3IXS6iBj12D7zXAkN+dAe2HwzbCuxVZKjCmR3327FLGzG8j9XG/cGUgFfYN1wKClX+htssPGHe86ODcYU/iFTo996op0yjnmwYSvscundoqVPzh3S6DZW0N3v9sFiZx2QmoB+YZy8+8VED0U0BmvUNNXl8R9ikCdlKuCmtyuwkljlwLjQwRCGjTA1TpaM05upcda0foFk29qSQIDAQAB";
 
+// Production builds (via `wxt build --mode production`) drop dev-only host
+// matches so the Chrome Web Store reviewer doesn't see permissions the
+// shipped extension never uses. WXT runs the config in Node, so reading
+// process.env.NODE_ENV here is the trigger.
+const isProd = process.env.NODE_ENV === "production";
+
 export default defineConfig({
   srcDir: "src",
   modules: ["@wxt-dev/module-react"],
@@ -32,21 +38,27 @@ export default defineConfig({
   },
   manifest: {
     name: "Remarks",
-    description: "In-context feedback for websites.",
+    description:
+      "Pin comments, screenshots, and tasks to any webpage. Share feedback in context with your team.",
+    homepage_url: "https://remarks.online",
     key: CRX_PUBLIC_KEY,
-    permissions: ["storage", "activeTab", "tabs", "scripting", "cookies"],
+    permissions: ["storage", "activeTab", "tabs", "cookies"],
     host_permissions: [
       "<all_urls>",
-      "http://localhost/*",
       "https://app.remarks.online/*",
       "https://*.clerk.accounts.dev/*",
+      "https://clerk.remarks.online/*",
+      ...(isProd ? [] : ["http://localhost/*"]),
     ],
     // Lets the dashboard origin call `chrome.runtime.sendMessage(<id>, ...)`
     // to detect a successful install during onboarding (spec §7.5,
     // ADR 0014). Scoped to the dashboard origins only — narrowest matches
     // CLAUDE.md §12 ("minimum needed").
     externally_connectable: {
-      matches: ["https://app.remarks.online/*", "http://localhost:3000/*"],
+      matches: [
+        "https://app.remarks.online/*",
+        ...(isProd ? [] : ["http://localhost:3000/*"]),
+      ],
     },
     action: {
       default_title: "Remarks",

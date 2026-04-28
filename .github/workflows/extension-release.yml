@@ -1,0 +1,106 @@
+name: extension-release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/extension/**"
+      - "!apps/extension/scripts/release.mjs"
+      - "!apps/extension/scripts/README.md"
+      - "!apps/extension/**/*.md"
+      - "!apps/extension/**/*.test.ts"
+      - "!apps/extension/**/*.test.tsx"
+      - "!apps/extension/e2e/**"
+      - "!apps/extension/verify/**"
+
+# Prevent overlapping bumps if two PRs merge in quick succession; the second
+# run waits for the first to finish (its push will retrigger this workflow).
+concurrency:
+  group: extension-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Don't loop on the bump commit this workflow makes.
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # If the merge commit already changed the version field (e.g., the PR
+      # author bumped manually for a minor/major release), skip the auto
+      # patch bump. Either way, we tag at the end.
+      - name: Detect manual version bump
+        id: detect
+        run: |
+          before=$(git show HEAD~1:apps/extension/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")
+          after=$(node -e "console.log(require('./apps/extension/package.json').version)")
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          if [ "$before" != "$after" ]; then
+            echo "manual=true" >> "$GITHUB_OUTPUT"
+            echo "Manual bump detected: $before → $after"
+          else
+            echo "manual=false" >> "$GITHUB_OUTPUT"
+            echo "No manual bump; will auto-patch from $before"
+          fi
+
+      - name: Auto-bump patch (only if no manual bump)
+        if: steps.detect.outputs.manual == 'false'
+        run: pnpm --filter @remarks/extension release -- --patch --skip-build
+
+      - name: Read final version
+        id: version
+        run: |
+          v=$(node -e "console.log(require('./apps/extension/package.json').version)")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Commit + tag the release
+        if: steps.detect.outputs.manual == 'false'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/extension/package.json
+          git commit -m "chore(extension): release v${{ steps.version.outputs.version }} [skip ci]"
+          git tag "extension-v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main "extension-v${{ steps.version.outputs.version }}"
+
+      - name: Tag manual release
+        if: steps.detect.outputs.manual == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag "extension-v${{ steps.version.outputs.version }}"
+          git push origin "extension-v${{ steps.version.outputs.version }}"
+
+      - name: Notify
+        run: |
+          echo "## Extension version bumped"  >> $GITHUB_STEP_SUMMARY
+          echo ""                              >> $GITHUB_STEP_SUMMARY
+          echo "Tag pushed: \`extension-v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo ""                              >> $GITHUB_STEP_SUMMARY
+          echo "Build + zip happens locally with prod env. From a clean checkout:" >> $GITHUB_STEP_SUMMARY
+          echo ""                              >> $GITHUB_STEP_SUMMARY
+          echo '```'                           >> $GITHUB_STEP_SUMMARY
+          echo "git fetch --tags && git checkout extension-v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "pnpm install"                  >> $GITHUB_STEP_SUMMARY
+          echo "pnpm --filter @remarks/extension build:prod" >> $GITHUB_STEP_SUMMARY
+          echo "pnpm --filter @remarks/extension zip"        >> $GITHUB_STEP_SUMMARY
+          echo '```'                           >> $GITHUB_STEP_SUMMARY
+          echo ""                              >> $GITHUB_STEP_SUMMARY
+          echo "Then upload \`apps/extension/.output/*-chrome.zip\` to https://chrome.google.com/webstore/devconsole" >> $GITHUB_STEP_SUMMARY
