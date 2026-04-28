@@ -1,7 +1,10 @@
 import { getTrpcServer } from "@/lib/trpc-server";
 import { auth } from "@clerk/nextjs/server";
-import type { AnnotationResponse } from "@remarks/shared";
-import { PersonalList } from "./_components/personal-list";
+import type { AnnotationListResponse } from "@remarks/shared";
+import {
+  PERSONAL_PAGE_SIZE,
+  PersonalAnnotationsBrowser,
+} from "./_components/personal-annotations-browser";
 
 export default async function PersonalAnnotationsPage() {
   const { userId } = await auth();
@@ -14,15 +17,14 @@ export default async function PersonalAnnotationsPage() {
     );
   }
 
-  let items: AnnotationResponse[] = [];
+  let initialData: AnnotationListResponse | null = null;
   let loadError: string | null = null;
   try {
     const trpc = await getTrpcServer();
-    const result = await trpc.annotations.listForUser.query({
+    initialData = await trpc.annotations.listForUser.query({
       scope: "personal",
-      limit: 100,
+      limit: PERSONAL_PAGE_SIZE,
     });
-    items = result.items;
   } catch (err) {
     // Log so the digest in the user-visible "Something went wrong" page maps
     // to a real stack in Vercel logs. Without this catch the entire RSC tree
@@ -39,24 +41,10 @@ export default async function PersonalAnnotationsPage() {
       </p>
       {loadError ? (
         <PersonalErrorState message={loadError} />
-      ) : items.length === 0 ? (
-        <PersonalEmptyState />
-      ) : (
-        <PersonalList items={items} />
-      )}
+      ) : initialData ? (
+        <PersonalAnnotationsBrowser initialData={initialData} />
+      ) : null}
     </section>
-  );
-}
-
-function PersonalEmptyState() {
-  return (
-    <div className="mt-8 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
-      <h2 className="text-lg font-semibold">No personal annotations yet</h2>
-      <p className="mt-2 max-w-md text-sm text-muted-foreground">
-        Use the Remarks browser extension to capture an annotation on any page. It'll land here as
-        long as you don't pick a team project in the popup.
-      </p>
-    </div>
   );
 }
 
