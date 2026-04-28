@@ -43,6 +43,13 @@
       "when": 1777545600001,
       "tag": "0005_personal_annotations",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777545600002,
+      "tag": "0006_personal_projects",
+      "breakpoints": true
     }
   ]
 }

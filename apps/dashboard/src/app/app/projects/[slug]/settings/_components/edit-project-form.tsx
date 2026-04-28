@@ -11,7 +11,9 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 interface Props {
-  orgId: string;
+  // Null when the project is personal — invalidation queries the personal-scope
+  // cache key (`{ slug }` without orgId).
+  orgId: string | null;
   project: ProjectResponse;
 }
 
@@ -33,11 +35,13 @@ export function EditProjectForm({ orgId, project }: Props) {
       setFormError(null);
       setSuccessMessage("Saved.");
       // Invalidate both old and new slug entries so the project detail / settings
-      // pages re-fetch from the server on the next navigation.
-      await utils.projects.getBySlug.invalidate({ orgId, slug: project.slug });
-      await utils.projects.list.invalidate({ orgId });
+      // pages re-fetch from the server on the next navigation. The cache key for
+      // personal projects omits orgId; for org projects it includes the active orgId.
+      const scopeKey = orgId !== null ? { orgId } : {};
+      await utils.projects.getBySlug.invalidate({ ...scopeKey, slug: project.slug });
+      await utils.projects.list.invalidate(scopeKey);
       if (updated.slug !== project.slug) {
-        await utils.projects.getBySlug.invalidate({ orgId, slug: updated.slug });
+        await utils.projects.getBySlug.invalidate({ ...scopeKey, slug: updated.slug });
         // `replace` (not `push`) so the back button doesn't return to a 404.
         router.replace(`/app/projects/${updated.slug}/settings`);
       }
@@ -46,7 +50,12 @@ export function EditProjectForm({ orgId, project }: Props) {
     onError: (error) => {
       setSuccessMessage(null);
       if (error.data?.code === "CONFLICT") {
-        setFieldErrors({ slug: "Slug already exists in this organization" });
+        setFieldErrors({
+          slug:
+            orgId === null
+              ? "Slug already exists in your personal projects"
+              : "Slug already exists in this organization",
+        });
         setFormError(null);
         return;
       }

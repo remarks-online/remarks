@@ -49,10 +49,11 @@ export function ProjectPicker() {
 
   // Drop a stale selection if the stored project disappeared (org switch,
   // project deleted) — fall back to Personal rather than silently capturing
-  // into the wrong scope.
+  // into the wrong scope. Stored selections are per-org, so we only check the
+  // org-scoped list here; personal projects have a separate Phase-2 surface.
   useEffect(() => {
     if (!clerkOrgId || !selectedId) return;
-    const items = query.data?.items;
+    const items = query.data?.org;
     if (!items) return;
     if (!items.some((p) => p.id === selectedId)) {
       setSelectedId(null);
@@ -72,7 +73,7 @@ export function ProjectPicker() {
     void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/app/projects/new` });
   }
 
-  const items: ProjectResponse[] = query.data?.items ?? [];
+  const items: ProjectResponse[] = query.data?.org ?? [];
   const showProjects = clerkOrgId !== undefined;
   const hasProjects = showProjects && items.length > 0;
 

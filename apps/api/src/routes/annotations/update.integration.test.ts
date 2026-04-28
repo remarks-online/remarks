@@ -61,6 +61,7 @@ async function seedAnnotation(args: {
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: "Test Project",
       slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
       gitRepoUrl: null,

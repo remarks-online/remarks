@@ -53,6 +53,7 @@ test.describe("error boundaries and loading states", () => {
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: user.id,
           name: SPEC_PROJECT_NAME,
           slug: SPEC_PROJECT_SLUG,
           primaryBranch: "main",

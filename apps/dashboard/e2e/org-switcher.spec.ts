@@ -71,6 +71,7 @@ test.beforeAll(async () => {
       .insert(schema.projects)
       .values({
         orgId: org.id,
+        creatorUserId: user.id,
         name: TEST_SECONDARY_PROJECT_NAME,
         slug: TEST_SECONDARY_PROJECT_SLUG,
         primaryBranch: "main",

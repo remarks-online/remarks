@@ -12,31 +12,35 @@ type Params = Promise<{ slug: string }>;
 export default async function ProjectDetailPage({ params }: { params: Params }) {
   const { slug } = await params;
   const { orgId } = await auth();
-
-  if (!orgId) {
-    return (
-      <section>
-        <h1 className="text-2xl font-semibold">{slug}</h1>
-        <p className="mt-2 text-muted-foreground">
-          Select an organization from the switcher to view this project.
-        </p>
-      </section>
-    );
-  }
-
   const trpc = await getTrpcServer();
 
   // Inline pre-stream validation: keeps notFound() ahead of any Suspense flush
   // so /app/projects/<unknown-slug> resolves to a real HTTP 404, not a
   // streamed 200. See docs/plan/spec-gaps.md A7.
-  let project: Awaited<ReturnType<typeof trpc.projects.getBySlug.query>>;
-  try {
-    project = await trpc.projects.getBySlug.query({ orgId, slug });
-  } catch (err) {
-    if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND") {
-      notFound();
+  //
+  // Resolution order: try the active org's namespace first, then fall back to
+  // the caller's personal projects. Slugs may collide between scopes — the
+  // active org wins so URL meaning matches the visible context (the
+  // OrganizationSwitcher in the header).
+  let project: Awaited<ReturnType<typeof trpc.projects.getBySlug.query>> | null = null;
+  if (orgId) {
+    try {
+      project = await trpc.projects.getBySlug.query({ orgId, slug });
+    } catch (err) {
+      if (!(err instanceof TRPCClientError && err.data?.code === "NOT_FOUND")) {
+        throw err;
+      }
     }
-    throw err;
+  }
+  if (!project) {
+    try {
+      project = await trpc.projects.getBySlug.query({ slug });
+    } catch (err) {
+      if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND") {
+        notFound();
+      }
+      throw err;
+    }
   }
 
   return (
@@ -64,6 +68,9 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
               {project.primaryBranch}
             </code>
           </span>
+          {project.orgId === null ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 font-medium">Personal</span>
+          ) : null}
           {project.gitRepoUrl ? (
             <a
               href={project.gitRepoUrl}

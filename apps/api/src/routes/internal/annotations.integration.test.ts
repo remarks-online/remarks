@@ -44,6 +44,7 @@ async function seedProjectMember(db: Db): Promise<{
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: `Project ${rand()}`,
       slug: `proj-${rand()}`,
       primaryBranch: "main",
@@ -779,6 +780,7 @@ describe("GET /internal/mcp/users/:clerkUserId/orgs/:orgId/annotations (integrat
       .insert(schema.projects)
       .values({
         orgId: orgA.id,
+        creatorUserId: user.id,
         name: `A ${rand()}`,
         slug: `a-${rand()}`,
         primaryBranch: "main",
@@ -788,6 +790,7 @@ describe("GET /internal/mcp/users/:clerkUserId/orgs/:orgId/annotations (integrat
       .insert(schema.projects)
       .values({
         orgId: orgB.id,
+        creatorUserId: user.id,
         name: `B ${rand()}`,
         slug: `b-${rand()}`,
         primaryBranch: "main",

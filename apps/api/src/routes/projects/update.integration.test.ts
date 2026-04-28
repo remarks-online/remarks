@@ -59,6 +59,7 @@ async function seedProject(args: {
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: "Original Name",
       slug,
       gitRepoUrl: args.gitRepoUrl ?? null,
@@ -197,10 +198,12 @@ describe("PATCH /projects/:projectId (integration)", () => {
   test("non-member → 404 NOT_FOUND, project existence not leaked", async () => {
     const db = await getIntegrationDb();
     const targetOrg = await seedOrg(db);
+    const targetOwner = await seedUser(db);
     const [project] = await db
       .insert(schema.projects)
       .values({
         orgId: targetOrg.id,
+        creatorUserId: targetOwner.id,
         name: "Hidden",
         slug: "hidden",
         primaryBranch: "main",
@@ -238,6 +241,7 @@ describe("PATCH /projects/:projectId (integration)", () => {
             columns: { id: true },
           })
         )?.id as string,
+        creatorUserId: seeded.userId,
         name: "Other",
         slug: "taken-slug",
         primaryBranch: "main",
@@ -265,8 +269,10 @@ describe("PATCH /projects/:projectId (integration)", () => {
     const db = await getIntegrationDb();
     const seeded = await seedProject({ role: "admin" });
     const otherOrg = await seedOrg(db);
+    const otherOwner = await seedUser(db);
     await db.insert(schema.projects).values({
       orgId: otherOrg.id,
+      creatorUserId: otherOwner.id,
       name: "Cross-org collision",
       slug: "cross-slug",
       primaryBranch: "main",

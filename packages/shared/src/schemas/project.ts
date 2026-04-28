@@ -48,7 +48,9 @@ export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
 
 export const projectResponseSchema = z.object({
   id: z.string().uuid(),
-  orgId: z.string().uuid(),
+  // Null for personal projects (creator-owned, no org); set for org-scoped projects.
+  orgId: z.string().uuid().nullable(),
+  creatorUserId: z.string().uuid(),
   name: z.string(),
   slug: z.string(),
   gitRepoUrl: z.string().url().nullable(),

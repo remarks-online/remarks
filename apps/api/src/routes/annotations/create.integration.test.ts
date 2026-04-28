@@ -81,6 +81,7 @@ describe("POST /projects/:projectId/annotations (integration)", () => {
       .insert(schema.projects)
       .values({
         orgId: org.id,
+        creatorUserId: user.id,
         name: "Test Project",
         slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
         gitRepoUrl: null,
@@ -293,10 +294,12 @@ describe("POST /projects/:projectId/annotations (integration)", () => {
     const db = await getIntegrationDb();
     const org = await seedOrg(db);
     const otherOrg = await seedOrg(db, { clerkOrgId: "org_anno_create_other" });
+    const owner = await seedUser(db);
     const [project] = await db
       .insert(schema.projects)
       .values({
         orgId: org.id,
+        creatorUserId: owner.id,
         name: "Target",
         slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
         gitRepoUrl: null,

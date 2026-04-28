@@ -20,6 +20,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   org: one(organizations, { fields: [projects.orgId], references: [organizations.id] }),
+  creator: one(users, { fields: [projects.creatorUserId], references: [users.id] }),
   branches: many(branches),
   annotations: many(annotations),
   members: many(projectMembers),

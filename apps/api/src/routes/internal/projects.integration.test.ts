@@ -39,6 +39,7 @@ async function seedProjectAndUser(db: Db): Promise<SeededProject> {
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: `Project ${rand()}`,
       slug: `proj-${rand()}`,
       primaryBranch: "main",

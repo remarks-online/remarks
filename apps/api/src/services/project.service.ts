@@ -8,12 +8,14 @@ import {
   type ProjectRole,
   type UpdateProjectRequest,
 } from "@remarks/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { isUniqueViolation } from "../lib/db-errors.js";
 import { provisionUserFromClerk } from "./clerk-sync.service.js";
 
 export interface CreateProjectArgs {
-  clerkOrgId: string;
+  // Null creates a personal project owned by `authorUserId`; only the creator
+  // gets a project_members row and the Clerk org fan-out is skipped.
+  clerkOrgId: string | null;
   authorUserId: string;
   input: CreateProjectRequest;
   clerk: ClerkClient;
@@ -32,6 +34,7 @@ function toProjectResponse(
   return {
     id: row.id,
     orgId: row.orgId,
+    creatorUserId: row.creatorUserId,
     name: row.name,
     slug: row.slug,
     gitRepoUrl: row.gitRepoUrl,
@@ -44,6 +47,42 @@ function toProjectResponse(
 
 export async function createProject(db: DB, args: CreateProjectArgs): Promise<ProjectResponse> {
   const { clerkOrgId, authorUserId, input, clerk } = args;
+
+  // Personal project: skip the Clerk org-membership fan-out entirely. The
+  // creator is the only `project_members` row.
+  if (clerkOrgId === null) {
+    return await db.transaction(async (tx) => {
+      let inserted: typeof schema.projects.$inferSelect;
+      try {
+        const [row] = await tx
+          .insert(schema.projects)
+          .values({
+            orgId: null,
+            creatorUserId: authorUserId,
+            name: input.name,
+            slug: input.slug,
+            gitRepoUrl: input.gitRepoUrl ?? null,
+            primaryBranch: input.primaryBranch,
+          })
+          .returning();
+        if (!row) throw new Error("project insert returned no rows");
+        inserted = row;
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new ConflictError("Project slug already exists in your personal projects");
+        }
+        throw err;
+      }
+
+      await tx.insert(schema.projectMembers).values({
+        projectId: inserted.id,
+        userId: authorUserId,
+        role: "admin",
+      });
+
+      return toProjectResponse(inserted, "admin");
+    });
+  }
 
   // Fetch the org's full Clerk membership list outside the DB transaction —
   // it's a network call to Clerk and we don't want it holding a Postgres txn
@@ -91,6 +130,7 @@ export async function createProject(db: DB, args: CreateProjectArgs): Promise<Pr
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: authorUserId,
           name: input.name,
           slug: input.slug,
           gitRepoUrl: input.gitRepoUrl ?? null,
@@ -161,6 +201,25 @@ export async function listProjectsByOrg(
   return rows.map((r) => toProjectResponse(r.project, r.role));
 }
 
+export async function listPersonalProjects(
+  db: DB,
+  callerUserId: string
+): Promise<ProjectResponse[]> {
+  const rows = await db
+    .select({ project: schema.projects, role: schema.projectMembers.role })
+    .from(schema.projects)
+    .leftJoin(
+      schema.projectMembers,
+      and(
+        eq(schema.projectMembers.projectId, schema.projects.id),
+        eq(schema.projectMembers.userId, callerUserId)
+      )
+    )
+    .where(and(isNull(schema.projects.orgId), eq(schema.projects.creatorUserId, callerUserId)))
+    .orderBy(desc(schema.projects.createdAt));
+  return rows.map((r) => toProjectResponse(r.project, r.role));
+}
+
 export async function getProjectById(
   db: DB,
   projectId: string,
@@ -210,7 +269,7 @@ export async function updateProject(db: DB, args: UpdateProjectArgs): Promise<Pr
     return toProjectResponse(row, await fetchCallerRole(db, projectId, callerUserId));
   } catch (err) {
     if (isUniqueViolation(err)) {
-      throw new ConflictError("Project slug already exists in this organization");
+      throw new ConflictError("Project slug already exists in this scope");
     }
     throw err;
   }
@@ -246,12 +305,38 @@ export async function deleteProject(db: DB, projectId: string): Promise<void> {
 
 export async function getProjectBySlug(
   db: DB,
-  clerkOrgId: string,
+  clerkOrgId: string | null,
   slug: string,
   callerUserId: string
 ): Promise<ProjectResponse> {
-  // Slugs are unique per-org (see projects_org_slug_idx). Resolving through the
-  // clerk org id keeps the lookup scoped so cross-org slug collisions never leak.
+  // When clerkOrgId is null, resolve in personal scope (creator-owned, no org).
+  if (clerkOrgId === null) {
+    const [row] = await db
+      .select({ project: schema.projects, role: schema.projectMembers.role })
+      .from(schema.projects)
+      .leftJoin(
+        schema.projectMembers,
+        and(
+          eq(schema.projectMembers.projectId, schema.projects.id),
+          eq(schema.projectMembers.userId, callerUserId)
+        )
+      )
+      .where(
+        and(
+          isNull(schema.projects.orgId),
+          eq(schema.projects.creatorUserId, callerUserId),
+          eq(schema.projects.slug, slug)
+        )
+      )
+      .limit(1);
+    if (!row) {
+      throw new NotFoundError("Project");
+    }
+    return toProjectResponse(row.project, row.role);
+  }
+
+  // Org scope: resolve the local org id first to keep lookups fully scoped so
+  // cross-org slug collisions never leak.
   const org = await db.query.organizations.findFirst({
     where: eq(schema.organizations.clerkOrgId, clerkOrgId),
     columns: { id: true },
