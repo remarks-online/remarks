@@ -43,6 +43,7 @@ async function insertProject(
   db: Awaited<ReturnType<typeof getIntegrationDb>>,
   values: {
     orgId: string;
+    creatorUserId: string;
     name: string;
     slug: string;
     gitRepoUrl?: string | null;
@@ -53,6 +54,7 @@ async function insertProject(
     .insert(schema.projects)
     .values({
       orgId: values.orgId,
+      creatorUserId: values.creatorUserId,
       name: values.name,
       slug: values.slug,
       gitRepoUrl: values.gitRepoUrl ?? null,
@@ -101,6 +103,7 @@ describe("GET /orgs/:orgId/projects (integration)", () => {
 
     const older = await insertProject(db, {
       orgId: targetOrg.id,
+      creatorUserId: user.id,
       name: "Older",
       slug: "older",
     });
@@ -108,11 +111,13 @@ describe("GET /orgs/:orgId/projects (integration)", () => {
     await new Promise((r) => setTimeout(r, 10));
     const newer = await insertProject(db, {
       orgId: targetOrg.id,
+      creatorUserId: user.id,
       name: "Newer",
       slug: "newer",
     });
     await insertProject(db, {
       orgId: siblingOrg.id,
+      creatorUserId: user.id,
       name: "Sibling",
       slug: "sibling",
     });
@@ -168,7 +173,13 @@ describe("GET /orgs/:orgId/projects (integration)", () => {
     const org = await seedOrg(db, { clerkOrgId: "org_list_forbidden" });
     const otherOrg = await seedOrg(db, { clerkOrgId: "org_list_other" });
     const user = await seedUser(db, { clerkUserId: "user_list_outsider" });
-    await insertProject(db, { orgId: org.id, name: "Secret", slug: "secret" });
+    const secretOwner = await seedUser(db, { clerkUserId: "user_list_secret_owner" });
+    await insertProject(db, {
+      orgId: org.id,
+      creatorUserId: secretOwner.id,
+      name: "Secret",
+      slug: "secret",
+    });
 
     mockAuth({
       clerkUserId: user.clerkUserId,
@@ -236,6 +247,7 @@ describe("GET /projects/:projectId (integration)", () => {
     const user = await seedUser(db, { clerkUserId: "user_detail_member" });
     const project = await insertProject(db, {
       orgId: org.id,
+      creatorUserId: user.id,
       name: "Detail Project",
       slug: "detail",
       gitRepoUrl: "https://github.com/acme/detail",
@@ -281,6 +293,7 @@ describe("GET /projects/:projectId (integration)", () => {
     const outsider = await seedUser(db, { clerkUserId: "user_detail_outsider" });
     const project = await insertProject(db, {
       orgId: org.id,
+      creatorUserId: owner.id,
       name: "Private",
       slug: "private",
     });

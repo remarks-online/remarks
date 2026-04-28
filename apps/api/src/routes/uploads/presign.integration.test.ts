@@ -78,6 +78,7 @@ describe("POST /uploads/presign (integration)", () => {
       .insert(schema.projects)
       .values({
         orgId: org.id,
+        creatorUserId: user.id,
         name: "Test Project",
         slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
         gitRepoUrl: null,
@@ -202,10 +203,12 @@ describe("POST /uploads/presign (integration)", () => {
   test("user from a different org → 404 NOT_FOUND (project existence not leaked)", async () => {
     const db = await getIntegrationDb();
     const org = await seedOrg(db);
+    const owner = await seedUser(db);
     const [project] = await db
       .insert(schema.projects)
       .values({
         orgId: org.id,
+        creatorUserId: owner.id,
         name: "Target",
         slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
         gitRepoUrl: null,

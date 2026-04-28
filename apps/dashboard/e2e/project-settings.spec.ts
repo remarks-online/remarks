@@ -55,6 +55,7 @@ test.describe("project settings — rename", () => {
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: user.id,
           name: ORIGINAL_NAME,
           slug: ORIGINAL_SLUG,
           primaryBranch: "main",
@@ -131,6 +132,7 @@ test.describe("project settings — delete", () => {
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: user.id,
           name: PROJECT_NAME,
           slug: PROJECT_SLUG,
           primaryBranch: "main",

@@ -5,20 +5,6 @@ import { NewProjectForm } from "./_components/new-project-form";
 export default async function NewProjectPage() {
   const { orgId } = await auth();
 
-  if (!orgId) {
-    return (
-      <section className="mx-auto max-w-md">
-        <h1 className="text-2xl font-semibold">New project</h1>
-        <p className="mt-2 text-muted-foreground">
-          Select an organization from the switcher first, then return here.
-        </p>
-        <Link href="/app/projects" className="mt-4 inline-block text-sm text-primary underline">
-          Back to projects
-        </Link>
-      </section>
-    );
-  }
-
   return (
     <section className="mx-auto max-w-md">
       <div className="mb-6">
@@ -27,10 +13,12 @@ export default async function NewProjectPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">New project</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Create a project to start collecting annotations.
+          {orgId
+            ? "Create a project to start collecting annotations. Choose whether it belongs to your active organization or to you personally."
+            : "Create a personal project. You can attach it to an organization later."}
         </p>
       </div>
-      <NewProjectForm orgId={orgId} />
+      <NewProjectForm orgId={orgId ?? null} />
     </section>
   );
 }

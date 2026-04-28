@@ -11,30 +11,30 @@ type Params = Promise<{ slug: string }>;
 export default async function ProjectSettingsPage({ params }: { params: Params }) {
   const { slug } = await params;
   const { orgId } = await auth();
-
-  if (!orgId) {
-    return (
-      <section>
-        <h1 className="text-2xl font-semibold">{slug}</h1>
-        <p className="mt-2 text-muted-foreground">
-          Select an organization from the switcher to view this project.
-        </p>
-      </section>
-    );
-  }
-
   const trpc = await getTrpcServer();
 
   // Inline pre-stream validation so /app/projects/<unknown-slug>/settings
   // resolves to a real HTTP 404 (matches detail page; see spec-gaps.md A7).
-  let project: Awaited<ReturnType<typeof trpc.projects.getBySlug.query>>;
-  try {
-    project = await trpc.projects.getBySlug.query({ orgId, slug });
-  } catch (err) {
-    if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND") {
-      notFound();
+  // Try org scope first, then personal — same precedence as the detail page.
+  let project: Awaited<ReturnType<typeof trpc.projects.getBySlug.query>> | null = null;
+  if (orgId) {
+    try {
+      project = await trpc.projects.getBySlug.query({ orgId, slug });
+    } catch (err) {
+      if (!(err instanceof TRPCClientError && err.data?.code === "NOT_FOUND")) {
+        throw err;
+      }
     }
-    throw err;
+  }
+  if (!project) {
+    try {
+      project = await trpc.projects.getBySlug.query({ slug });
+    } catch (err) {
+      if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND") {
+        notFound();
+      }
+      throw err;
+    }
   }
 
   return (
@@ -49,7 +49,7 @@ export default async function ProjectSettingsPage({ params }: { params: Params }
         <h1 className="mt-2 text-2xl font-semibold">Project settings</h1>
       </div>
 
-      <EditProjectForm orgId={orgId} project={project} />
+      <EditProjectForm orgId={project.orgId !== null ? (orgId ?? null) : null} project={project} />
 
       <div className="rounded-md border p-4">
         <h2 className="text-base font-medium">Connect an agent</h2>

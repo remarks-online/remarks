@@ -139,6 +139,7 @@ async function main(): Promise<void> {
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: user.id,
           name: SEED_PROJECT_NAME,
           slug: SEED_PROJECT_SLUG,
           primaryBranch: "main",

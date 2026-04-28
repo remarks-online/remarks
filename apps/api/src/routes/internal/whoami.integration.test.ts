@@ -39,6 +39,7 @@ async function seedUserWithProjects(db: Db) {
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: `Project A ${rand()}`,
       slug: `proj-a-${rand()}`,
       primaryBranch: "main",
@@ -48,6 +49,7 @@ async function seedUserWithProjects(db: Db) {
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: `Project B ${rand()}`,
       slug: `proj-b-${rand()}`,
       primaryBranch: "main",

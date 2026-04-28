@@ -72,6 +72,7 @@ describe("projectResponseSchema", () => {
     const result = projectResponseSchema.safeParse({
       id: "00000000-0000-4000-8000-000000000001",
       orgId: "00000000-0000-4000-8000-000000000002",
+      creatorUserId: "00000000-0000-4000-8000-000000000003",
       name: "Acme",
       slug: "acme",
       gitRepoUrl: null,
@@ -83,11 +84,28 @@ describe("projectResponseSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  test("accepts null orgId for personal projects", () => {
+    const result = projectResponseSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000001",
+      orgId: null,
+      creatorUserId: "00000000-0000-4000-8000-000000000003",
+      name: "Personal",
+      slug: "personal",
+      gitRepoUrl: null,
+      primaryBranch: "main",
+      myRole: "admin",
+      createdAt: "2026-04-22T12:00:00.000Z",
+      updatedAt: "2026-04-22T12:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+  });
+
   test("accepts each project role for myRole", () => {
     for (const role of ["admin", "editor", "viewer"] as const) {
       const result = projectResponseSchema.safeParse({
         id: "00000000-0000-4000-8000-000000000001",
         orgId: "00000000-0000-4000-8000-000000000002",
+        creatorUserId: "00000000-0000-4000-8000-000000000003",
         name: "Acme",
         slug: "acme",
         gitRepoUrl: null,

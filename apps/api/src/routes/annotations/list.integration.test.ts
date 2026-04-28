@@ -57,6 +57,7 @@ async function seedProjectWithMember(args: {
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: "Test Project",
       slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
       gitRepoUrl: null,
@@ -539,10 +540,12 @@ describe("GET /projects/:projectId/annotations (integration)", () => {
     const db = await getIntegrationDb();
     const org = await seedOrg(db);
     const otherOrg = await seedOrg(db, { clerkOrgId: "org_anno_list_other" });
+    const owner = await seedUser(db);
     const [project] = await db
       .insert(schema.projects)
       .values({
         orgId: org.id,
+        creatorUserId: owner.id,
         name: "Target",
         slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
         gitRepoUrl: null,
@@ -573,10 +576,12 @@ describe("GET /projects/:projectId/annotations (integration)", () => {
 
     // Seed a second project (no membership for our user) with its own annotations.
     const otherOrg = await seedOrg(db);
+    const otherUser = await seedUser(db);
     const [otherProject] = await db
       .insert(schema.projects)
       .values({
         orgId: otherOrg.id,
+        creatorUserId: otherUser.id,
         name: "Other",
         slug: `proj-${Math.random().toString(36).slice(2, 10)}`,
         gitRepoUrl: null,
@@ -584,7 +589,6 @@ describe("GET /projects/:projectId/annotations (integration)", () => {
       })
       .returning();
     if (!otherProject) throw new Error("other project insert returned no rows");
-    const otherUser = await seedUser(db);
     const [otherBranch] = await db
       .insert(schema.branches)
       .values({ projectId: otherProject.id, name: "main" })

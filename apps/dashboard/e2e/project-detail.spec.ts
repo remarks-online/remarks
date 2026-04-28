@@ -88,6 +88,7 @@ test.describe("annotations grouped by branch", () => {
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: user.id,
           name: SPEC_PROJECT_NAME,
           slug: SPEC_PROJECT_SLUG,
           primaryBranch: "main",
@@ -224,6 +225,7 @@ test.describe("annotation detail drawer", () => {
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: user.id,
           name: SPEC_PROJECT_NAME,
           slug: SPEC_PROJECT_SLUG,
           primaryBranch: "main",
@@ -395,6 +397,7 @@ test.describe("annotation list pagination (A1)", () => {
         .insert(schema.projects)
         .values({
           orgId: org.id,
+          creatorUserId: user.id,
           name: SPEC_PROJECT_NAME,
           slug: SPEC_PROJECT_SLUG,
           primaryBranch: "main",

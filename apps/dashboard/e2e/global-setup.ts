@@ -48,6 +48,7 @@ async function seedDatabase(
       .insert(schema.projects)
       .values({
         orgId: org.id,
+        creatorUserId: user.id,
         name: TEST_PROJECT_NAME,
         slug: TEST_PROJECT_SLUG,
         primaryBranch: "main",

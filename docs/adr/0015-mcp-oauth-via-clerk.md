@@ -46,3 +46,11 @@ Specifics:
 - **Custom authorization server in `apps/api`.** We'd implement `/oauth/authorize`, `/oauth/token`, `/oauth/register`, the JWKS, and PKCE ourselves on top of Clerk's user sessions. Total control; more code; more attack surface; slower to ship. Worth revisiting if Clerk's OAuth-provider product gets pulled.
 - **Clerk Organizations as the unit of consent.** Map each Remarks project to a Clerk organization; tokens carry an `org_id` claim and are inherently project-scoped. Cleaner semantics, but Remarks projects and Clerk orgs aren't the same concept (orgs have billing, projects don't), and the migration touches every part of the stack. Rejected for now in favor of all-projects tokens with per-call membership checks. Path to per-project scoping is preserved via the RFC 8707 `resource` parameter.
 - **Client ID Metadata Documents (SEP-991) instead of DCR.** The MCP spec's preferred path. Cleaner: each agent hosts a JSON document at a stable HTTPS URL; the AS fetches and validates it on each authorization request. Clerk doesn't support this yet (as of 2026-04). When it does, we add `client_id_metadata_document_supported: true` to PRM and the MCP clients pick it up automatically — no change to our code beyond the Clerk dashboard toggle.
+
+## Amendment — 2026-04-27
+
+Personal projects (migration `0006_personal_projects`, ADR-0003 amendment) are reachable through the same MCP surfaces as org projects without protocol changes. The token-scope claim in §Decision still holds verbatim: a Clerk user's token covers every project they're a member of, and a personal project plants exactly one `project_members` admin row (the creator) at create time. `remarks_get_task` and `remarks_list_tasks?project_id=…` therefore work for personal-project tasks via the existing `assertProjectMember` path.
+
+The "personal" mode in `remarks_list_tasks` (no `project_id` and no `org_id`) keeps its existing meaning: annotations with `projectId IS NULL` (URL-keyed personal captures). Tasks belonging to a personal *project* require the explicit `project_id` and are not surfaced by the no-IDs personal mode — a project-scoped task is, by definition, filed.
+
+`remarks_whoami` should reflect personal-project access in its returned project list once Phase 2 (#77) lands; for Phase 1 it returns only org-scoped memberships, matching today's behavior.

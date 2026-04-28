@@ -8,8 +8,13 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 interface Props {
-  orgId: string;
+  // Null when no Clerk org is active — the only way to create a project is
+  // personal-scope. When set, the form lets the user choose between personal
+  // and the active org.
+  orgId: string | null;
 }
+
+type Scope = "personal" | "org";
 
 type FieldErrors = Partial<Record<"name" | "slug" | "gitRepoUrl" | "primaryBranch", string>>;
 
@@ -19,18 +24,28 @@ export function NewProjectForm({ orgId }: Props) {
   const [slug, setSlug] = useState("");
   const [gitRepoUrl, setGitRepoUrl] = useState("");
   const [primaryBranch, setPrimaryBranch] = useState("");
+  const [scope, setScope] = useState<Scope>(orgId ? "org" : "personal");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
 
   const createMutation = trpc.projects.create.useMutation({
     onSuccess: (project) => {
-      capture("project_created", { source: "form", projectId: project.id });
+      capture("project_created", {
+        source: "form",
+        projectId: project.id,
+        scope: project.orgId ? "org" : "personal",
+      });
       router.push("/app/projects");
       router.refresh();
     },
     onError: (error) => {
       if (error.data?.code === "CONFLICT") {
-        setFieldErrors({ slug: "Slug already exists in this organization" });
+        setFieldErrors({
+          slug:
+            scope === "personal"
+              ? "Slug already exists in your personal projects"
+              : "Slug already exists in this organization",
+        });
         setFormError(null);
         return;
       }
@@ -64,7 +79,8 @@ export function NewProjectForm({ orgId }: Props) {
     }
 
     setFieldErrors({});
-    createMutation.mutate({ orgId, input: parsed.data });
+    const submitOrgId = scope === "org" && orgId ? orgId : undefined;
+    createMutation.mutate({ orgId: submitOrgId, input: parsed.data });
   }
 
   const isPending = createMutation.isPending;
@@ -75,6 +91,48 @@ export function NewProjectForm({ orgId }: Props) {
         <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {formError}
         </p>
+      ) : null}
+
+      {orgId ? (
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Where should this project live?</legend>
+          <div className="space-y-2">
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border px-3 py-2 has-[input:checked]:border-primary">
+              <input
+                type="radio"
+                name="scope"
+                value="org"
+                checked={scope === "org"}
+                onChange={() => setScope("org")}
+                disabled={isPending}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-medium">In your active organization</span>
+                <span className="block text-xs text-muted-foreground">
+                  Visible to every member of the org. Choose this for team work.
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border px-3 py-2 has-[input:checked]:border-primary">
+              <input
+                type="radio"
+                name="scope"
+                value="personal"
+                checked={scope === "personal"}
+                onChange={() => setScope("personal")}
+                disabled={isPending}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-medium">Personal</span>
+                <span className="block text-xs text-muted-foreground">
+                  Only visible to you. Can be moved to an organization later.
+                </span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
       ) : null}
 
       <div className="space-y-1.5">

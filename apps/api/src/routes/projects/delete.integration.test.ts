@@ -62,6 +62,7 @@ async function seedProjectWithChildren(args: {
     .insert(schema.projects)
     .values({
       orgId: org.id,
+      creatorUserId: user.id,
       name: "Doomed Project",
       slug,
       primaryBranch: "main",

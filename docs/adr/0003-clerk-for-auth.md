@@ -18,3 +18,9 @@ Auth is effectively solved for year 1 and we never touch password hashing, email
 ## Alternatives considered
 
 **Auth.js (NextAuth)** — strong for Next.js but weak story for a Chrome extension and for a standalone Fastify API; we'd end up writing JWT plumbing ourselves anyway. **Supabase Auth** — couples auth to their Postgres; Neon is our DB of choice (ADR-0004). **Build-our-own with Lucia + Argon2** — correct but a full month of work we'd rather spend on the product. **Auth0 / WorkOS** — comparable to Clerk but more expensive and no extension SDK.
+
+## Amendment — 2026-04-27
+
+The original Context line "annotations are always scoped to an org" was already weakened by migration `0005_personal_annotations` (annotations may have `project_id IS NULL` for personal/URL-keyed captures). Migration `0006_personal_projects` extends the same pattern to *projects*: `projects.org_id` is now nullable and a new `projects.creator_user_id` is always populated. A personal project is creator-owned, has a single `project_members` admin row at create time (the creator), and shows up alongside org projects on `/app/projects` for that user. Slug uniqueness is now scope-aware: `(org_id, slug)` for org projects and `(creator_user_id, slug)` for personal projects, enforced via two partial unique indexes.
+
+Authorization is unchanged in shape — `assertProjectMember` still resolves through `project_members`, which works for both scopes because the creator's admin row is planted on personal-project insert. ADR-0015's token-scope claim ("covers every project the Clerk user is a member of") therefore still holds verbatim. Phase 2 (transferring a personal project into an org) is tracked at https://github.com/remarks-online/remarks/issues/77.
