@@ -31,7 +31,7 @@ function requireEnv(name: string): string {
 
 test("background createClerkClient produces a valid Bearer token for the sidebar", async () => {
   const secretKey = requireEnv("CLERK_SECRET_KEY");
-  const syncHost = requireEnv("WXT_CLERK_SYNC_HOST");
+  const dashboardUrl = requireEnv("WXT_DASHBOARD_URL");
 
   // 1. Provision user + org + membership (idempotent).
   const user = await ensureClerkUser(secretKey, TEST_USER_EMAIL, { password: TEST_USER_PASSWORD });
@@ -60,12 +60,13 @@ test("background createClerkClient produces a valid Bearer token for the sidebar
       }
     });
 
-    // 4. Redeem a Clerk sign-in ticket against syncHost. This sets the
-    //    session cookie on the dashboard origin, which the extension's
-    //    createClerkClient({ background: true, syncHost }) reads.
+    // 4. Redeem a Clerk sign-in ticket on the dashboard's /sign-in route. This
+    //    sets the session cookie on the dashboard origin, which the
+    //    extension's createClerkClient({ background: true, syncHost }) reads
+    //    via the syncHost cookie bridge.
     const ticket = await mintSignInToken(secretKey, user.id);
     const redeemPage = await context.newPage();
-    await redeemPage.goto(`${syncHost}/sign-in?__clerk_ticket=${encodeURIComponent(ticket)}`);
+    await redeemPage.goto(`${dashboardUrl}/sign-in?__clerk_ticket=${encodeURIComponent(ticket)}`);
     await redeemPage.waitForURL((url) => !url.searchParams.has("__clerk_ticket"), {
       timeout: 30_000,
     });

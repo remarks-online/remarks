@@ -40,11 +40,11 @@ async function pingBackground() {
 }
 
 function openSignIn() {
-  void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/sign-in` });
+  void chrome.tabs.create({ url: `${env.WXT_DASHBOARD_URL}/sign-in` });
 }
 
 function openSignUp() {
-  void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}/sign-up` });
+  void chrome.tabs.create({ url: `${env.WXT_DASHBOARD_URL}/sign-up` });
 }
 
 export function App() {

@@ -94,21 +94,20 @@ export const test = base.extend<Fixtures>({
     );
     const userId = requireEnv("E2E_CLERK_USER_ID", "global-setup did not run");
     const orgId = requireEnv("E2E_CLERK_ORG_ID", "global-setup did not run");
-    const syncHost = requireEnv(
-      "WXT_CLERK_SYNC_HOST",
+    const dashboardUrl = requireEnv(
+      "WXT_DASHBOARD_URL",
       "load apps/extension/.env in playwright.config.ts"
     );
 
     const ext = await launchExtension(testInfo);
     try {
       // Mint a fresh ticket per test — single-use, short-lived. Redeem it on
-      // the dashboard's /sign-in route (same syncHost the popup's ClerkProvider
-      // reads). Once Clerk redirects off the sign-in page, the session cookie
-      // is set on the dashboard origin and the SW's createClerkClient picks it
-      // up via syncHost-shared chrome.storage.
+      // the dashboard's /sign-in route. Once Clerk redirects off the sign-in
+      // page, the session cookie is set on the dashboard origin and the SW's
+      // createClerkClient picks it up via the syncHost cookie bridge.
       const ticket = await mintSignInToken(secretKey, userId);
       const redeemPage = await ext.context.newPage();
-      await redeemPage.goto(`${syncHost}/sign-in?__clerk_ticket=${encodeURIComponent(ticket)}`);
+      await redeemPage.goto(`${dashboardUrl}/sign-in?__clerk_ticket=${encodeURIComponent(ticket)}`);
       await redeemPage.waitForURL((url) => !url.searchParams.has("__clerk_ticket"), {
         timeout: 30_000,
       });
@@ -121,7 +120,7 @@ export const test = base.extend<Fixtures>({
       // setActive runs (otherwise it throws "setActive should either be
       // called with a session param or there should be already an active
       // session").
-      await redeemPage.goto(`${syncHost}/app/projects`);
+      await redeemPage.goto(`${dashboardUrl}/app/projects`);
       await redeemPage.waitForFunction(
         // @ts-expect-error - window.Clerk injected by the dashboard's ClerkProvider
         () => typeof window.Clerk?.setActive === "function" && window.Clerk?.loaded,

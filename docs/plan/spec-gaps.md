@@ -181,3 +181,25 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: After issue #76 (Inngest scaffold + on-delete cleanup).
 - **Estimated size**: `m`.
 - **Status**: `open`.
+
+## A24 — Extension prod redirects 404 because `WXT_CLERK_SYNC_HOST` is the Clerk FAPI, not the dashboard
+
+| # | Done when | Complete |
+|---|---|---|
+| A24 ✓ | Every "open a tab to the dashboard" redirect in the extension uses `WXT_DASHBOARD_URL` (sign-in lands on `app.remarks.online/sign-in` in prod, not `clerk.remarks.online/sign-in`) | [x] |
+
+- **Spec reference**: A16 (this file) — A16 swapped the prod `WXT_CLERK_SYNC_HOST` to the Clerk FAPI (`https://clerk.remarks.online`) so `__client` cookie sync works, but did not split the variable out from its other use sites.
+- **Problem**: Five call sites in the extension were building dashboard URLs by appending paths to `WXT_CLERK_SYNC_HOST` — `popup/App.tsx` (`openSignIn`/`openSignUp`), `SidebarSignedOut.tsx`, `SidebarMoreMenu.tsx` (the "open dashboard" fallback), and `popup/ProjectPicker.tsx` (`openNewProjectTab`). That worked in dev because syncHost happens to be `localhost:3000` (the dashboard). In prod the two URLs diverge — syncHost is `clerk.remarks.online` (FAPI) and the dashboard is `app.remarks.online` — so every redirect 404s. Symptom that surfaced this: clicking **Sign in** in the production extension popup opens `https://clerk.remarks.online/sign-in` and Clerk returns 404.
+- **Proposed deliverable**:
+  - New env var `WXT_DASHBOARD_URL` (added to `apps/extension/src/env.ts` schema and documented in `apps/extension/.env.example`). Dev: `http://localhost:3000`. Prod: `https://app.remarks.online`.
+  - All five call sites switched to `env.WXT_DASHBOARD_URL`. `WXT_CLERK_SYNC_HOST` is left exclusively for `<ClerkProvider syncHost>` (popup) and `createClerkClient({ syncHost })` + `cookies.onChanged` (background) — i.e., cookie sync only.
+  - E2E + verify suites updated: `apps/extension/e2e/fixtures.ts`, `apps/extension/verify/auth-flow.spec.ts`, and `apps/extension/verify/README.md` switch their dashboard navigation (sign-in ticket redemption) to `WXT_DASHBOARD_URL`. `turbo.json`'s `build.env` array adds the new var so Turbo's sanitized env exposes it to `wxt build`. `.github/workflows/ci.yml` sets `WXT_DASHBOARD_URL=http://localhost:3000` for the extension-e2e job.
+- **Done when**:
+  - Dev build: clicking **Sign in** / **Create account** in the popup opens `http://localhost:3000/sign-in`.
+  - Prod build (after `apps/extension/.env.production` adds `WXT_DASHBOARD_URL=https://app.remarks.online`): same buttons open `https://app.remarks.online/sign-in`.
+  - `pnpm turbo typecheck/lint/test/build --filter="*"` clean; extension-e2e CI green.
+- **Conflicts / overlaps with spec**: None — A16's note about syncHost being the FAPI in prod stands; this amendment just extracts the dashboard-URL responsibility into its own variable.
+- **Affected tasks / components**: `apps/extension/src/env.ts`, `apps/extension/src/entrypoints/popup/App.tsx`, `apps/extension/src/entrypoints/popup/ProjectPicker.tsx`, `apps/extension/src/components/SidebarSignedOut.tsx`, `apps/extension/src/components/SidebarMoreMenu.tsx`, `apps/extension/.env.example`, `apps/extension/e2e/fixtures.ts`, `apps/extension/e2e/playwright.config.ts`, `apps/extension/verify/auth-flow.spec.ts`, `apps/extension/verify/README.md`, `turbo.json`, `.github/workflows/ci.yml`. PR description reminds whoever ships the next CWS build to add `WXT_DASHBOARD_URL=https://app.remarks.online` to `apps/extension/.env.production` before running `build:prod`.
+- **Dependencies**: After A16. Pre-requisite for any future CWS submission.
+- **Estimated size**: `xs`.
+- **Status**: `done in PR #83`.

@@ -4,6 +4,7 @@ const envSchema = z.object({
   WXT_CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_"),
   WXT_API_URL: z.string().url(),
   WXT_CLERK_SYNC_HOST: z.string().url(),
+  WXT_DASHBOARD_URL: z.string().url(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -25,6 +26,7 @@ function resolve(): Env {
     WXT_CLERK_PUBLISHABLE_KEY: import.meta.env.WXT_CLERK_PUBLISHABLE_KEY,
     WXT_API_URL: import.meta.env.WXT_API_URL,
     WXT_CLERK_SYNC_HOST: import.meta.env.WXT_CLERK_SYNC_HOST,
+    WXT_DASHBOARD_URL: import.meta.env.WXT_DASHBOARD_URL,
   });
   return cached;
 }

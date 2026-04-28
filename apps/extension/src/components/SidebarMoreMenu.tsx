@@ -20,7 +20,7 @@ interface Props {
 }
 
 function openPopupFallback() {
-  void chrome.tabs.create({ url: `${env.WXT_CLERK_SYNC_HOST}` });
+  void chrome.tabs.create({ url: `${env.WXT_DASHBOARD_URL}` });
 }
 
 export function SidebarMoreMenu({ compact }: Props) {

@@ -15,10 +15,10 @@ Specs:
 No new env file required — the suite reads the same files every other workflow uses. Make sure these are populated:
 
 - `apps/api/.env.local` — `CLERK_SECRET_KEY` (the only file that carries it)
-- `apps/extension/.env` or `apps/extension/.env.local` — `WXT_CLERK_SYNC_HOST` and `WXT_CLERK_PUBLISHABLE_KEY`
+- `apps/extension/.env` or `apps/extension/.env.local` — `WXT_CLERK_SYNC_HOST`, `WXT_DASHBOARD_URL`, and `WXT_CLERK_PUBLISHABLE_KEY`
 - Test user/org identity comes from `apps/dashboard/e2e/constants.ts` (`TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, `TEST_ORG_NAME`). Same fixture user the dashboard E2E suite uses — provisioned idempotently at first run. Override with `E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD` if you want a private user.
 
-Dashboard must be running so `syncHost` can serve the sign-in ticket redemption:
+Dashboard must be running so `WXT_DASHBOARD_URL` can serve the sign-in ticket redemption:
 
 ```
 pnpm --filter @remarks/dashboard dev
@@ -37,7 +37,7 @@ The script builds the extension first (so `.output/chrome-mv3/` is current), the
 ## What it verifies
 
 1. Service worker boots without throwing (catches `createClerkClient({ background: true })` init regressions — e.g. missing `cookies` permission shows up as a thrown error here).
-2. Sign-in-ticket redemption on `syncHost` seeds the Clerk session that `createClerkClient({ background: true })` picks up.
+2. Sign-in-ticket redemption on the dashboard (`WXT_DASHBOARD_URL`) seeds the Clerk session that `createClerkClient({ background: true })` picks up via the syncHost cookie bridge.
 3. `readAuthStatus()` (invoked directly via `sw.evaluate` — see note below) returns `{ signedIn: true, token: "<JWT>", clerkOrgId: "<org_...>" }`.
 4. The returned token is a well-formed Clerk JWT (three segments, `sub` matches the test user, `exp` in the future, `iss` contains "clerk").
 5. The popup's `<ActiveOrgSync />` effect writes `chrome.storage.local:remarks.activeClerkOrgId` after Clerk loads.
@@ -57,5 +57,5 @@ Playwright 1.59 doesn't reliably dispatch `chrome.runtime.sendMessage` from a po
 ## Troubleshooting
 
 - **"Service worker never registered"**: the extension failed to load. Check `apps/extension/.output/chrome-mv3/` exists and is fresh; `verify:auth` should have rebuilt it.
-- **"Timeout waiting for ActiveOrgSync"**: the dashboard `syncHost` isn't running, or the `__clerk_ticket` expired (single-use, ~1-minute validity).
+- **"Timeout waiting for ActiveOrgSync"**: the dashboard at `WXT_DASHBOARD_URL` isn't running, or the `__clerk_ticket` expired (single-use, ~1-minute validity).
 - **`CLERK_SECRET_KEY missing`**: `apps/api/.env.local` isn't populated. Follow `docs/runbooks/setup.md`.

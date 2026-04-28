@@ -26,7 +26,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: { trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  // The Clerk ticket-redemption fixture navigates to ${WXT_CLERK_SYNC_HOST}/sign-in,
+  // The Clerk ticket-redemption fixture navigates to ${WXT_DASHBOARD_URL}/sign-in,
   // and ProjectPicker calls the API at ${WXT_API_URL}. Both servers must be up.
   // cwd "../../.." lands at the repo root so pnpm filters resolve.
   webServer: [
