@@ -3,6 +3,11 @@ import { expect, test } from "./fixtures.js";
 
 test.describe("personal annotations detail sheet", () => {
   const COMMENT = "1.x-e2e-personal-annotation-text";
+  // The list now renders each row through AnnotationCard, whose button has an
+  // aria-label of `Open annotation: <comment>`. Match on a substring regex of
+  // the comment so the selectors don't depend on that wrapper text.
+  const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rowMatcher = (text: string) => new RegExp(escapeRegex(text));
 
   async function withDb<T>(
     fn: (client: ReturnType<typeof createClient>) => Promise<T>
@@ -74,7 +79,7 @@ test.describe("personal annotations detail sheet", () => {
   test("title click opens sheet, status change reflects in list", async ({ signedInPage }) => {
     await signedInPage.goto("/app/personal");
 
-    const titleButton = signedInPage.getByRole("button", { name: COMMENT });
+    const titleButton = signedInPage.getByRole("button", { name: rowMatcher(COMMENT) });
     await expect(titleButton).toBeVisible();
     await titleButton.click();
 
@@ -107,7 +112,7 @@ test.describe("personal annotations detail sheet", () => {
     await expect(drawer.getByText(newText)).toBeVisible();
     await signedInPage.keyboard.press("Escape");
 
-    await expect(signedInPage.getByRole("button", { name: newText })).toBeVisible();
+    await expect(signedInPage.getByRole("button", { name: rowMatcher(newText) })).toBeVisible();
   });
 
   test("delete removes the row and closes the sheet", async ({ signedInPage }) => {
@@ -122,7 +127,7 @@ test.describe("personal annotations detail sheet", () => {
     await drawer.getByRole("button", { name: /Delete annotation/ }).click();
 
     await expect(drawer).not.toBeVisible();
-    await expect(signedInPage.getByRole("button", { name: COMMENT })).not.toBeVisible();
+    await expect(signedInPage.getByRole("button", { name: rowMatcher(COMMENT) })).not.toBeVisible();
     await expect(signedInPage.getByText("No personal annotations yet")).toBeVisible();
   });
 });
