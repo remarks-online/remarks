@@ -38,15 +38,16 @@ node -e '
 
 ## 2. Confirm environment variables
 
-`apps/extension/.env` (local, gitignored) must contain:
+Full env shape (dev + prod) lives in `apps/extension/.env.example` — copy it to `.env` for dev and `.env.production` for prod builds. The four WXT vars the extension reads:
 
-```env
-WXT_CLERK_PUBLISHABLE_KEY=pk_test_…              # from Clerk dashboard
-WXT_API_URL=http://localhost:4000                # the Fastify API
-WXT_CLERK_SYNC_HOST=http://localhost:3000        # the dashboard origin to sync with
-```
+| Var | Dev | Prod |
+|---|---|---|
+| `WXT_CLERK_PUBLISHABLE_KEY` | `pk_test_…` | `pk_live_…` |
+| `WXT_API_URL` | `http://localhost:4000` | `https://api.remarks.online` |
+| `WXT_CLERK_SYNC_HOST` (cookie sync only) | `http://localhost:3000` (dashboard) | `https://clerk.remarks.online` (Clerk **FAPI**) |
+| `WXT_DASHBOARD_URL` (sign-in / dashboard tabs) | `http://localhost:3000` | `https://app.remarks.online` |
 
-For a production build, `WXT_CLERK_SYNC_HOST` flips to `https://app.remarks.online` and `WXT_CLERK_PUBLISHABLE_KEY` flips to the `pk_live_…` value. Vercel/CI builds of the extension get these via `.env.production` or equivalent — not tracked here.
+**syncHost gotcha** — in dev, the `__client` cookie lives on the dashboard origin, so syncHost is the dashboard URL. In prod, `__client` lives on the Clerk Frontend API domain, so syncHost is `https://clerk.remarks.online`, **not** `https://app.remarks.online`. Mixing them up returns `signedIn: false` with no error in the console. `WXT_DASHBOARD_URL` (added in A24) is the separate variable used for every "open a tab to the dashboard" redirect.
 
 ## 3. Allowlist the extension origin at Clerk
 
@@ -91,10 +92,27 @@ If the popup insists on a separate sign-in or shows a CORS error in DevTools, re
 
 ## 5. Going to production
 
-Repeat steps 2 and 3 against the prod Clerk instance:
+One-time prod Clerk instance setup (idempotent — already done for `remarks-prod`, captured here so re-creating the instance doesn't lose institutional memory):
 
-- Build the extension with `WXT_CLERK_SYNC_HOST=https://app.remarks.online` and `WXT_CLERK_PUBLISHABLE_KEY=pk_live_…`.
-- Run the allowlist script with `CLERK_SECRET_KEY=sk_live_…`.
+1. **Enable the "Native API" feature on the prod instance.** `@clerk/chrome-extension` runs in Native API mode (its requests carry `?_is_native=1`); without the toggle, every popup load 400s with `Native API is disabled for this instance`. Toggle is in the Clerk Dashboard under the prod instance's settings. Verify:
+   ```sh
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     'https://clerk.remarks.online/v1/environment?_is_native=1'
+   # → 200  (when enabled)
+   ```
+2. **Allowlist the extension origin** by re-running step 3 with `CLERK_SECRET_KEY=sk_live_…`. Verify with a CORS preflight (read-only):
+   ```sh
+   curl -s -i -X OPTIONS 'https://clerk.remarks.online/v1/environment?_is_native=1' \
+     -H 'Origin: chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd' \
+     -H 'Access-Control-Request-Method: GET' | grep -i access-control-allow-origin
+   # → access-control-allow-origin: chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd
+   ```
+
+Then build and smoke-test:
+
+- Populate `apps/extension/.env.production` with the prod values from the table in §2.
+- `pnpm --filter @remarks/extension build:prod` — self-bootstraps the workspace via turbo and writes the artifact to `apps/extension/.output/chrome-mv3/`.
+- Load unpacked at `chrome://extensions`, repeat §4 against `https://app.remarks.online/sign-in`. Popup should flip to the signed-in branch after sign-in.
 - For Chrome Web Store distribution, **the extension ID changes** — the Web Store's signing key supersedes the `key` field in your manifest. After the first Web Store upload, note the assigned ID from the developer dashboard and re-run the allowlist script with that ID against the prod Clerk instance.
 
 ## 6. Onboarding install detection (`externally_connectable`)
