@@ -8,7 +8,7 @@ cd "$CONDUCTOR_WORKSPACE_PATH"
 echo "==> pnpm install"
 pnpm install --frozen-lockfile
 
-echo "==> Copying .env.local files from $CONDUCTOR_ROOT_PATH"
+echo "==> Copying env files from $CONDUCTOR_ROOT_PATH"
 copy_env() {
   local rel="$1"
   local src="$CONDUCTOR_ROOT_PATH/$rel"
@@ -20,11 +20,18 @@ copy_env() {
     echo "    skipped $rel (not present in root checkout)"
   fi
 }
+# Dev (.env.local / .env) — needed for dev/typecheck/test/build.
 copy_env apps/api/.env.local
 copy_env apps/dashboard/.env.local
-copy_env apps/extension/.env.local
+copy_env apps/extension/.env
 copy_env apps/mcp/.env.local
+copy_env packages/db/.env
 copy_env packages/db/.env.local
+# Prod (.env.production / .env.prod) — needed for `build:prod` artifacts and
+# `fly deploy` dry-runs from a workspace.
+copy_env apps/api/.env.production
+copy_env apps/extension/.env.production
+copy_env apps/mcp/.env.prod
 
 echo "==> Prebuilding packages (required for typecheck/test/build)"
 pnpm turbo build --filter='./packages/*'

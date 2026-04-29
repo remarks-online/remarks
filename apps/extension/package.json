@@ -10,7 +10,7 @@
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
     "build": "node scripts/prepare-with-exit.cjs build",
-    "build:prod": "node scripts/prepare-with-exit.cjs build --mode production",
+    "build:prod": "pnpm turbo run build --filter='@remarks/extension^...' && node scripts/prepare-with-exit.cjs build --mode production",
     "build:firefox": "node scripts/prepare-with-exit.cjs build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",

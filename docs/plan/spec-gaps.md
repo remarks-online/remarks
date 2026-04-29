@@ -42,32 +42,6 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Estimated size**: `s`.
 - **Status**: `open`.
 
-## A16 — Extension production build env + prod Clerk allowlist
-
-| # | Done when | Complete |
-|---|---|---|
-| A16 | A `build:prod` of the extension talks to the prod Clerk instance + `app.remarks.online`, and the deterministic chrome-extension origin is in `remarks-prod`'s `allowed_origins` | [ ] |
-
-- **Spec reference**: §13/§14 don't define an extension production-build flow; ADR 0014 (`docs/adr/remarks-adr-0014-clerk-sync.md`) covers the syncHost design but not how the extension swaps environments at build time.
-- **Problem**: `apps/extension/.env` is the only env file the extension reads, and it's hard-coded for dev (`pk_test_…` against the `remarks-dev` Clerk instance, `WXT_CLERK_SYNC_HOST=http://localhost:3000`). There was no `build:prod` script and no `.env.production` template, so a Web-Store-distributed build today would still talk to dev Clerk and the local dashboard. Symptom that surfaced this gap: enabling Google on `remarks-prod` shows the button on `app.remarks.online/sign-in` but a "prod" extension build still hits `remarks-dev` and never sees the new providers (the same trap applies to any future prod-only Clerk config — webhooks, MFA, etc.).
-- **Proposed deliverable** (this task, A16):
-  - `pnpm --filter @remarks/extension build:prod` runs `wxt build --mode production` via the existing `prepare-with-exit.cjs` wrapper, which makes Vite layer `apps/extension/.env.production` over `.env`.
-  - `apps/extension/.env.example` documents the `.env.production` shape (`pk_live_…`, `https://api.remarks.online`, `https://clerk.remarks.online` — see syncHost gotcha below) and the one-time allowlist invocation.
-  - **syncHost gotcha (the one that took a debug round to find):** in dev, `WXT_CLERK_SYNC_HOST` points at the **dashboard** (`http://localhost:3000`) because Clerk's dev-browser-token lives there. In prod it points at the **Clerk Frontend API** (`https://clerk.remarks.online`), because that's where the production `__client` cookie is set — `@clerk/chrome-extension` looks for that exact cookie name on syncHost (chunk-SYSWCRXO.js: `var CLIENT_JWT_KEY = "__client"`). Setting prod syncHost to the dashboard reads zero relevant cookies and the popup silently reports `signedIn: false` with no errors. Source: https://clerk.com/docs/chrome-extension/getting-started/quickstart.
-  - One-time `CLERK_SECRET_KEY=sk_live_… pnpm --filter @remarks/scripts exec tsx tools/scripts/clerk-allowlist-extension.ts baikikfefeheiildmfoaicbjbnbecgjd` — the script (`tools/scripts/clerk-allowlist-extension.ts:1-69`) is idempotent and the extension ID is deterministic via `manifest.key` in `wxt.config.ts:9`.
-  - **Enable the Clerk "Native API" toggle on the prod instance.** The `@clerk/chrome-extension` SDK runs in Native API mode (the failing URL ends in `?_is_native=1`); without the toggle, every popup load 400s with `Native API is disabled for this instance`. Dev was already on; prod was not. Verify with `curl -s -o /dev/null -w '%{http_code}' 'https://clerk.remarks.online/v1/environment?_is_native=1'` returning `200`.
-- **Done when**:
-  - `apps/extension/package.json` has a `build:prod` script
-  - `apps/extension/.env.example` documents the prod env shape and the allowlist command
-  - The prod Clerk instance's `allowed_origins` contains `chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd` (run the script with `sk_live_…` once)
-  - The prod Clerk instance has the **Native API** feature enabled
-  - A `build:prod` artifact loaded in Chrome successfully completes a sign-in via `app.remarks.online` and the popup flips to the `Show when="signed-in"` branch in `apps/extension/src/entrypoints/popup/App.tsx:68`
-- **Conflicts / overlaps with spec**: None. Phase 0/1 spec is silent on extension prod packaging; this just documents and codifies the missing wiring.
-- **Affected tasks / components**: `apps/extension/.env.example`, `apps/extension/package.json`, `apps/extension/src/{entrypoints/popup/App.tsx,entrypoints/background.ts}` (no source changes — only behavior verified), `tools/scripts/clerk-allowlist-extension.ts` (executed once with `sk_live_`).
-- **Dependencies**: Independent. Pre-requisite for any task that exercises prod Clerk config from the extension (e.g., A17 below).
-- **Estimated size**: `xs`.
-- **Status**: `in progress` — code-side wiring is in place (`build:prod` script, `.env.example`, syncHost gotcha documented). Outstanding: prod Clerk Native API toggle, prod `allowed_origins` entry for `chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd`, and the end-to-end sign-in test of a `build:prod` artifact against `app.remarks.online`.
-
 ## A20 — Remove the Clerk OAuth bridges (custom scopes + audience binding)
 
 | # | Done when | Complete |
@@ -90,27 +64,6 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Conflicts / overlaps with spec**: ADR-0015 §4 + §3 imply both custom scopes and audience binding work today; this gap and the bridges are the temporary deviation.
 - **Affected tasks / components**: `apps/mcp/src/lib/jwt.ts`, `apps/mcp/src/plugins/mcp-auth.ts`, `apps/mcp/src/routes/well-known.ts`, `docs/runbooks/clerk-mcp-setup.md`.
 - **Dependencies**: After Clerk ships custom OAuth scopes *and* honors the RFC 8707 `resource` parameter (track `clerk.com/changelog`).
-- **Estimated size**: `xs`.
-- **Status**: `open`.
-
-## A18 — Localhost dev origin baked into prod extension bundle via runtime constant
-
-| # | Done when | Complete |
-|---|---|---|
-| A18 | A `build:prod` artifact contains no `localhost:3000` references in `background.js` (the manifest side is already mode-branched in `wxt.config.ts`) | [ ] |
-
-- **Spec reference**: not specified. ADR 0014 covers syncHost but not bundle hygiene across modes.
-- **Problem**: `apps/extension/wxt.config.ts:16,51,60` already drops `http://localhost/*` and `http://localhost:3000/*` from `host_permissions` and `externally_connectable.matches` in prod via `const isProd = process.env.NODE_ENV === "production"`. The remaining leak is `apps/extension/src/entrypoints/background.ts:190-193`, which hardcodes both `https://app.remarks.online` and `http://localhost:3000` in `EXTERNAL_PING_ALLOWED_ORIGINS`. The constant gets bundled into every build (including prod), so `grep -rl "localhost:3000" .output/chrome-mv3` still returns matches in `background.js` after `pnpm build:prod`. Tiny info-leak surface (a malicious local origin pretending to be localhost:3000 could probe whether a user has the extension installed), but trivial to close once the manifest half is already mode-branched.
-- **Proposed deliverable**:
-  - Mode-branch `EXTERNAL_PING_ALLOWED_ORIGINS` the same way `wxt.config.ts` does — either via `import.meta.env.MODE === 'production'` inside `background.ts`, or by exporting the allowlist from a tiny helper in `apps/extension/src/env.ts` that already knows the mode.
-  - Verify with `grep -rl "localhost:3000" .output/chrome-mv3` returning zero matches after `pnpm --filter @remarks/extension build:prod`.
-- **Done when**:
-  - Prod build artifact has zero `localhost:3000` references (manifest + background script)
-  - Dev build artifact retains them (so onboarding handshake still works locally)
-  - One smoke run of `pnpm --filter @remarks/dashboard dev` + `pnpm --filter @remarks/extension dev` confirms the dashboard's install-detection ping still works in dev
-- **Conflicts / overlaps with spec**: None.
-- **Affected tasks / components**: `apps/extension/src/entrypoints/background.ts:190-193`. Possibly a tiny helper in `apps/extension/src/env.ts` for the mode branching.
-- **Dependencies**: After A16 (the build:prod plumbing).
 - **Estimated size**: `xs`.
 - **Status**: `open`.
 

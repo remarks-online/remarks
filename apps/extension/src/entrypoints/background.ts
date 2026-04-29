@@ -184,13 +184,16 @@ globalThis.__remarksCaptureScreenshot = async (
 };
 
 // Origin allowlist for external (dashboard) pings. Mirrors the manifest's
-// externally_connectable.matches so only the dashboard origins can pull a
-// signed-in flag out of the SW. Web Store ID change won't affect this — the
-// dashboard side identifies the extension by ID, not the other way around.
-const EXTERNAL_PING_ALLOWED_ORIGINS = new Set([
-  "https://app.remarks.online",
-  "http://localhost:3000",
-]);
+// externally_connectable.matches (which is already mode-branched in
+// wxt.config.ts) so only the dashboard origins can pull a signed-in flag out
+// of the SW. Web Store ID change won't affect this — the dashboard side
+// identifies the extension by ID, not the other way around. Mode-branched so
+// the prod bundle doesn't carry the localhost dev origin (A18).
+const EXTERNAL_PING_ALLOWED_ORIGINS = new Set(
+  import.meta.env.MODE === "production"
+    ? ["https://app.remarks.online"]
+    : ["https://app.remarks.online", "http://localhost:3000"]
+);
 
 export default defineBackground(() => {
   // Spec §7.5 — `extension_installed` and `extension_signed_in` are detected
