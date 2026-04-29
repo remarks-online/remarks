@@ -188,7 +188,8 @@ globalThis.__remarksCaptureScreenshot = async (
 // wxt.config.ts) so only the dashboard origins can pull a signed-in flag out
 // of the SW. Web Store ID change won't affect this — the dashboard side
 // identifies the extension by ID, not the other way around. Mode-branched so
-// the prod bundle doesn't carry the localhost dev origin (A18).
+// the prod bundle doesn't carry the localhost dev origin (see Phase 0/1
+// spec §6.2 "Production build").
 const EXTERNAL_PING_ALLOWED_ORIGINS = new Set(
   import.meta.env.MODE === "production"
     ? ["https://app.remarks.online"]

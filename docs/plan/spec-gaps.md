@@ -81,13 +81,13 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
     - Prod callback: `https://clerk.remarks.online/v1/oauth_callback`
   - **Clerk dev instance → SSO Connections → Add → Apple:** paste credentials, save.
   - **Clerk prod instance → SSO Connections → Add → Apple:** paste the same credentials (Apple keys are tied to the Apple Service ID, not to a Clerk environment).
-  - Verify via the same matrix as Google: dev dashboard `/sign-in`, dev extension popup → dashboard sign-in tab, prod dashboard `/sign-in`, prod extension popup (depends on A16).
+  - Verify via the same matrix as Google: dev dashboard `/sign-in`, dev extension popup → dashboard sign-in tab, prod dashboard `/sign-in`, prod extension popup (depends on the extension prod-build flow now in Phase 0/1 spec §6.2 "Production build").
 - **Done when**:
   - Both Clerk instances have an active Apple SSO connection
   - Dev dashboard, dev extension popup, prod dashboard, and prod extension popup all render an Apple button and complete a real Sign in with Apple round-trip
 - **Conflicts / overlaps with spec**: None. Configuration inside the existing ADR-0003 ("Clerk for auth") decision; no new architectural choice.
 - **Affected tasks / components**: Clerk instance config only — no repo files. Same dashboard `<SignIn>` / `<SignUp>` (`apps/dashboard/src/app/sign-in/[[...sign-in]]/page.tsx`, `apps/dashboard/src/app/sign-up/[[...sign-up]]/page.tsx`) and extension popup will pick up the new provider with no source changes.
-- **Dependencies**: Independent of A16 for the dashboard surface; **after A16** for the prod-extension surface (otherwise prod-built extensions still hit dev Clerk).
+- **Dependencies**: Independent of the extension prod-build flow (Phase 0/1 spec §6.2) for the dashboard surface; **after** that flow for the prod-extension surface (otherwise prod-built extensions still hit dev Clerk).
 - **Estimated size**: `s` once the Apple Developer account is in place; otherwise blocked on enrolment.
 - **Status**: `open`.
 
@@ -141,7 +141,7 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 |---|---|---|
 | A24 ✓ | Every "open a tab to the dashboard" redirect in the extension uses `WXT_DASHBOARD_URL` (sign-in lands on `app.remarks.online/sign-in` in prod, not `clerk.remarks.online/sign-in`) | [x] |
 
-- **Spec reference**: A16 (this file) — A16 swapped the prod `WXT_CLERK_SYNC_HOST` to the Clerk FAPI (`https://clerk.remarks.online`) so `__client` cookie sync works, but did not split the variable out from its other use sites.
+- **Spec reference**: Phase 0/1 spec §6.2 "Production build" (the prod-build flow that swapped `WXT_CLERK_SYNC_HOST` to the Clerk FAPI `https://clerk.remarks.online` so `__client` cookie sync works, but did not split the variable out from its other use sites).
 - **Problem**: Five call sites in the extension were building dashboard URLs by appending paths to `WXT_CLERK_SYNC_HOST` — `popup/App.tsx` (`openSignIn`/`openSignUp`), `SidebarSignedOut.tsx`, `SidebarMoreMenu.tsx` (the "open dashboard" fallback), and `popup/ProjectPicker.tsx` (`openNewProjectTab`). That worked in dev because syncHost happens to be `localhost:3000` (the dashboard). In prod the two URLs diverge — syncHost is `clerk.remarks.online` (FAPI) and the dashboard is `app.remarks.online` — so every redirect 404s. Symptom that surfaced this: clicking **Sign in** in the production extension popup opens `https://clerk.remarks.online/sign-in` and Clerk returns 404.
 - **Proposed deliverable**:
   - New env var `WXT_DASHBOARD_URL` (added to `apps/extension/src/env.ts` schema and documented in `apps/extension/.env.example`). Dev: `http://localhost:3000`. Prod: `https://app.remarks.online`.
@@ -151,8 +151,8 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
   - Dev build: clicking **Sign in** / **Create account** in the popup opens `http://localhost:3000/sign-in`.
   - Prod build (after `apps/extension/.env.production` adds `WXT_DASHBOARD_URL=https://app.remarks.online`): same buttons open `https://app.remarks.online/sign-in`.
   - `pnpm turbo typecheck/lint/test/build --filter="*"` clean; extension-e2e CI green.
-- **Conflicts / overlaps with spec**: None — A16's note about syncHost being the FAPI in prod stands; this amendment just extracts the dashboard-URL responsibility into its own variable.
+- **Conflicts / overlaps with spec**: None — Phase 0/1 spec §6.2's note about syncHost being the FAPI in prod stands; this amendment just extracts the dashboard-URL responsibility into its own variable.
 - **Affected tasks / components**: `apps/extension/src/env.ts`, `apps/extension/src/entrypoints/popup/App.tsx`, `apps/extension/src/entrypoints/popup/ProjectPicker.tsx`, `apps/extension/src/components/SidebarSignedOut.tsx`, `apps/extension/src/components/SidebarMoreMenu.tsx`, `apps/extension/.env.example`, `apps/extension/e2e/fixtures.ts`, `apps/extension/e2e/playwright.config.ts`, `apps/extension/verify/auth-flow.spec.ts`, `apps/extension/verify/README.md`, `turbo.json`, `.github/workflows/ci.yml`. PR description reminds whoever ships the next CWS build to add `WXT_DASHBOARD_URL=https://app.remarks.online` to `apps/extension/.env.production` before running `build:prod`.
-- **Dependencies**: After A16. Pre-requisite for any future CWS submission.
+- **Dependencies**: After the extension prod-build flow (Phase 0/1 spec §6.2). Pre-requisite for any future CWS submission.
 - **Estimated size**: `xs`.
 - **Status**: `done in PR #83`.

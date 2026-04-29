@@ -14,8 +14,9 @@ bash tools/conductor/setup.sh
 Runs once at workspace creation. Installs dependencies, copies env files from
 the root checkout (dev `.env.local` / `.env` for every app + `packages/db`,
 plus prod `.env.production` / `.env.prod` for the api / extension / mcp so
-`build:prod` artifacts can be produced from a workspace), then prebuilds
-`packages/*` so `typecheck`/`test`/`build` work without an extra step.
+the extension's `build:prod` artifact and `fly deploy` dry-runs for the api /
+mcp can be produced from a workspace), then prebuilds `packages/*` so
+`typecheck`/`test`/`build` work without an extra step.
 
 ## Repository Settings → Scripts (run buttons)
 
