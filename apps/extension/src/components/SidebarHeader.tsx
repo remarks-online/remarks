@@ -1,3 +1,4 @@
+import { RemarksLogo } from "@/components/RemarksLogo";
 import { SidebarMoreMenu } from "@/components/SidebarMoreMenu";
 import { SidebarToolsMenu } from "@/components/SidebarToolsMenu";
 import type { AuthStatus } from "@/lib/auth-status";
@@ -20,14 +21,7 @@ export function SidebarHeader({ compact, auth }: Props) {
   return (
     <header className="flex items-center gap-1 border-b border-border bg-card px-2 py-1.5">
       <div className="flex flex-1 items-center gap-2 min-w-0">
-        <span
-          aria-hidden="true"
-          className={cn(
-            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground"
-          )}
-        >
-          R
-        </span>
+        <RemarksLogo size={24} className="shrink-0" />
         {compact ? null : (
           <span className="truncate text-sm font-semibold text-foreground">Remarks</span>
         )}
