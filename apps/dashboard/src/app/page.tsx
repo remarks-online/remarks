@@ -4,6 +4,7 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-2xl px-6 py-24">
+      <img src="/remarks-logo.svg" alt="" width={64} height={64} className="mb-6" />
       <h1 className="text-4xl font-semibold tracking-tight">Remarks</h1>
       <p className="mt-4 text-lg text-slate-600">
         In-context feedback for websites. Annotate, assign, resolve.

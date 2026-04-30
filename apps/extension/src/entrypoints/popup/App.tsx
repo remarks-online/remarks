@@ -1,3 +1,4 @@
+import { RemarksLogo } from "@/components/RemarksLogo";
 import { env } from "@/env";
 import { setActiveClerkOrgId } from "@/lib/active-org";
 import { TrpcProvider } from "@/lib/trpc-provider";
@@ -59,7 +60,10 @@ export function App() {
       <TrpcProvider>
         <main className="flex min-w-[360px] flex-col gap-3 bg-background p-4 text-foreground">
           <header className="flex items-center justify-between">
-            <h1 className="text-base font-semibold">Remarks</h1>
+            <div className="flex items-center gap-2">
+              <RemarksLogo size={20} />
+              <h1 className="text-base font-semibold">Remarks</h1>
+            </div>
             <Show when="signed-in">
               <UserButton />
             </Show>
