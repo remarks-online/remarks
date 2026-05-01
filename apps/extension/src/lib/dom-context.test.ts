@@ -11,7 +11,7 @@ describe("buildDomContext", () => {
   it("captures tagName + classes + textContent", () => {
     document.body.innerHTML = '<button class="primary submit">Place order</button>';
     const ctx = buildDomContext(q("button"));
-    expect(ctx).toEqual({
+    expect(ctx).toMatchObject({
       tagName: "button",
       classes: ["primary", "submit"],
       textContent: "Place order",
@@ -53,5 +53,31 @@ describe("buildDomContext", () => {
       '<main><section class="x y"><button class="btn">Click</button></section></main>';
     const ctx = buildDomContext(q("button"));
     expect(() => domContextSchema.parse(ctx)).not.toThrow();
+  });
+
+  it("captures whitelisted computed styles when set inline", () => {
+    document.body.innerHTML =
+      '<div style="display: flex; color: rgb(255, 0, 0); padding: 8px;"></div>';
+    const ctx = buildDomContext(q("div"));
+    expect(ctx.computedStyles?.display).toBe("flex");
+    expect(ctx.computedStyles?.color).toBe("rgb(255, 0, 0)");
+    expect(ctx.computedStyles?.padding).toBe("8px");
+  });
+
+  it("drops noise values like 'none' / 'auto' from computed styles", () => {
+    document.body.innerHTML =
+      '<div style="display: block; background-image: none; top: auto;"></div>';
+    const ctx = buildDomContext(q("div"));
+    expect(ctx.computedStyles?.display).toBe("block");
+    expect(ctx.computedStyles?.["background-image"]).toBeUndefined();
+    expect(ctx.computedStyles?.top).toBeUndefined();
+  });
+
+  it("caps computed styles at MAX_COMPUTED_STYLE_KEYS", () => {
+    document.body.innerHTML = "<div></div>";
+    const ctx = buildDomContext(q("div"));
+    if (ctx.computedStyles) {
+      expect(Object.keys(ctx.computedStyles).length).toBeLessThanOrEqual(40);
+    }
   });
 });
