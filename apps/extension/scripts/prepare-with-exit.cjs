@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 /**
- * Wrapper around `wxt <subcommand>` (`prepare` or `build`) that force-exits
- * after wxt logs "Finished in …".
+ * Wrapper around `wxt <subcommand>` (`prepare`, `build`, or `zip`) that
+ * force-exits after wxt logs "Finished in …".
  *
  * wxt 0.20.25 has a handle leak (kqueue on macOS, epoll in Linux CI) that
  * prevents its Node process from exiting after the subcommand logically
  * completes. Locally this looked like postinstall hanging; in CI it stalls
- * the build step indefinitely after wxt's final log line.
+ * the step indefinitely after wxt's final log line — including `wxt zip`
+ * in the extension-release workflow, which printed "Finished in 5.9 s"
+ * but never returned control to the shell.
  *
  * Usage:
  *   node scripts/prepare-with-exit.cjs prepare
  *   node scripts/prepare-with-exit.cjs build [extra-wxt-args...]
+ *   node scripts/prepare-with-exit.cjs zip [extra-wxt-args...]
  *
  * Strategy: spawn wxt with stdio piped, tee its output to the parent, and
  * watch for the "Finished in" line. Once seen, wait a short grace period
