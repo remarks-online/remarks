@@ -70,7 +70,6 @@ describe("sidebar-prefs", () => {
     saveSidebarPrefs({
       visible: true,
       dock: "right",
-      compact: false,
       width: 320,
       height: 240,
       theme: "auto",
@@ -78,7 +77,6 @@ describe("sidebar-prefs", () => {
     saveSidebarPrefs({
       visible: true,
       dock: "left",
-      compact: false,
       width: 360,
       height: 240,
       theme: "auto",
@@ -106,7 +104,6 @@ describe("sidebar-prefs", () => {
     saveSidebarPrefs({
       visible: false,
       dock: "bottom",
-      compact: true,
       width: 320,
       height: 280,
       theme: "dark",

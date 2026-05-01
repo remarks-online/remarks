@@ -13,24 +13,15 @@ import {
 } from "@remarks/ui";
 import { MousePointer2, SquareDashed, Wrench } from "lucide-react";
 
-interface Props {
-  compact: boolean;
-}
-
-export function SidebarToolsMenu({ compact }: Props) {
+export function SidebarToolsMenu() {
   const container = useShadowRootPortalContainer();
   const { signedIn } = useAuthStatus();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size={compact ? "icon" : "sm"}
-          aria-label="Tools"
-          className={compact ? "h-8 w-8" : ""}
-        >
+        <Button variant="ghost" size="sm" aria-label="Tools">
           <Wrench className="h-4 w-4" />
-          {compact ? null : <span>Tools</span>}
+          <span>Tools</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" container={container} className="w-56">

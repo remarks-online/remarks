@@ -3,18 +3,15 @@ import { SidebarMoreMenu } from "@/components/SidebarMoreMenu";
 import { SidebarToolsMenu } from "@/components/SidebarToolsMenu";
 import type { AuthStatus } from "@/lib/auth-status";
 import { countsOf, useOutbox } from "@/lib/outbox-store";
-import { sidebarStore, useSidebar } from "@/lib/sidebar-store";
-import { Badge, Button, cn } from "@remarks/ui";
-import { AlertTriangle, CloudUpload, LayoutPanelLeft, Minus } from "lucide-react";
+import { sidebarStore } from "@/lib/sidebar-store";
+import { Button, cn } from "@remarks/ui";
+import { AlertTriangle, CloudUpload, Minus } from "lucide-react";
 
 interface Props {
-  compact: boolean;
   auth: AuthStatus;
 }
 
-export function SidebarHeader({ compact, auth }: Props) {
-  const dock = useSidebar((s) => s.dock);
-  const dockLabel = dock === "right" ? "Right" : dock === "left" ? "Left" : "Bottom";
+export function SidebarHeader({ auth }: Props) {
   const outboxItems = useOutbox((s) => s.items);
   const counts = countsOf(outboxItems);
 
@@ -22,9 +19,7 @@ export function SidebarHeader({ compact, auth }: Props) {
     <header className="flex items-center gap-1 border-b border-border bg-card px-2 py-1.5">
       <div className="flex flex-1 items-center gap-2 min-w-0">
         <RemarksLogo size={24} className="shrink-0" />
-        {compact ? null : (
-          <span className="truncate text-sm font-semibold text-foreground">Remarks</span>
-        )}
+        <span className="truncate text-sm font-semibold text-foreground">Remarks</span>
         <span
           aria-label={auth.signedIn ? "Signed in" : "Signed out"}
           title={auth.signedIn ? "Signed in" : "Signed out"}
@@ -55,17 +50,7 @@ export function SidebarHeader({ compact, auth }: Props) {
       </div>
 
       <div className="flex items-center gap-0.5">
-        <SidebarToolsMenu compact={compact} />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Dock: ${dockLabel} (click to cycle)`}
-          title={`Dock: ${dockLabel}`}
-          className="h-8 w-8"
-          onClick={() => sidebarStore.getState().cycleDock()}
-        >
-          <LayoutPanelLeft className="h-4 w-4" />
-        </Button>
+        <SidebarToolsMenu />
         <Button
           variant="ghost"
           size="icon"
@@ -76,12 +61,7 @@ export function SidebarHeader({ compact, auth }: Props) {
         >
           <Minus className="h-4 w-4" />
         </Button>
-        <SidebarMoreMenu compact={compact} />
-        {compact ? null : (
-          <Badge variant="secondary" className="ml-1 hidden lg:inline-flex">
-            {dockLabel}
-          </Badge>
-        )}
+        <SidebarMoreMenu />
       </div>
     </header>
   );

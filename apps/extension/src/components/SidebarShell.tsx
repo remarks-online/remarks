@@ -26,7 +26,6 @@ import { saveSidebarPrefs, watchSidebarPrefs } from "@/lib/sidebar-prefs";
 import { registerSidebarShortcuts } from "@/lib/sidebar-shortcuts";
 import { getPersistablePrefs, sidebarStore, useSidebar } from "@/lib/sidebar-store";
 import { SidebarTrpcProvider } from "@/lib/sidebar-trpc-provider";
-import { useAutoCompact } from "@/lib/use-auto-compact";
 import { useResolvedTheme } from "@/lib/use-host-theme";
 import { triggerOutboxDrain, useOutboxDrain } from "@/lib/use-outbox-drain";
 import { cn } from "@remarks/ui";
@@ -60,12 +59,9 @@ function dockStyle(dock: string): DockStyle {
 export function SidebarShell() {
   const visible = useSidebar((s) => s.visible);
   const dock = useSidebar((s) => s.dock);
-  const manualCompact = useSidebar((s) => s.compact);
   const width = useSidebar((s) => s.width);
   const height = useSidebar((s) => s.height);
 
-  const auto = useAutoCompact();
-  const compact = manualCompact || auto;
   const resolvedTheme = useResolvedTheme();
 
   const auth = useAuthStatus();
@@ -74,7 +70,7 @@ export function SidebarShell() {
   // Popover) portal here so they share `.rmk-root`'s stacking context.
   const [popoverEl, setPopoverEl] = useState<HTMLDivElement | null>(null);
 
-  // Global keyboard shortcuts (⌘⇧F toggle, ⌘⇧D cycle dock). Registered at the
+  // Global keyboard shortcuts (⌘⇧F toggle, ⌘⇧⌥R/L/B dock). Registered at the
   // shell level so the listener stays alive while the sidebar is hidden — the
   // body unmounts in that case, so registering there made ⌘⇧F unable to bring
   // the sidebar back.
@@ -85,7 +81,7 @@ export function SidebarShell() {
   // Persist prefs whenever anything persistable changes.
   useEffect(() => {
     const unsub = sidebarStore.subscribe((state, prev) => {
-      const persistable = ["visible", "dock", "compact", "width", "height", "theme"] as const;
+      const persistable = ["visible", "dock", "width", "height", "theme"] as const;
       const changed = persistable.some((k) => state[k] !== prev[k]);
       if (changed) saveSidebarPrefs(getPersistablePrefs(state));
     });
@@ -140,12 +136,7 @@ export function SidebarShell() {
     <SidebarSignedOut />
   ) : (
     <SidebarTrpcProvider token={auth.token}>
-      <SidebarBody
-        projectId={projectId}
-        token={auth.token}
-        clerkOrgId={auth.clerkOrgId}
-        compact={compact}
-      />
+      <SidebarBody projectId={projectId} token={auth.token} clerkOrgId={auth.clerkOrgId} />
     </SidebarTrpcProvider>
   );
 
@@ -154,7 +145,6 @@ export function SidebarShell() {
       className={cn("rmk-root pointer-events-none", styles.container)}
       data-theme={resolvedTheme}
       data-dock={dock}
-      data-compact={compact ? "true" : "false"}
     >
       <PopoverContainerProvider value={popoverEl}>
         <div
@@ -164,7 +154,7 @@ export function SidebarShell() {
           )}
           style={sizeStyle}
         >
-          <SidebarHeader compact={compact} auth={auth} />
+          <SidebarHeader auth={auth} />
           {body}
           <SidebarResizeHandle />
         </div>
@@ -179,10 +169,9 @@ interface SidebarBodyProps {
   projectId: string | null;
   token: string | null;
   clerkOrgId: string | null;
-  compact: boolean;
 }
 
-function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps) {
+function SidebarBody({ projectId, token, clerkOrgId }: SidebarBodyProps) {
   const capture = usePicker((s) => s.capture);
   const mode = usePicker((s) => s.mode);
   const queryClient = useQueryClient();
@@ -263,7 +252,7 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
     <>
       <AnnotationPinLayer projectId={projectId} branch={projectId ? branch : null} />
       {projectId ? <SidebarBranchSelector value={branch} onChange={onBranchChange} /> : null}
-      <SidebarStatusTabs compact={compact} />
+      <SidebarStatusTabs />
       <div className="flex-1 overflow-y-auto">
         <SidebarThreadList projectId={projectId} branch={projectId ? branch : null} />
       </div>
@@ -272,12 +261,7 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
           <SidebarPickerHint mode={mode} />
         </div>
       ) : null}
-      <SidebarOutboxBanner
-        apiUrl={env.WXT_API_URL}
-        token={token}
-        clerkOrgId={clerkOrgId}
-        compact={compact}
-      />
+      <SidebarOutboxBanner apiUrl={env.WXT_API_URL} token={token} clerkOrgId={clerkOrgId} />
       {capture ? (
         <div className="border-t border-border bg-card p-2">
           <SidebarCapturePanel capture={capture} />

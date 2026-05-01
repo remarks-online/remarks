@@ -9,14 +9,13 @@ interface Props {
   apiUrl: string;
   token: string | null;
   clerkOrgId: string | null;
-  compact: boolean;
 }
 
 function pluralize(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
-export function SidebarOutboxBanner({ apiUrl, token, clerkOrgId, compact }: Props) {
+export function SidebarOutboxBanner({ apiUrl, token, clerkOrgId }: Props) {
   const items = useOutbox((s) => s.items);
   const counts = countsOf(items);
 
@@ -53,21 +52,11 @@ export function SidebarOutboxBanner({ apiUrl, token, clerkOrgId, compact }: Prop
       )}
       <div className="flex-1 truncate">
         {counts.pending > 0 ? (
-          <span>
-            {compact
-              ? `Syncing ${counts.pending}`
-              : `Syncing ${pluralize(counts.pending, "item", "items")}…`}
-          </span>
+          <span>Syncing {pluralize(counts.pending, "item", "items")}…</span>
         ) : null}
         {counts.pending > 0 && counts.error > 0 ? <span className="mx-1">·</span> : null}
+        {counts.error > 0 ? <span>{pluralize(counts.error, "item", "items")} failed</span> : null}
         {counts.error > 0 ? (
-          <span>
-            {compact
-              ? `${counts.error} failed`
-              : `${pluralize(counts.error, "item", "items")} failed`}
-          </span>
-        ) : null}
-        {!compact && counts.error > 0 ? (
           <ErrorDetail records={items.filter((r) => r.state === "error")} />
         ) : null}
       </div>
