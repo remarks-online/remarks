@@ -12,6 +12,12 @@ export const MAX_PROJECT_SLUG_LENGTH = 50;
 export const MIN_REJECTION_REASON_LENGTH = 10;
 export const MAX_REJECTION_REASON_LENGTH = 500;
 
+// G13: cap on the leaf-to-root React component chain captured for an element.
+// 12 covers virtually all real component depths while bounding the JSONB payload.
+export const MAX_REACT_COMPONENTS = 12;
+export const MAX_REACT_COMPONENT_NAME_LENGTH = 120;
+export const MAX_REACT_SOURCE_PATH_LENGTH = 500;
+
 export const PROJECT_SLUG_REGEX = /^[a-z0-9-]+$/;
 
 // `acknowledged` lives between `to_do` and `doing`: an agent has read the task

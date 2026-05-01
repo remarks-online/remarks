@@ -437,8 +437,17 @@ function CommentSection({
   );
 }
 
+function frameworkLabel(hint: string): string {
+  // Hand-tweak only the framework names whose canonical casing differs from a
+  // straight capitalize. Anything not listed gets first-letter-uppercased so a
+  // future "vue"/"svelte"/etc. value renders cleanly without a code change.
+  const overrides: Record<string, string> = { react: "React" };
+  return overrides[hint] ?? hint.charAt(0).toUpperCase() + hint.slice(1);
+}
+
 function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
   const authorLabel = annotation.author.name ?? annotation.author.email ?? "Unknown";
+  const reactComponents = annotation.domContext?.reactComponents ?? null;
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
       <dt className="text-muted-foreground">Branch</dt>
@@ -463,6 +472,32 @@ function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
             <code className="block overflow-x-auto rounded bg-muted px-1.5 py-0.5 font-mono">
               {annotation.targetSelector}
             </code>
+          </dd>
+        </>
+      ) : null}
+      {annotation.frameworkHint ? (
+        <>
+          <dt className="text-muted-foreground">Framework</dt>
+          <dd>{frameworkLabel(annotation.frameworkHint)}</dd>
+        </>
+      ) : null}
+      {reactComponents && reactComponents.length > 0 ? (
+        <>
+          <dt className="text-muted-foreground">Components</dt>
+          <dd className="break-words font-mono">
+            {reactComponents.map((c, i) => {
+              const tooltipParts: string[] = [c.kind];
+              if (c.source) {
+                const file = c.source.fileName.split("/").slice(-2).join("/");
+                tooltipParts.push(`${file}:${c.source.lineNumber}`);
+              }
+              return (
+                <span key={`${c.name}-${i}`} title={tooltipParts.join(" · ")}>
+                  {i > 0 ? <span className="text-muted-foreground"> ‹ </span> : null}
+                  {c.name}
+                </span>
+              );
+            })}
           </dd>
         </>
       ) : null}

@@ -799,6 +799,18 @@ function toDomContextResponse(
     computedStyles: value.computedStyles ?? null,
     ancestors:
       value.ancestors?.map((a) => ({ tagName: a.tagName, classes: a.classes ?? null })) ?? null,
+    reactComponents:
+      value.reactComponents?.map((c) => ({
+        name: c.name,
+        kind: c.kind,
+        source: c.source
+          ? {
+              fileName: c.source.fileName,
+              lineNumber: c.source.lineNumber,
+              columnNumber: c.source.columnNumber ?? null,
+            }
+          : null,
+      })) ?? null,
   };
 }
 
@@ -825,6 +837,7 @@ function toAnnotationResponse(args: {
     targetCoords: row.targetCoords ?? null,
     viewport: row.viewport,
     domContext: toDomContextResponse(row.domContext),
+    frameworkHint: row.frameworkHint ?? null,
     commentText: row.commentText,
     author,
     assets: assets.map((a) => ({

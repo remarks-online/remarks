@@ -129,6 +129,7 @@ describe("annotationResponseSchema", () => {
     targetCoords: null,
     viewport: validViewport,
     domContext: null,
+    frameworkHint: null,
     commentText: "Needs fixing",
     author: {
       id: "00000000-0000-4000-8000-000000000004",

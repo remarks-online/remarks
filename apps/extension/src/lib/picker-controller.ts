@@ -1,5 +1,6 @@
 import { buildDomContext } from "./dom-context";
 import { elementAtPoint } from "./elements-at-point";
+import { requestReactComponents } from "./fiber-bridge";
 import { isInSidebarUi, isTypingEvent } from "./picker-guards";
 import {
   type Capture,
@@ -278,6 +279,13 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
     const capture = buildElementCapture(hoveredElement, preview);
     pickerStore.getState().commit(capture);
     scheduleScreenshot(capture);
+    // G13: enrichment is fire-and-forget. The popover already renders the
+    // sync domContext above; the React component chain lands ~tens of ms
+    // later when the MAIN-world bridge replies, and the popover re-renders.
+    void requestReactComponents(hoveredElement).then((result) => {
+      if (!result) return;
+      pickerStore.getState().attachReactInfo(result);
+    });
   };
 
   const stepToParent = () => {

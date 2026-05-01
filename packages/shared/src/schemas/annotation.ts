@@ -7,6 +7,9 @@ import {
   ASSET_KINDS,
   MAX_BRANCH_NAME_LENGTH,
   MAX_COMMENT_LENGTH,
+  MAX_REACT_COMPONENTS,
+  MAX_REACT_COMPONENT_NAME_LENGTH,
+  MAX_REACT_SOURCE_PATH_LENGTH,
   MAX_REJECTION_REASON_LENGTH,
   MAX_SELECTOR_LENGTH,
   MAX_TEXT_CONTENT_LENGTH,
@@ -34,6 +37,37 @@ export const rectSchema = z.object({
   height: z.number().nonnegative(),
 });
 
+// G13: leaf-to-root chain of React components that rendered the picked
+// element. `kind` lets the dashboard distinguish wrappers (memo/forwardRef)
+// from regular components without inspecting the name. `source` is dev-only
+// (`_debugSource` removed in React 19; never set in minified prod) — readers
+// must treat it as best-effort.
+export const REACT_COMPONENT_KINDS = [
+  "function",
+  "class",
+  "forward_ref",
+  "memo",
+  "lazy",
+  "provider",
+  "context",
+  "other",
+] as const;
+export type ReactComponentKind = (typeof REACT_COMPONENT_KINDS)[number];
+
+export const reactComponentNodeSchema = z.object({
+  name: z.string().max(MAX_REACT_COMPONENT_NAME_LENGTH),
+  kind: z.enum(REACT_COMPONENT_KINDS),
+  source: z
+    .object({
+      fileName: z.string().max(MAX_REACT_SOURCE_PATH_LENGTH),
+      lineNumber: z.number().int().nonnegative(),
+      columnNumber: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
+});
+
+export type ReactComponentNode = z.infer<typeof reactComponentNodeSchema>;
+
 export const domContextSchema = z.object({
   tagName: z.string().optional(),
   classes: z.array(z.string()).optional(),
@@ -47,6 +81,9 @@ export const domContextSchema = z.object({
       })
     )
     .optional(),
+  // G13: empty/missing on non-React pages or when React was minified beyond
+  // recognition. Capped to bound the JSONB payload.
+  reactComponents: z.array(reactComponentNodeSchema).max(MAX_REACT_COMPONENTS).optional(),
 });
 
 export type DomContextValue = z.infer<typeof domContextSchema>;
@@ -68,6 +105,21 @@ export const domContextResponseSchema = z.object({
       z.object({
         tagName: z.string(),
         classes: z.array(z.string()).nullable(),
+      })
+    )
+    .nullable(),
+  reactComponents: z
+    .array(
+      z.object({
+        name: z.string().max(MAX_REACT_COMPONENT_NAME_LENGTH),
+        kind: z.enum(REACT_COMPONENT_KINDS),
+        source: z
+          .object({
+            fileName: z.string().max(MAX_REACT_SOURCE_PATH_LENGTH),
+            lineNumber: z.number().int().nonnegative(),
+            columnNumber: z.number().int().nonnegative().nullable(),
+          })
+          .nullable(),
       })
     )
     .nullable(),
@@ -128,11 +180,15 @@ export const annotationResponseSchema = z.object({
   targetSelector: z.string().nullable(),
   targetCoords: rectSchema.nullable(),
   viewport: viewportSchema,
-  // Captured DOM snapshot (tagName, classes, ancestors, computedStyles) for
-  // element annotations. Null when the picker captured a region instead, or
-  // when the row predates dom-context capture. Inner fields are nullable
-  // instead of optional — see domContextResponseSchema for why.
+  // Captured DOM snapshot (tagName, classes, ancestors, computedStyles,
+  // reactComponents) for element annotations. Null when the picker captured a
+  // region instead, or when the row predates dom-context capture. Inner fields
+  // are nullable instead of optional — see domContextResponseSchema for why.
   domContext: domContextResponseSchema.nullable(),
+  // G13: free-form framework tag set by the capture pipeline ("react" today).
+  // Null when the page wasn't a recognized framework or capture predates the
+  // detection.
+  frameworkHint: z.string().nullable(),
   commentText: z.string(),
   author: z.object({
     id: z.string().uuid(),
