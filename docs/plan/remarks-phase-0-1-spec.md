@@ -1011,7 +1011,7 @@ The API is REST-first, with a tRPC router layered on top for the dashboard only.
 
 ### 5.1 Authentication
 
-- **Dashboard → API**: Clerk session token (Bearer) in `Authorization` header. Verified via `@clerk/backend`.
+- **Dashboard → API**: Clerk session token (Bearer) in `Authorization` header. Verified via `@clerk/backend`'s `verifyToken`, called with `authorizedParties` set to the comma-separated origin allowlist in `CLERK_AUTHORIZED_PARTIES` (dashboard origin + extension origin) so a JWT minted for some other application on a Clerk subdomain cannot be replayed against our API. See §12.
 - **Extension → API**: Clerk session token (Bearer). Extension uses Clerk's Chrome extension SDK to get a JWT.
 - **Agent/MCP → API (Phase 2)**: Project API token in `Authorization: Bearer db_proj_xxx`. Scoped to a single project. Rotatable.
 
@@ -1701,7 +1701,7 @@ Add dedicated metrics only when you have a specific question the above can't ans
 Non-negotiable for Phase 1, even solo:
 
 - **HTTPS everywhere**. No plain HTTP, even in dev (use `mkcert` for local TLS).
-- **Clerk handles password hashing, session management, email verification**. You don't touch any of it.
+- **Clerk handles password hashing, session management, email verification**. You don't touch any of it. The one caller-side mitigation we *do* own is `authorizedParties`: every `@clerk/backend` `verifyToken` call (`apps/api/src/plugins/auth.ts`) passes `env.CLERK_AUTHORIZED_PARTIES` so JWTs minted for other apps on a shared Clerk subdomain are rejected. The env is required (no `.optional()`) and validated in `apps/api/src/env-schema.ts`; deploy-time enforcement comes from `apps/api/scripts/check-fly-secrets.ts`, which derives the required-secrets list from the schema.
 - **CSRF**: not an issue for the API (all requests are CORS-bearer-auth); dashboard uses Clerk session tokens which aren't cookie-based.
 - **CORS**: API allows `https://app.remarks.online` and specific extension IDs only.
 - **Input validation**: Zod on every request body, enforced at the route handler before the business logic is called. Never trust client input.

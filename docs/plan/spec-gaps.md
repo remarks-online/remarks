@@ -19,29 +19,6 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 ---
 
-## A11 — `authorizedParties` missing from Clerk `verifyToken`
-
-| # | Done when | Complete |
-|---|---|---|
-| A11 ✓ | `apps/api/src/plugins/auth.ts` passes `authorizedParties` to `verifyToken`; integration tests still pass | [x] |
-
-- **Spec reference**: Not explicitly in the spec; surfaced by Clerk's [`verifyToken` reference](https://clerk.com/docs/reference/backend/verify-token) and [Manual JWT verification guide](https://clerk.com/docs/guides/sessions/manual-jwt-verification), which call `authorizedParties` out as a mitigation for a "subdomain cookie leaking attack."
-- **Problem**: `apps/api/src/plugins/auth.ts` today calls `verifyToken(token, { secretKey: env.CLERK_SECRET_KEY })` without `authorizedParties`. Clerk's docs treat the missing allowlist as a security gap: a token legitimately minted for some other application on a Clerk subdomain could be replayed against our API. Phase 1's blast radius is low (single Clerk instance, internal beta users), but this is the kind of thing that bites the moment you add a second hosted front-end.
-- **Proposed deliverable**:
-  - Add `CLERK_AUTHORIZED_PARTIES` to `apps/api/src/env.ts` as a comma-separated `z.string()` → `.transform(s => s.split(",").map(p => p.trim()))`. Required in all environments. Example dev value: `http://localhost:3000,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd`. Example prod: `https://app.remarks.online,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd`.
-  - Update `apps/api/src/plugins/auth.ts` to pass `authorizedParties` into `verifyToken`.
-  - Extend the `.env.example` and deploy runbook so Vercel/Fly configs set it.
-  - Integration test: a token whose `azp` isn't in the list is rejected; tokens whose `azp` matches pass.
-- **Done when**:
-  - `verifyToken` is called with `authorizedParties` in every environment
-  - Env schema rejects missing `CLERK_AUTHORIZED_PARTIES`
-  - Integration test covers the reject path
-- **Conflicts / overlaps with spec**: §12 ("Security baseline") says "Clerk handles password hashing, session management, email verification. You don't touch any of it." True for the primitives, but `authorizedParties` is a *caller-side* mitigation the spec didn't call out.
-- **Affected tasks / components**: `apps/api/src/plugins/auth.ts`, `apps/api/src/env.ts`, `.env.example` for apps/api, deploy runbooks under `docs/runbooks/`.
-- **Dependencies**: Independent. Cheap to fold into the next API PR.
-- **Estimated size**: `s`.
-- **Status**: `done in PR #92`.
-
 ## A20 — Remove the Clerk OAuth bridges (custom scopes + audience binding)
 
 | # | Done when | Complete |
