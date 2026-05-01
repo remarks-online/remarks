@@ -256,6 +256,26 @@ test.describe("annotation detail drawer", () => {
           targetSelector: "button.submit",
           viewport: { width: 1440, height: 900, dpr: 2 },
           commentText: ANNOTATION_COMMENT,
+          // G14: a populated `_debugSource` shape so the detail drawer can
+          // assert the Source row renders. Mirrors what the extension's
+          // fiber-bridge produces in dev.
+          frameworkHint: "react",
+          domContext: {
+            tagName: "button",
+            classes: ["submit"],
+            reactComponents: [
+              {
+                name: "SubmitButton",
+                kind: "function",
+                source: {
+                  fileName: "src/components/SubmitButton.tsx",
+                  lineNumber: 42,
+                  columnNumber: 10,
+                },
+              },
+              { name: "CheckoutForm", kind: "function" },
+            ],
+          },
         })
         .returning();
       if (!annotation) throw new Error("annotation insert returned no rows");
@@ -333,6 +353,21 @@ test.describe("annotation detail drawer", () => {
     const drawer = signedInPage.getByRole("dialog");
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText(ANNOTATION_COMMENT)).toBeVisible();
+  });
+
+  // G14: when `domContext.reactComponents[i].source` is set, the metadata
+  // panel surfaces the leaf-most populated entry as a Source row. Pinned via
+  // e2e because the same fact is asserted server-side in the MCP integration
+  // test — together they cover the full capture → API → dashboard path.
+  test("metadata panel shows Source row when reactComponents carry _debugSource", async ({
+    signedInPage,
+  }) => {
+    await signedInPage.goto(`/app/projects/${SPEC_PROJECT_SLUG}?a=${seededAnnotationId}`);
+    const drawer = signedInPage.getByRole("dialog");
+    await expect(drawer).toBeVisible();
+
+    await expect(drawer.getByText("Source", { exact: true })).toBeVisible();
+    await expect(drawer.getByText("src/components/SubmitButton.tsx:42:10")).toBeVisible();
   });
 });
 

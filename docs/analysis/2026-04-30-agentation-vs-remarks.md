@@ -140,10 +140,10 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 *Where:* `apps/extension/src/lib/react-fiber.ts`, `apps/extension/src/lib/fiber-bridge.ts`, `apps/extension/src/entrypoints/fiber-bridge.content.ts`, `packages/shared/src/schemas/annotation.ts`, `apps/api/src/services/annotation.service.ts`, `apps/dashboard/src/components/annotations/annotation-detail-sheet.tsx`.
 *Risks:* Production-minified React loses display names (accepted); React 19 removed `_debugSource` (accepted, A24 covers sourcemap recovery); Firefox MV3 doesn't honor `world: "MAIN"` (out of scope for Chromium-only).
 
-**G14. Source file detection (file:line) in dev mode** — *S–M, depends on G13 codepath*
+**G14. Source file detection (file:line) in dev mode** — *S–M, depends on G13 codepath* — **DONE 2026-05-01**
 *Why:* Same goal as G13 but more direct: if Vite/webpack source maps expose `__source` on Fiber nodes (React DevTools does this), capture file:line and ship it.
-*What:* Read `_debugSource` from Fiber, store as `domContext.sourceLocation = { fileName, lineNumber, columnNumber }`. Surface in dashboard detail sheet and MCP output.
-*Where:* same as G13.
+*What shipped:* Capture half landed under G13/ADR-0019 — `getSource()` in `apps/extension/src/lib/react-fiber.ts` reads `_debugSource` per fiber and produces `{ fileName, lineNumber, columnNumber }` on each `domContext.reactComponents[i].source`. The per-component shape is a strict superset of the originally-proposed top-level `domContext.sourceLocation`: minified production wrappers often have no source on the leaf even when a parent does, so a per-fiber field lets the renderer pick the leaf-most populated entry. MCP output already exposes the chain via `getMcpAnnotationById` (no service change). Surfacing half: dashboard `MetadataPanel` now renders a visible `Source` row with `file:line[:col]` when any component in the chain has `source` (was tooltip-only). Coverage pinned by an integration test on the MCP read path and a Playwright assertion on the detail-drawer Source row.
+*Where:* `apps/dashboard/src/components/annotations/annotation-detail-sheet.tsx` (Source row), `apps/api/src/routes/internal/annotations.integration.test.ts` (MCP round-trip), `apps/dashboard/e2e/project-detail.spec.ts` (drawer assertion). Sourcemap-based recovery for production bundles tracked as A24; clickable editor jumps tracked as A25.
 
 **G15. Animation pause / freeze toggle** — *S*
 *Why:* Captures of mid-animation UIs are useless. Agentation freezes CSS, JS, and Web Animations API.
@@ -214,7 +214,7 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 
 **P2 — real-time + integrations (weeks 2–4).** G9 (SSE), G10 (watch_annotations), G11 (webhooks), D1 (live feed), D5 (webhook UI). Bigger lift; biggest "feels modern" gain.
 
-**P3 — capture richness (weeks 3–5, parallelizable).** G12 (computed styles confirm), G13 (Fiber tree), G14 (source location), G15 (animation pause), G16 (text mode), G17 (multi-select), G18 (markdown export). Independent of P2; can be split across people.
+**P3 — capture richness (weeks 3–5, parallelizable).** G12 (computed styles confirm), G13 (Fiber tree, **shipped 2026-05-01 — ADR-0019**), G14 (source location, **shipped 2026-05-01 — folded into G13's per-component schema + dashboard Source row**), G15 (animation pause), G16 (text mode), G17 (multi-select), G18 (markdown export). Independent of P2; can be split across people.
 
 **P4 — defer.** G5 (kind enum) + G19 (layout mode). Only if customer-pull appears.
 

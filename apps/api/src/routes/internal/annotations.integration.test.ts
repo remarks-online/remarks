@@ -73,6 +73,8 @@ async function seedAnnotation(
     commentText?: string;
     createdAt?: Date;
     status?: typeof schema.annotations.$inferSelect.status;
+    domContext?: typeof schema.annotations.$inferInsert.domContext;
+    frameworkHint?: string | null;
   }
 ): Promise<typeof schema.annotations.$inferSelect> {
   const [row] = await db
@@ -87,8 +89,8 @@ async function seedAnnotation(
       targetSelector: args.targetSelector === undefined ? "button.primary" : args.targetSelector,
       targetCoords: null,
       viewport: { width: 1280, height: 720, dpr: 1 },
-      domContext: null,
-      frameworkHint: null,
+      domContext: args.domContext ?? null,
+      frameworkHint: args.frameworkHint ?? null,
       commentText: args.commentText ?? "Make this blue",
       ...(args.createdAt ? { createdAt: args.createdAt } : {}),
     })
@@ -262,6 +264,59 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
     });
 
     expect(res.statusCode).toBe(401);
+  });
+
+  // G14: ADR-0019 stores `_debugSource` as `domContext.reactComponents[].source`;
+  // this test pins the round-trip through the MCP read path so a future schema
+  // change can't silently strip the field from agent payloads. Mirrors the
+  // dashboard-side coverage in `MetadataPanel`'s Source row.
+  test("preserves reactComponents[].source through the MCP read path", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+      frameworkHint: "react",
+      domContext: {
+        tagName: "button",
+        classes: ["primary"],
+        reactComponents: [
+          {
+            name: "SubmitButton",
+            kind: "function",
+            source: {
+              fileName: "src/components/SubmitButton.tsx",
+              lineNumber: 42,
+              columnNumber: 10,
+            },
+          },
+          { name: "CheckoutForm", kind: "function" },
+        ],
+      },
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/annotations/${annotation.id}?clerkUserId=${encodeURIComponent(user.clerkUserId)}`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.annotation.frameworkHint).toBe("react");
+    expect(body.annotation.domContext?.reactComponents).toEqual([
+      {
+        name: "SubmitButton",
+        kind: "function",
+        source: {
+          fileName: "src/components/SubmitButton.tsx",
+          lineNumber: 42,
+          columnNumber: 10,
+        },
+      },
+      { name: "CheckoutForm", kind: "function", source: null },
+    ]);
   });
 });
 
