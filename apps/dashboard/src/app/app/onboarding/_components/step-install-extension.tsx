@@ -20,9 +20,14 @@ const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes; longer than realistic install times.
 
 export function StepInstallExtension({ onAdvance }: Props) {
-  const [status, setStatus] = useState<"polling" | "detected">("polling");
+  const [status, setStatus] = useState<"polling" | "preInstalled" | "justInstalled">("polling");
   const [version, setVersion] = useState<string | null>(null);
   const startedAtRef = useRef<number>(Date.now());
+  // Distinguish "extension was already installed when the wizard mounted"
+  // from "user just installed it during the wizard." Auto-advancing in the
+  // first case skips step 1 entirely; we only auto-advance on a not-installed
+  // → installed transition.
+  const isFirstPollRef = useRef<boolean>(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +39,6 @@ export function StepInstallExtension({ onAdvance }: Props) {
       if (cancelled) return;
       if (result.installed) {
         setVersion(result.version ?? null);
-        setStatus("detected");
         capture("extension_installed", {
           via: "auto",
           extensionVersion: result.version ?? "unknown",
@@ -42,6 +46,13 @@ export function StepInstallExtension({ onAdvance }: Props) {
         if (result.signedIn) {
           capture("extension_signed_in", { via: "auto" });
         }
+        if (isFirstPollRef.current) {
+          // Already installed before the wizard opened — surface a manual
+          // Continue button instead of glossing past step 1.
+          setStatus("preInstalled");
+          return;
+        }
+        setStatus("justInstalled");
         // Advance after a brief beat so the user sees the green check before
         // the panel changes — the wizard's UX feels jumpy otherwise.
         setTimeout(() => {
@@ -49,6 +60,7 @@ export function StepInstallExtension({ onAdvance }: Props) {
         }, 600);
         return;
       }
+      isFirstPollRef.current = false;
       if (Date.now() - startedAtRef.current >= POLL_TIMEOUT_MS) return;
       timer = setTimeout(tick, POLL_INTERVAL_MS);
     }
@@ -65,7 +77,16 @@ export function StepInstallExtension({ onAdvance }: Props) {
     onAdvance("manual");
   }
 
+  function handleContinuePreInstalled() {
+    // Install was already detected via the first poll's `extension_installed`
+    // event — don't double-track. Advance via "auto" because the install was
+    // auto-detected; the click is just an acknowledgment.
+    onAdvance("auto", version ?? undefined);
+  }
+
   const webStoreUrl = CHROME_WEB_STORE_URL;
+
+  const isPreInstalled = status === "preInstalled";
 
   return (
     <div className="space-y-6 rounded-md border border-border p-6">
@@ -74,39 +95,58 @@ export function StepInstallExtension({ onAdvance }: Props) {
           <ChromeIcon className="h-6 w-6" aria-hidden />
         </div>
         <div className="flex-1">
-          <h2 className="text-lg font-semibold">Add the Remarks extension to Chrome</h2>
+          <h2 className="text-lg font-semibold">
+            {isPreInstalled
+              ? "You've already got the Remarks extension"
+              : "Add the Remarks extension to Chrome"}
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            The extension lets you click any element on your site and leave a comment that lands in
-            this dashboard. You&apos;re already signed in — the extension picks up your dashboard
-            session automatically.
+            {isPreInstalled
+              ? "Looks like you installed it earlier. Continue when you're ready to leave your first annotation."
+              : "The extension lets you click any element on your site and leave a comment that lands in this dashboard. You're already signed in — the extension picks up your dashboard session automatically."}
           </p>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        {webStoreUrl ? (
-          <Button asChild>
-            <a href={webStoreUrl} target="_blank" rel="noopener noreferrer">
-              Add to Chrome
-            </a>
-          </Button>
+        {isPreInstalled ? (
+          <Button onClick={handleContinuePreInstalled}>Continue</Button>
         ) : (
-          <Button asChild>
-            <a href="https://github.com/breschio/remarks" target="_blank" rel="noopener noreferrer">
-              Get the extension
-            </a>
-          </Button>
+          <>
+            {webStoreUrl ? (
+              <Button asChild>
+                <a href={webStoreUrl} target="_blank" rel="noopener noreferrer">
+                  Add to Chrome
+                </a>
+              </Button>
+            ) : (
+              <Button asChild>
+                <a
+                  href="https://github.com/breschio/remarks"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Get the extension
+                </a>
+              </Button>
+            )}
+            <Button variant="ghost" onClick={handleManual}>
+              I&apos;ve installed it
+            </Button>
+          </>
         )}
-        <Button variant="ghost" onClick={handleManual}>
-          I&apos;ve installed it
-        </Button>
       </div>
 
       <div
         aria-live="polite"
         className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
       >
-        {status === "detected" ? (
+        {status === "preInstalled" ? (
+          <>
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
+            <span>Extension detected{version ? ` (v${version})` : ""}.</span>
+          </>
+        ) : status === "justInstalled" ? (
           <>
             <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
             <span>Installed{version ? ` (v${version})` : ""} — moving on…</span>
@@ -121,7 +161,7 @@ export function StepInstallExtension({ onAdvance }: Props) {
         )}
       </div>
 
-      {!webStoreUrl ? (
+      {!webStoreUrl && !isPreInstalled ? (
         <p className="text-sm text-muted-foreground">
           Or{" "}
           <Link href="/app/download-extension" className="underline">
