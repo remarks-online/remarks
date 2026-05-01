@@ -101,6 +101,7 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
       status: bodyResult.data.status,
       ...(bodyResult.data.note !== undefined ? { note: bodyResult.data.note } : {}),
       ...(bodyResult.data.reason !== undefined ? { reason: bodyResult.data.reason } : {}),
+      publisher: fastify.annotationEventBus,
     });
     return reply.code(200).send(result);
   });
@@ -219,6 +220,7 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
       oauthClientName: bodyResult.data.oauthClientName,
       comment: bodyResult.data.comment,
       ...(bodyResult.data.kind !== undefined ? { kind: bodyResult.data.kind } : {}),
+      publisher: fastify.annotationEventBus,
     });
     return reply.code(201).send(result);
   });

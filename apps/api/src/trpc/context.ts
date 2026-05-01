@@ -9,6 +9,7 @@ export function createContext({ req }: CreateFastifyContextOptions): Context {
     r2: req.server.r2,
     clerk: req.server.clerk,
     inngest: req.server.inngest,
+    annotationEventBus: req.server.annotationEventBus,
     requestId: req.id,
   };
 }

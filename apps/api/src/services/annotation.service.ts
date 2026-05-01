@@ -17,6 +17,10 @@ import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import type { AppInngest } from "../inngest/client.js";
 import { publishR2Cleanup } from "../inngest/publish.js";
 import {
+  type AnnotationEventPublisher,
+  buildAnnotationStreamEvent,
+} from "../lib/annotation-event-bus.js";
+import {
   type AnnotationListCursor,
   decodeAnnotationListCursor,
   encodeAnnotationListCursor,
@@ -32,6 +36,10 @@ export interface CreateAnnotationArgs {
   author: AnnotationResponse["author"];
   input: CreateAnnotationRequest;
   r2: R2Client;
+  // G9: optional broker. Services that don't run inside Fastify (tests,
+  // tRPC procedures called outside of HTTP) may omit it; live HTTP routes
+  // pass `request.server.annotationEventBus`.
+  publisher?: AnnotationEventPublisher;
 }
 
 type AnnotationRow = typeof schema.annotations.$inferSelect;
@@ -71,7 +79,7 @@ export async function createAnnotation(
   db: DB,
   args: CreateAnnotationArgs
 ): Promise<AnnotationResponse> {
-  const { author, input, r2 } = args;
+  const { author, input, r2, publisher } = args;
 
   // The shared schema's refine guarantees these are paired; assert the invariant
   // here so the rest of the function can branch cleanly.
@@ -113,76 +121,91 @@ export async function createAnnotation(
     };
   }
 
-  const { annotationRow, assetRow, projectSlug } = await db.transaction(async (tx) => {
-    const branchId =
-      input.projectId && input.branch
-        ? await findOrCreateBranch(tx, input.projectId, input.branch)
+  const { annotationRow, assetRow, projectSlug, createdEvent } = await db.transaction(
+    async (tx) => {
+      const branchId =
+        input.projectId && input.branch
+          ? await findOrCreateBranch(tx, input.projectId, input.branch)
+          : null;
+
+      // Loaded inside the tx so the response carries the slug without a second
+      // round-trip after commit. Personal (no projectId) keeps it null.
+      const projectSlug = input.projectId
+        ? ((
+            await tx.query.projects.findFirst({
+              where: eq(schema.projects.id, input.projectId),
+              columns: { slug: true },
+            })
+          )?.slug ?? null)
         : null;
 
-    // Loaded inside the tx so the response carries the slug without a second
-    // round-trip after commit. Personal (no projectId) keeps it null.
-    const projectSlug = input.projectId
-      ? ((
-          await tx.query.projects.findFirst({
-            where: eq(schema.projects.id, input.projectId),
-            columns: { slug: true },
-          })
-        )?.slug ?? null)
-      : null;
-
-    const [insertedAnnotation] = await tx
-      .insert(schema.annotations)
-      .values({
-        projectId: input.projectId ?? null,
-        branchId,
-        authorId: author.id,
-        targetType: input.targetType,
-        // G1/G2: optional triage classifiers. Both default to null when the
-        // caller doesn't supply them.
-        intent: input.intent ?? null,
-        severity: input.severity ?? null,
-        url: input.url,
-        targetSelector: input.targetSelector ?? null,
-        targetCoords: input.targetCoords ?? null,
-        viewport: input.viewport,
-        // Zod optional fields surface as `T | undefined`; the DB jsonb $type
-        // declares them without the undefined. Runtime shape is equivalent.
-        domContext: (input.domContext ?? null) as typeof schema.annotations.$inferInsert.domContext,
-        frameworkHint: input.frameworkHint ?? null,
-        commentText: input.commentText,
-      })
-      .returning();
-    if (!insertedAnnotation) throw new Error("annotation insert returned no rows");
-
-    let insertedAsset: AssetRow | null = null;
-    if (screenshotMeta) {
-      const [row] = await tx
-        .insert(schema.annotationAssets)
+      const [insertedAnnotation] = await tx
+        .insert(schema.annotations)
         .values({
-          id: screenshotMeta.assetId,
-          annotationId: insertedAnnotation.id,
-          kind: "screenshot",
-          r2Key: screenshotMeta.key,
-          contentType: screenshotMeta.contentType,
-          sizeBytes: screenshotMeta.sizeBytes,
+          projectId: input.projectId ?? null,
+          branchId,
+          authorId: author.id,
+          targetType: input.targetType,
+          // G1/G2: optional triage classifiers. Both default to null when the
+          // caller doesn't supply them.
+          intent: input.intent ?? null,
+          severity: input.severity ?? null,
+          url: input.url,
+          targetSelector: input.targetSelector ?? null,
+          targetCoords: input.targetCoords ?? null,
+          viewport: input.viewport,
+          // Zod optional fields surface as `T | undefined`; the DB jsonb $type
+          // declares them without the undefined. Runtime shape is equivalent.
+          domContext: (input.domContext ??
+            null) as typeof schema.annotations.$inferInsert.domContext,
+          frameworkHint: input.frameworkHint ?? null,
+          commentText: input.commentText,
         })
         .returning();
-      if (!row) throw new Error("annotation_assets insert returned no rows");
-      insertedAsset = row;
+      if (!insertedAnnotation) throw new Error("annotation insert returned no rows");
+
+      let insertedAsset: AssetRow | null = null;
+      if (screenshotMeta) {
+        const [row] = await tx
+          .insert(schema.annotationAssets)
+          .values({
+            id: screenshotMeta.assetId,
+            annotationId: insertedAnnotation.id,
+            kind: "screenshot",
+            r2Key: screenshotMeta.key,
+            contentType: screenshotMeta.contentType,
+            sizeBytes: screenshotMeta.sizeBytes,
+          })
+          .returning();
+        if (!row) throw new Error("annotation_assets insert returned no rows");
+        insertedAsset = row;
+      }
+
+      // Spec §3.4: any state mutation on an annotation writes an event.
+      const [eventRow] = await tx
+        .insert(schema.annotationEvents)
+        .values({
+          annotationId: insertedAnnotation.id,
+          actorType: "user",
+          actorId: author.id,
+          actorOauthClientId: null,
+          type: "created",
+          payload: {},
+        })
+        .returning({
+          id: schema.annotationEvents.id,
+          createdAt: schema.annotationEvents.createdAt,
+        });
+      if (!eventRow) throw new Error("annotation_events insert returned no rows");
+
+      return {
+        annotationRow: insertedAnnotation,
+        assetRow: insertedAsset,
+        projectSlug,
+        createdEvent: eventRow,
+      };
     }
-
-    // Spec §3.4: any state mutation on an annotation writes an event.
-    await tx.insert(schema.annotationEvents).values({
-      annotationId: insertedAnnotation.id,
-      actorType: "user",
-      actorId: author.id,
-      actorOauthClientId: null,
-      type: "created",
-      payload: {},
-    });
-
-    return { annotationRow: insertedAnnotation, assetRow: insertedAsset, projectSlug };
-  });
+  );
 
   const resolvedAssets: ResolvedAsset[] = assetRow
     ? [
@@ -211,6 +234,25 @@ export async function createAnnotation(
       hasScreenshot: assetRow !== null,
     },
   });
+
+  // G9: broadcast on the SSE event bus. Like analytics, this is fire-and-forget
+  // — broker failure is logged inside `publish()` and never fails the request.
+  if (publisher) {
+    void publisher.publish(
+      buildAnnotationStreamEvent({
+        eventId: createdEvent.id,
+        type: "created",
+        payload: {},
+        createdAt: createdEvent.createdAt,
+        actorType: "user",
+        actorId: author.id,
+        actorOauthClientId: null,
+        annotationId: annotationRow.id,
+        projectId: annotationRow.projectId,
+        authorId: annotationRow.authorId,
+      })
+    );
+  }
 
   return toAnnotationResponse({
     annotationRow,
@@ -590,17 +632,30 @@ export interface UpdateAnnotationArgs {
   actorId: string;
   input: UpdateAnnotationRequest;
   r2: R2Client;
+  publisher?: AnnotationEventPublisher;
 }
 
 export async function updateAnnotation(
   db: DB,
   args: UpdateAnnotationArgs
 ): Promise<AnnotationResponse> {
-  const { annotationId, actorId, input, r2 } = args;
+  const { annotationId, actorId, input, r2, publisher } = args;
 
   type StatusTransition = { from: string; to: string; projectId: string | null };
+  type EmittedEvent = {
+    id: string;
+    createdAt: Date;
+    type: "status_changed" | "comment_edited" | "intent_changed" | "severity_changed";
+    payload: Record<string, unknown>;
+  };
+  type TxResult = {
+    statusTransition: StatusTransition | null;
+    emittedEvents: EmittedEvent[];
+    projectId: string | null;
+    authorId: string;
+  } | null;
 
-  const statusTransition = await db.transaction<StatusTransition | null>(async (tx) => {
+  const txResult = await db.transaction<TxResult>(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
       columns: {
@@ -608,6 +663,7 @@ export async function updateAnnotation(
         status: true,
         commentText: true,
         projectId: true,
+        authorId: true,
         intent: true,
         severity: true,
       },
@@ -642,73 +698,102 @@ export async function updateAnnotation(
     // G4: when the status flips to `rejected`, the request body's `reason`
     // (validated/trimmed by `updateAnnotationRequestSchema`) is persisted on
     // the event payload so reviewers can see why the task was dismissed.
+    const emittedEvents: EmittedEvent[] = [];
+    const insertEvent = async (
+      type: EmittedEvent["type"],
+      payload: Record<string, unknown>
+    ): Promise<void> => {
+      const [row] = await tx
+        .insert(schema.annotationEvents)
+        .values({
+          annotationId,
+          actorType: "user",
+          actorId,
+          actorOauthClientId: null,
+          type,
+          payload,
+        })
+        .returning({
+          id: schema.annotationEvents.id,
+          createdAt: schema.annotationEvents.createdAt,
+        });
+      if (!row) throw new Error("annotation_events insert returned no rows");
+      emittedEvents.push({ id: row.id, createdAt: row.createdAt, type, payload });
+    };
+
     if (statusChanged) {
-      await tx.insert(schema.annotationEvents).values({
-        annotationId,
-        actorType: "user",
-        actorId,
-        actorOauthClientId: null,
-        type: "status_changed",
-        payload: {
-          from: current.status,
-          to: input.status,
-          ...(input.reason !== undefined ? { reason: input.reason } : {}),
-        },
+      await insertEvent("status_changed", {
+        from: current.status,
+        to: input.status,
+        ...(input.reason !== undefined ? { reason: input.reason } : {}),
       });
     }
     if (commentChanged) {
-      await tx.insert(schema.annotationEvents).values({
-        annotationId,
-        actorType: "user",
-        actorId,
-        actorOauthClientId: null,
-        type: "comment_edited",
-        payload: { previousLength: current.commentText.length },
-      });
+      await insertEvent("comment_edited", { previousLength: current.commentText.length });
     }
     if (intentChanged) {
-      await tx.insert(schema.annotationEvents).values({
-        annotationId,
-        actorType: "user",
-        actorId,
-        actorOauthClientId: null,
-        type: "intent_changed",
-        payload: { from: current.intent, to: input.intent ?? null },
+      await insertEvent("intent_changed", {
+        from: current.intent,
+        to: input.intent ?? null,
       });
     }
     if (severityChanged) {
-      await tx.insert(schema.annotationEvents).values({
-        annotationId,
-        actorType: "user",
-        actorId,
-        actorOauthClientId: null,
-        type: "severity_changed",
-        payload: { from: current.severity, to: input.severity ?? null },
+      await insertEvent("severity_changed", {
+        from: current.severity,
+        to: input.severity ?? null,
       });
     }
 
-    if (!statusChanged) return null;
+    const statusTransition: StatusTransition | null = statusChanged
+      ? {
+          from: current.status,
+          to: input.status as string,
+          projectId: current.projectId,
+        }
+      : null;
+
     return {
-      from: current.status,
-      to: input.status as string,
+      statusTransition,
+      emittedEvents,
       projectId: current.projectId,
+      authorId: current.authorId,
     };
   });
 
   // Spec §7.5 — fire after the commit so a rolled-back write doesn't surface
   // as an analytics event.
-  if (statusTransition) {
+  if (txResult?.statusTransition) {
     captureAnalytics({
       event: "annotation_status_changed",
       distinctId: actorId,
       properties: {
         annotationId,
-        projectId: statusTransition.projectId,
-        from: statusTransition.from,
-        to: statusTransition.to,
+        projectId: txResult.statusTransition.projectId,
+        from: txResult.statusTransition.from,
+        to: txResult.statusTransition.to,
         actorType: "user",
       },
     });
+  }
+
+  // G9: broadcast each event row that was inserted in this transaction.
+  if (publisher && txResult) {
+    for (const ev of txResult.emittedEvents) {
+      void publisher.publish(
+        buildAnnotationStreamEvent({
+          eventId: ev.id,
+          type: ev.type,
+          payload: ev.payload,
+          createdAt: ev.createdAt,
+          actorType: "user",
+          actorId,
+          actorOauthClientId: null,
+          annotationId,
+          projectId: txResult.projectId,
+          authorId: txResult.authorId,
+        })
+      );
+    }
   }
 
   // Re-load the row outside the transaction so the response includes branch,

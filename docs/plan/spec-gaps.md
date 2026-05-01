@@ -19,6 +19,35 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 ---
 
+## A25 — Live SSE event stream for annotations (G9)
+
+| # | Done when | Complete |
+|---|---|---|
+| A25 | `GET /projects/:projectId/events` and `GET /users/:userId/events` (Clerk + internal-MCP variants) stream every `annotationEvents` write within ~1 s; resume via `Last-Event-ID` works against in-memory buffer and DB; integration tests cover happy path, 404 for non-members, and resume | [x] |
+
+- **Spec reference**: `docs/analysis/2026-04-30-agentation-vs-remarks.md` G9. Phase 0/1 spec did not specify a real-time channel.
+- **Problem**: Today every consumer of annotation activity polls. The dashboard's annotation list is static-until-refresh, and any "agent watch loop" (G10 in the same analysis) has nothing to subscribe to.
+- **Proposed deliverable**:
+  - `packages/shared/src/schemas/annotation-stream.ts` — wire envelope + `<createdAtIso>:<uuid>` resume id encoder/parser.
+  - `apps/api/src/lib/annotation-event-bus.ts` — broker with per-project / per-user fan-out, in-memory ring buffer (256 events), connection cap (`MAX_SSE_CONNECTIONS`, default 200), lazy `LISTEN` attach.
+  - `apps/api/src/lib/sse.ts` — hand-rolled SSE channel: hello frame, 25 s keepalive, 5 min connection rotation (`MAX_SSE_CONNECTION_MS`), `event: rotate` close.
+  - `apps/api/src/plugins/annotation-event-bus.ts` — Fastify plugin; uses `@remarks/db` `createListenClient` for a dedicated 1-connection LISTEN socket.
+  - `apps/api/src/routes/events/index.ts` (Clerk auth) and `apps/api/src/routes/internal/events.ts` (internal-MCP) — four endpoints total.
+  - `apps/api/src/services/event-stream.service.ts` — DB replay with keyset paging on (createdAt, id), capped at 200 events with `replay_truncated` signal.
+  - `apps/api/src/services/{annotation,mcp}.service.ts` — thread an `AnnotationEventPublisher` through the four annotation-event insertion sites; broadcast post-commit.
+  - `docs/adr/0019-sse-event-stream.md` — NOTIFY-not-Redis decision, capacity assumptions, lazy-LISTEN rationale.
+- **Done when**:
+  - All seven test suites in `pnpm turbo {typecheck,lint,test,build} --filter="*"` pass plus `apps/api` integration suite (verified locally on 2026-05-01).
+  - SSE happy-path + Last-Event-ID replay + 404-for-non-member integration tests pass against real Postgres.
+  - ADR-0019 merged.
+- **Conflicts / overlaps with spec**: None — this is purely additive.
+- **Affected tasks / components**: enables D1 (live activity feed) and G10 (`watch_annotations` MCP tool).
+- **Dependencies**: independent.
+- **Estimated size**: `m`. Shipped 2026-05-01.
+- **Status**: `done — folded into ADR-0019; entry kept until cleanup sweep`.
+
+---
+
 ## A20 — Remove the Clerk OAuth bridges (custom scopes + audience binding)
 
 | # | Done when | Complete |
