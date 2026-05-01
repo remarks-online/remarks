@@ -49,7 +49,8 @@ export const batchUpdateStatusHandler: ToolHandler = async (args, ctx) => {
           ctx.auth.clerkUserId,
           ctx.auth.oauthClientName,
           u.status,
-          u.note
+          u.note,
+          u.reason
         )
       )
     );

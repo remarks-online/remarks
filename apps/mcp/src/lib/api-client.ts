@@ -284,7 +284,8 @@ export async function updateAnnotationStatus(
   clerkUserId: string,
   oauthClientName: string,
   status: AgentUpdateStatus,
-  note: string | undefined
+  note: string | undefined,
+  reason: string | undefined
 ): Promise<UpdateAnnotationStatusPayload | null> {
   return postJson<
     {
@@ -292,6 +293,7 @@ export async function updateAnnotationStatus(
       oauthClientName: string;
       status: AgentUpdateStatus;
       note?: string;
+      reason?: string;
     },
     UpdateAnnotationStatusPayload
   >(
@@ -301,6 +303,7 @@ export async function updateAnnotationStatus(
       oauthClientName,
       status,
       ...(note !== undefined ? { note } : {}),
+      ...(reason !== undefined ? { reason } : {}),
     },
     "agent status update"
   );

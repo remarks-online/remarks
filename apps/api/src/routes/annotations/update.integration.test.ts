@@ -313,4 +313,90 @@ describe("PATCH /annotations/:annotationId (integration)", () => {
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("UNAUTHORIZED");
   });
+
+  // G4: rejection requires a reason in the payload, persisted on the
+  // status_changed event so reviewers see *why* the task was dismissed.
+  test("status: rejected without reason → 400 VALIDATION_ERROR", async () => {
+    const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: true });
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { status: "rejected" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
+  });
+
+  test("status: rejected with too-short reason → 400 VALIDATION_ERROR", async () => {
+    const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: true });
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { status: "rejected", reason: "nope" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
+  });
+
+  test("status: rejected with valid reason → 200, payload.reason persisted", async () => {
+    const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: true });
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { status: "rejected", reason: "duplicate of an existing report" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: seeded.annotationId, status: "rejected" });
+
+    const db = await getIntegrationDb();
+    const events = await db.query.annotationEvents.findMany({
+      where: eq(schema.annotationEvents.annotationId, seeded.annotationId),
+    });
+    const statusEvents = events.filter((e) => e.type === "status_changed");
+    expect(statusEvents).toHaveLength(1);
+    expect(statusEvents[0]?.payload).toEqual({
+      from: "to_do",
+      to: "rejected",
+      reason: "duplicate of an existing report",
+    });
+  });
+
+  test("reason without status: rejected → 400 VALIDATION_ERROR", async () => {
+    const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: true });
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { status: "doing", reason: "starting work on this task" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
+  });
 });

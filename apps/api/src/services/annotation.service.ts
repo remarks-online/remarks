@@ -598,6 +598,9 @@ export async function updateAnnotation(
       .where(eq(schema.annotations.id, annotationId));
 
     // Spec §3.4: any state mutation on an annotation writes an event.
+    // G4: when the status flips to `rejected`, the request body's `reason`
+    // (validated/trimmed by `updateAnnotationRequestSchema`) is persisted on
+    // the event payload so reviewers can see why the task was dismissed.
     if (statusChanged) {
       await tx.insert(schema.annotationEvents).values({
         annotationId,
@@ -605,7 +608,11 @@ export async function updateAnnotation(
         actorId,
         actorOauthClientId: null,
         type: "status_changed",
-        payload: { from: current.status, to: input.status },
+        payload: {
+          from: current.status,
+          to: input.status,
+          ...(input.reason !== undefined ? { reason: input.reason } : {}),
+        },
       });
     }
     if (commentChanged) {

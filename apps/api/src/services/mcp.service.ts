@@ -354,6 +354,9 @@ export interface AgentUpdateAnnotationStatusArgs {
   oauthClientName: string;
   status: AgentSettableStatus;
   note?: string;
+  // G4: required by upstream Zod refines when `status === "rejected"`. Lands
+  // on the resulting event payload as `payload.reason`.
+  reason?: string;
 }
 
 export interface AgentUpdateAnnotationStatusResult {
@@ -366,7 +369,7 @@ export async function agentUpdateAnnotationStatus(
   db: DB,
   args: AgentUpdateAnnotationStatusArgs
 ): Promise<AgentUpdateAnnotationStatusResult> {
-  const { annotationId, clerkUserId, oauthClientName, status, note } = args;
+  const { annotationId, clerkUserId, oauthClientName, status, note, reason } = args;
   const actorId = await resolveUserIdByClerkId(db, clerkUserId);
 
   type StatusTransition = {
@@ -394,6 +397,9 @@ export async function agentUpdateAnnotationStatus(
     // G3: ack transitions get a dedicated event type so the dashboard can
     // render "agent acknowledged" as a compact pill rather than a full
     // status-change row. All other agent transitions stay as `agent_updated_status`.
+    // G4: a `reason` is persisted on the payload when the agent rejected the
+    // task — its presence is enforced upstream by Zod refines, so the
+    // service just spreads it through.
     const eventType = status === "acknowledged" ? "agent_acknowledged" : "agent_updated_status";
     await tx.insert(schema.annotationEvents).values({
       annotationId,
@@ -405,6 +411,7 @@ export async function agentUpdateAnnotationStatus(
         from: current.status,
         to: status,
         ...(note !== undefined ? { note } : {}),
+        ...(reason !== undefined ? { reason } : {}),
       },
     });
 

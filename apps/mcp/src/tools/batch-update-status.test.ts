@@ -162,4 +162,64 @@ describe("batchUpdateStatusHandler", () => {
       )
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
+
+  // G4
+  it("batch with rejected row missing reason → VALIDATION_ERROR (top-level)", async () => {
+    const updateAnnotationStatus = vi.fn();
+    await expect(
+      batchUpdateStatusHandler(
+        {
+          updates: [
+            { task_id: TASK_A, status: "done" },
+            { task_id: TASK_B, status: "rejected" },
+          ],
+        },
+        {
+          auth: STUB_AUTH,
+          api: makeApi({ updateAnnotationStatus }),
+          idempotency: makeIdempotency(),
+          requestId: "req_test",
+        }
+      )
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(updateAnnotationStatus).not.toHaveBeenCalled();
+  });
+
+  it("batch with rejected row + valid reason forwards reason to api", async () => {
+    const updateAnnotationStatus = vi.fn().mockResolvedValue({
+      id: TASK_A,
+      status: "rejected",
+      updatedAt: "2026-04-26T10:00:00.000Z",
+    });
+    const api = makeApi({ updateAnnotationStatus });
+
+    await batchUpdateStatusHandler(
+      {
+        updates: [
+          { task_id: TASK_A, status: "rejected", reason: "duplicate of #123" },
+          { task_id: TASK_B, status: "done" },
+        ],
+      },
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+    );
+
+    expect(updateAnnotationStatus).toHaveBeenNthCalledWith(
+      1,
+      TASK_A,
+      STUB_AUTH.clerkUserId,
+      STUB_AUTH.oauthClientName,
+      "rejected",
+      undefined,
+      "duplicate of #123"
+    );
+    expect(updateAnnotationStatus).toHaveBeenNthCalledWith(
+      2,
+      TASK_B,
+      STUB_AUTH.clerkUserId,
+      STUB_AUTH.oauthClientName,
+      "done",
+      undefined,
+      undefined
+    );
+  });
 });

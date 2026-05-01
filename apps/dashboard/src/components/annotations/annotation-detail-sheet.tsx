@@ -1,7 +1,11 @@
 "use client";
 
 import { trpc } from "@/lib/trpc-client";
-import { MAX_COMMENT_LENGTH } from "@remarks/shared";
+import {
+  MAX_COMMENT_LENGTH,
+  MAX_REJECTION_REASON_LENGTH,
+  MIN_REJECTION_REASON_LENGTH,
+} from "@remarks/shared";
 import type { AnnotationResponse } from "@remarks/shared";
 import {
   Badge,
@@ -51,6 +55,13 @@ function DetailBody({ id, onClose }: { id: string; onClose: () => void }) {
   const utils = trpc.useUtils();
   const annotationQuery = trpc.annotations.get.useQuery({ id });
   const eventsQuery = trpc.annotations.listEvents.useQuery({ id });
+
+  // G4: when the user picks "Rejected" from the status dropdown we don't fire
+  // the mutation immediately — instead we open an inline reason composer.
+  // `pendingRejection` is non-null while that composer is up; submitting it
+  // fires the mutation, and Cancel discards it (the Select's `value` prop
+  // stays bound to the persisted status, so the visual selection auto-reverts).
+  const [pendingRejection, setPendingRejection] = useState<{ reason: string } | null>(null);
 
   const updateMutation = trpc.annotations.update.useMutation({
     onMutate: async ({ input }) => {
@@ -182,12 +193,16 @@ function DetailBody({ id, onClose }: { id: string; onClose: () => void }) {
             value={annotation.status}
             onValueChange={(value) => {
               if (value === annotation.status) return;
-              updateMutation.mutate({
-                id,
-                input: { status: value as AnnotationResponse["status"] },
-              });
+              const next = value as AnnotationResponse["status"];
+              if (next === "rejected") {
+                // Defer the mutation until the user supplies a reason.
+                setPendingRejection({ reason: "" });
+                return;
+              }
+              setPendingRejection(null);
+              updateMutation.mutate({ id, input: { status: next } });
             }}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || pendingRejection !== null}
           >
             <SelectTrigger aria-label="Status">
               <SelectValue />
@@ -201,6 +216,20 @@ function DetailBody({ id, onClose }: { id: string; onClose: () => void }) {
             </SelectContent>
           </Select>
         </div>
+        {pendingRejection ? (
+          <RejectionComposer
+            value={pendingRejection.reason}
+            onChange={(reason) => setPendingRejection({ reason })}
+            onCancel={() => setPendingRejection(null)}
+            onConfirm={(reason) => {
+              updateMutation.mutate(
+                { id, input: { status: "rejected", reason } },
+                { onSuccess: () => setPendingRejection(null) }
+              );
+            }}
+            isSaving={updateMutation.isPending}
+          />
+        ) : null}
       </section>
 
       <section>
@@ -372,5 +401,59 @@ function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
         </>
       ) : null}
     </dl>
+  );
+}
+
+function RejectionComposer({
+  value,
+  onChange,
+  onCancel,
+  onConfirm,
+  isSaving,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: (trimmed: string) => void;
+  isSaving: boolean;
+}) {
+  const trimmed = value.trim();
+  const tooShort = trimmed.length < MIN_REJECTION_REASON_LENGTH;
+  return (
+    <div className="mt-3 space-y-2 rounded-md border border-border bg-muted/30 p-3">
+      <label htmlFor="rejection-reason" className="block text-xs font-medium text-muted-foreground">
+        Rejection reason
+      </label>
+      <Textarea
+        id="rejection-reason"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={MAX_REJECTION_REASON_LENGTH}
+        rows={3}
+        placeholder={`Why is this being rejected? (≥${MIN_REJECTION_REASON_LENGTH} characters)`}
+        aria-label="Rejection reason"
+        disabled={isSaving}
+        autoFocus
+      />
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          {trimmed.length}/{MAX_REJECTION_REASON_LENGTH}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => onConfirm(trimmed)}
+            disabled={isSaving || tooShort}
+          >
+            {isSaving ? "Rejecting…" : "Reject"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -9,24 +9,56 @@ interface EventRowProps {
   event: AnnotationEventResponse;
 }
 
-function formatEvent(event: AnnotationEventResponse): {
+interface FormattedEvent {
   icon: ReactNode;
   headline: string;
-} {
+  // G4: optional second line under the headline. Used today to surface the
+  // dismissal `reason` on rejected status_changed / agent_updated_status
+  // events; left as a generic slot so future event types can hook in.
+  detail?: ReactNode;
+}
+
+function rejectionReason(event: AnnotationEventResponse): string | null {
+  const to = event.payload.to as AnnotationStatus | undefined;
+  if (to !== "rejected") return null;
+  const reason = event.payload.reason;
+  return typeof reason === "string" && reason.length > 0 ? reason : null;
+}
+
+function formatStatusChange(
+  event: AnnotationEventResponse,
+  actor: string,
+  verb: string
+): FormattedEvent {
+  const from = (event.payload.from as AnnotationStatus | undefined) ?? null;
+  const to = (event.payload.to as AnnotationStatus | undefined) ?? null;
+  const fromLabel = from ? STATUS_LABEL[from] : "?";
+  const toLabel = to ? STATUS_LABEL[to] : "?";
+  const reason = rejectionReason(event);
+  return {
+    icon: <Workflow className="h-4 w-4" />,
+    headline: `${actor} ${verb}: ${fromLabel} → ${toLabel}`,
+    ...(reason !== null
+      ? {
+          detail: (
+            <span className="text-xs text-muted-foreground">
+              <span className="font-medium">Reason:</span> {reason}
+            </span>
+          ),
+        }
+      : {}),
+  };
+}
+
+function formatEvent(event: AnnotationEventResponse): FormattedEvent {
   const actor = event.actor?.name ?? event.actor?.email ?? "Someone";
   switch (event.type) {
     case "created":
       return { icon: <Plus className="h-4 w-4" />, headline: `${actor} created this` };
-    case "status_changed": {
-      const from = (event.payload.from as AnnotationStatus | undefined) ?? null;
-      const to = (event.payload.to as AnnotationStatus | undefined) ?? null;
-      const fromLabel = from ? STATUS_LABEL[from] : "?";
-      const toLabel = to ? STATUS_LABEL[to] : "?";
-      return {
-        icon: <Workflow className="h-4 w-4" />,
-        headline: `${actor} changed status: ${fromLabel} → ${toLabel}`,
-      };
-    }
+    case "status_changed":
+      return formatStatusChange(event, actor, "changed status");
+    case "agent_updated_status":
+      return formatStatusChange(event, actor, "updated status");
     case "comment_edited":
       return { icon: <Edit3 className="h-4 w-4" />, headline: `${actor} edited the comment` };
     case "comment_added":
@@ -44,7 +76,7 @@ function formatEvent(event: AnnotationEventResponse): {
 }
 
 export function EventRow({ event }: EventRowProps) {
-  const { icon, headline } = formatEvent(event);
+  const { icon, headline, detail } = formatEvent(event);
   return (
     <li className="flex items-start gap-3 py-2">
       <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -52,6 +84,7 @@ export function EventRow({ event }: EventRowProps) {
       </span>
       <div className="flex-1 text-sm">
         <p>{headline}</p>
+        {detail ? <p className="mt-0.5">{detail}</p> : null}
         <time className="text-xs text-muted-foreground">
           {new Date(event.createdAt).toLocaleString()}
         </time>

@@ -477,6 +477,118 @@ describe("POST /internal/mcp/annotations/:annotationId/status (integration)", ()
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe("VALIDATION_ERROR");
   });
+
+  // G4: rejected transitions require a `reason` (10–500 chars, trimmed) which
+  // is persisted on the resulting agent_updated_status event payload.
+  test("rejected without reason → 400 VALIDATION_ERROR", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "rejected",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
+  });
+
+  test("rejected with too-short reason → 400 VALIDATION_ERROR", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "rejected",
+        reason: "nope",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
+  });
+
+  test("rejected with valid reason → 200, payload contains reason", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "rejected",
+        reason: "duplicate of an existing report",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const events = await db.query.annotationEvents.findMany({
+      where: and(
+        eq(schema.annotationEvents.annotationId, annotation.id),
+        eq(schema.annotationEvents.type, "agent_updated_status")
+      ),
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.payload).toEqual({
+      from: "to_do",
+      to: "rejected",
+      reason: "duplicate of an existing report",
+    });
+  });
+
+  test("reason on a non-rejected transition → 400 VALIDATION_ERROR", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const annotation = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+    });
+
+    const res = await server.inject({
+      method: "POST",
+      url: `/internal/mcp/annotations/${annotation.id}/status`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+      payload: {
+        clerkUserId: user.clerkUserId,
+        oauthClientName: OAUTH_CLIENT_NAME,
+        status: "doing",
+        reason: "starting work on this task",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("VALIDATION_ERROR");
+  });
 });
 
 describe("POST /internal/mcp/annotations/:annotationId/comments (integration)", () => {
