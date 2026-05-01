@@ -68,8 +68,29 @@ function formatEvent(event: AnnotationEventResponse): FormattedEvent {
       };
     case "resolved":
       return { icon: <CheckCircle2 className="h-4 w-4" />, headline: `${actor} resolved this` };
+    case "agent_acknowledged":
+      return {
+        icon: <Workflow className="h-4 w-4" />,
+        headline: `${actor} acknowledged this`,
+      };
+    case "agent_commented": {
+      const comment = typeof event.payload.comment === "string" ? event.payload.comment : "";
+      const kind = typeof event.payload.kind === "string" ? event.payload.kind : null;
+      const detail =
+        comment || kind ? (
+          <span className="text-xs text-muted-foreground">
+            {kind ? <span className="font-medium">{kind.replace(/_/g, " ")}: </span> : null}
+            {comment}
+          </span>
+        ) : undefined;
+      return {
+        icon: <MessageSquarePlus className="h-4 w-4" />,
+        headline: `${actor} commented`,
+        ...(detail !== undefined ? { detail } : {}),
+      };
+    }
     default:
-      // Forward-compat: Phase 2 agent events surface as raw event type until we
+      // Forward-compat: future event types surface as raw event type until we
       // write a renderer for them.
       return { icon: <Workflow className="h-4 w-4" />, headline: `${actor} · ${event.type}` };
   }

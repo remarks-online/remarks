@@ -183,6 +183,116 @@ const addTaskCommentTool = {
   output: addTaskCommentOutputSchema,
 } as const;
 
+// --- remarks_acknowledge (G6: agentation parity) ---
+
+export const acknowledgeInputSchema = z
+  .object({
+    task_id: z.string().uuid(),
+    comment: z.string().min(1).max(MAX_COMMENT_LENGTH).optional(),
+    kind: mcpCommentKindSchema.optional(),
+    idempotency_key: idempotencyKeySchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind !== undefined && value.comment === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "kind requires comment",
+        path: ["kind"],
+      });
+    }
+  });
+
+export type AcknowledgeInput = z.infer<typeof acknowledgeInputSchema>;
+
+export const acknowledgeOutputSchema = z.object({
+  id: z.string().uuid(),
+  status: z.literal("acknowledged"),
+  updated_at: z.string().datetime(),
+  // Set when the caller passed a comment; null otherwise. Lets the agent
+  // correlate the appended event without a follow-up read.
+  comment_event_id: z.string().uuid().nullable(),
+});
+
+export type AcknowledgeOutput = z.infer<typeof acknowledgeOutputSchema>;
+
+const acknowledgeTool = {
+  name: "remarks_acknowledge",
+  description:
+    "Marks a task as acknowledged — the agent has read it but hasn't started work yet. Useful when triaging a batch: acknowledge everything you intend to handle so the human knows you've seen it, then call `remarks_update_task_status` with `doing` when you actually start. Pass `comment` to leave a note alongside the acknowledgement (e.g., asking for clarification before starting). The `kind` field categorizes the comment and only applies when `comment` is set.",
+  input: acknowledgeInputSchema,
+  output: acknowledgeOutputSchema,
+} as const;
+
+// --- remarks_dismiss (G7: agentation parity) ---
+
+export const dismissInputSchema = z.object({
+  task_id: z.string().uuid(),
+  reason: rejectionReasonSchema,
+  idempotency_key: idempotencyKeySchema.optional(),
+});
+
+export type DismissInput = z.infer<typeof dismissInputSchema>;
+
+export const dismissOutputSchema = z.object({
+  id: z.string().uuid(),
+  status: z.literal("rejected"),
+  updated_at: z.string().datetime(),
+});
+
+export type DismissOutput = z.infer<typeof dismissOutputSchema>;
+
+const dismissTool = {
+  name: "remarks_dismiss",
+  description:
+    "Rejects a task with a required reason. Use this when the task can't or shouldn't be done — e.g., the request is out of scope, conflicts with a constraint, or has already been resolved by other work. The reason is recorded on the status-change event and surfaced to the human in the dashboard. Reason must be at least 10 characters; opaque rejections aren't useful for review. Equivalent to `remarks_update_task_status` with `status: rejected` plus a required reason — prefer this tool when dismissing so the contract is explicit.",
+  input: dismissInputSchema,
+  output: dismissOutputSchema,
+} as const;
+
+// --- remarks_get_pending (G8a: project-scoped triage) ---
+
+export const getPendingInputSchema = z.object({
+  project_id: z.string().uuid(),
+  branch: z.string().optional(),
+  limit: z.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
+
+export type GetPendingInput = z.infer<typeof getPendingInputSchema>;
+
+export const getPendingOutputSchema = listTasksOutputSchema;
+
+export type GetPendingOutput = z.infer<typeof getPendingOutputSchema>;
+
+const getPendingTool = {
+  name: "remarks_get_pending",
+  description:
+    "Returns tasks in a project that are pending agent work — status is `to_do` (no agent has picked it up) or `acknowledged` (an agent has read it but isn't actively working). Excludes `doing` (someone else is on it) and terminal states (`done`, `rejected`). Use this for triage: call at the start of a session to see what needs attention. Equivalent to `remarks_list_tasks` with `project_id` and `status: ['to_do', 'acknowledged']`, but more direct.",
+  input: getPendingInputSchema,
+  output: getPendingOutputSchema,
+} as const;
+
+// --- remarks_get_all_pending (G8b: cross-scope triage) ---
+
+export const getAllPendingInputSchema = z.object({
+  limit: z.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
+
+export type GetAllPendingInput = z.infer<typeof getAllPendingInputSchema>;
+
+export const getAllPendingOutputSchema = listTasksOutputSchema;
+
+export type GetAllPendingOutput = z.infer<typeof getAllPendingOutputSchema>;
+
+const getAllPendingTool = {
+  name: "remarks_get_all_pending",
+  description:
+    "Returns all tasks the caller can see that are pending agent work, across personal annotations and every project the caller is a member of (regardless of org). Status filter is `to_do` or `acknowledged`. Use this when the agent operates across multiple projects and wants a single view of work to do. For project-scoped triage, use `remarks_get_pending` instead.",
+  input: getAllPendingInputSchema,
+  output: getAllPendingOutputSchema,
+} as const;
+
 // --- remarks_batch_update_status (Phase 2 spec §3.2 Batching) ---
 
 // G4: each update row carries the same rejection contract as the single-update
@@ -352,6 +462,10 @@ export const REMARKS_TOOLS = [
   getTaskTool,
   updateTaskStatusTool,
   addTaskCommentTool,
+  acknowledgeTool,
+  dismissTool,
+  getPendingTool,
+  getAllPendingTool,
   batchUpdateStatusTool,
   getProjectContextTool,
   openPrTool,

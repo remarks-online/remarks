@@ -1,7 +1,7 @@
 # Agentation vs. Remarks — gap analysis
 
 Date: 2026-04-30
-Status: Analysis — P0 (G1/G2/G3/X1) shipped via ADR-0016 + migration 0007; remaining specs are pull-from-this-list
+Status: Analysis — P0 (G1/G2/G3/X1) shipped via ADR-0016 + migration 0007; P1 agent-loop (G4/G6/G7/G8) shipped via ADR-0018 on 2026-05-01; remaining specs are pull-from-this-list
 
 ## Context
 
@@ -80,10 +80,10 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 *What:* Extend `annotation_status_enum` with `acknowledged`. New event type `agent_acknowledged` on `annotation_event_type_enum`. Update MCP status-set guardrails (`apps/api/src/routes/internal/mcp/annotations/*` already restricts agents to `doing | done | rejected`; add `acknowledged`).
 *Where:* `packages/db/src/schema.ts`, MCP status route, dashboard status UI (`apps/dashboard/src/components/annotations/status-ui.ts`).
 
-**G4. Add `dismiss_reason` to events on rejected status** — *S*
+**G4. Add `dismiss_reason` to events on rejected status** — *S* — **DONE 2026-05-01 (statusUpdateBodySchema requires `reason` 10–500 chars when `status === "rejected"` via shared `rejectionReasonSchema`; dashboard `event-row.tsx` surfaces `payload.reason` inline on rejected status changes)**
 *Why:* Today rejection is opaque. Agentation requires a reason on dismiss; reviewers need this.
-*What:* When status changes to `rejected`, require `payload.reason` on the `status_changed` event. Validate in the event-write path. Surface in detail sheet.
-*Where:* `apps/api/src/services/annotation-events.ts` (or equivalent), `apps/dashboard/src/components/annotations/event-row.tsx`.
+*What:* When status changes to `rejected`, require a `reason` field on the body that lands in `payload.reason` on the resulting event. Validate in the route schema. Surface in detail sheet.
+*Where:* `apps/api/src/routes/internal/annotations.ts`, `apps/dashboard/src/components/annotations/event-row.tsx`.
 
 **G5. Optional: `kind` enum (feedback/placement/rearrange)** — *S, depends on layout-mode (P3)*
 *Why:* Only meaningful if we ship layout mode (G19). Until then, every annotation is implicitly `feedback`. Listed for completeness.
@@ -91,20 +91,20 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 
 ### API / agent loop (`apps/api`)
 
-**G6. MCP tool: `acknowledge` with optional comment** — *S, depends on G3*
+**G6. MCP tool: `acknowledge` with optional comment** — *S, depends on G3* — **DONE 2026-05-01 (ADR-0018; `remarks_acknowledge` flips status to `acknowledged` and optionally appends an `agent_commented` event; supports flexible `kind`)**
 *Why:* Mirrors `agentation_acknowledge`. Distinguishes "agent has read this" from "agent is doing it."
 *What:* New MCP tool that hits `POST /internal/mcp/annotations/:id/status` with `acknowledged` and optionally appends an `agent_commented` event with `kind: "clarification_request"` already supported.
-*Where:* `apps/api/src/routes/internal/mcp/annotations/[id]/status.ts`, MCP tool definition in the MCP server (`apps/mcp/...` or wherever DCR-backed server lives — verify path before starting).
+*Where:* `apps/mcp/src/tools/acknowledge.ts`, schema in `packages/mcp-schema/src/tools.ts`.
 
-**G7. MCP tool: `dismiss` with required reason** — *S, depends on G4*
+**G7. MCP tool: `dismiss` with required reason** — *S, depends on G4* — **DONE 2026-05-01 (ADR-0018; `remarks_dismiss` requires `reason` ≥ 10 chars; API route enforces same floor on direct calls)**
 *Why:* Pair with G4 — agents need to express *why* something can't be done.
 *What:* Wraps `status=rejected` + reason payload. Validate reason ≥ 10 chars.
-*Where:* same as G6.
+*Where:* `apps/mcp/src/tools/dismiss.ts`, schema in `packages/mcp-schema/src/tools.ts`.
 
-**G8. MCP tool: `get_pending` (per-project) and `get_all_pending` (per-user)** — *S*
+**G8. MCP tool: `get_pending` (per-project) and `get_all_pending` (per-user)** — *S* — **DONE 2026-05-01 (ADR-0018; `remarks_get_pending` wraps project list with `to_do + acknowledged` filter; `remarks_get_all_pending` wraps new `/internal/mcp/users/:clerkUserId/all-annotations` aggregator endpoint that reuses listAnnotationsForUser's "all" scope)**
 *Why:* Triage view: what hasn't been picked up yet. Today an agent has to filter `to_do` client-side after `list`.
 *What:* Two thin wrappers over existing list endpoints with `status=to_do` (and post-G3, possibly `to_do OR acknowledged-but-not-doing`).
-*Where:* `apps/api/src/routes/internal/mcp/projects/[id]/annotations.ts` already supports multi-status filter; add a convenience MCP tool.
+*Where:* `apps/mcp/src/tools/get-pending.ts`, `apps/mcp/src/tools/get-all-pending.ts`, new aggregator route in `apps/api/src/routes/internal/annotations.ts`.
 
 **G9. SSE event stream — per-project and per-user** — *M*
 *Why:* Powers `watch_annotations`-style agent loops, live dashboard activity feeds, and is required infrastructure for any "real-time" UX. Without it, agents poll.

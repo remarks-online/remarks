@@ -16,6 +16,7 @@ export interface ApiClient {
   fetchListAnnotations: typeof apiClient.fetchListAnnotations;
   fetchListPersonalAnnotations: typeof apiClient.fetchListPersonalAnnotations;
   fetchListOrgAnnotations: typeof apiClient.fetchListOrgAnnotations;
+  fetchListAllAnnotations: typeof apiClient.fetchListAllAnnotations;
   fetchAnnotation: typeof apiClient.fetchAnnotation;
   updateAnnotationStatus: typeof apiClient.updateAnnotationStatus;
   addAnnotationComment: typeof apiClient.addAnnotationComment;

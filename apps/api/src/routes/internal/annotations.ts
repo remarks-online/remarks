@@ -130,6 +130,37 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
     return reply.code(200).send(result);
   });
 
+  // G8b: cross-scope pending list. Returns the union of the caller's personal
+  // annotations and every annotation in projects they're a member of, regardless
+  // of org. Backs `remarks_get_all_pending`. The "all" scope already exists in
+  // listAnnotationsForUser (it's the default when the user-scoped REST endpoint
+  // omits a scope param) — this route just exposes it on the MCP-internal
+  // surface so the MCP server doesn't need a separate REST token.
+  fastify.get("/internal/mcp/users/:clerkUserId/all-annotations", async (request, reply) => {
+    const paramsResult = userParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      throw new ValidationError("Invalid path params", paramsResult.error.issues);
+    }
+    const queryResult = mcpListQueryBaseSchema.safeParse(request.query);
+    if (!queryResult.success) {
+      throw new ValidationError("Invalid query params", queryResult.error.issues);
+    }
+
+    const userId = await resolveMcpUserId(fastify.db, paramsResult.data.clerkUserId);
+    const result = await listAnnotationsForUser(fastify.db, {
+      userId,
+      query: {
+        scope: "all",
+        statuses: queryResult.data.statuses,
+        limit: queryResult.data.limit,
+        cursor: queryResult.data.cursor,
+      },
+      r2: fastify.r2,
+      assetTtlSeconds: MCP_SCREENSHOT_GET_TTL_SECONDS,
+    });
+    return reply.code(200).send(result);
+  });
+
   fastify.get(
     "/internal/mcp/users/:clerkUserId/orgs/:orgId/annotations",
     async (request, reply) => {

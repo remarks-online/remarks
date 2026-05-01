@@ -16,11 +16,18 @@ import {
 const uuid = "00000000-0000-4000-8000-000000000001";
 const otherUuid = "00000000-0000-4000-8000-000000000002";
 
+// Tool list grew from 8 to 12 in ADR-0018 (G6/G7/G8a/G8b agent-loop tools).
+// New tools slot between the existing mutators and the batching helper so
+// related verbs cluster together in the tools/list manifest.
 const SPEC_TOOL_NAMES: readonly RemarksToolName[] = [
   "remarks_list_tasks",
   "remarks_get_task",
   "remarks_update_task_status",
   "remarks_add_task_comment",
+  "remarks_acknowledge",
+  "remarks_dismiss",
+  "remarks_get_pending",
+  "remarks_get_all_pending",
   "remarks_batch_update_status",
   "remarks_get_project_context",
   "remarks_open_pr",
@@ -28,9 +35,9 @@ const SPEC_TOOL_NAMES: readonly RemarksToolName[] = [
 ];
 
 describe("REMARKS_TOOLS registry", () => {
-  test("exposes exactly 8 tools (Phase 2 spec §3.2)", () => {
-    expect(REMARKS_TOOLS).toHaveLength(8);
-    expect(REMARKS_TOOL_NAMES).toHaveLength(8);
+  test("exposes exactly 12 tools (ADR-0018)", () => {
+    expect(REMARKS_TOOLS).toHaveLength(12);
+    expect(REMARKS_TOOL_NAMES).toHaveLength(12);
   });
 
   test("tool names match the spec list, in spec order", () => {

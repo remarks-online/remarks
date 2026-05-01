@@ -7,8 +7,12 @@ import {
 import { REMARKS_TOOLS, type RemarksTool, type RemarksToolName } from "@remarks/mcp-schema";
 import { z } from "zod";
 import { McpToolError, toMcpToolErrorPayload } from "../lib/mcp-error.js";
+import { acknowledgeHandler } from "./acknowledge.js";
 import { addTaskCommentHandler } from "./add-task-comment.js";
 import { batchUpdateStatusHandler } from "./batch-update-status.js";
+import { dismissHandler } from "./dismiss.js";
+import { getAllPendingHandler } from "./get-all-pending.js";
+import { getPendingHandler } from "./get-pending.js";
 import { getProjectContextHandler } from "./get-project-context.js";
 import { getTaskHandler } from "./get-task.js";
 import { listTasksHandler } from "./list-tasks.js";
@@ -29,6 +33,10 @@ const HANDLERS: Partial<Record<RemarksToolName, ToolHandler>> = {
   remarks_get_project_context: getProjectContextHandler,
   remarks_update_task_status: updateTaskStatusHandler,
   remarks_add_task_comment: addTaskCommentHandler,
+  remarks_acknowledge: acknowledgeHandler,
+  remarks_dismiss: dismissHandler,
+  remarks_get_pending: getPendingHandler,
+  remarks_get_all_pending: getAllPendingHandler,
   remarks_batch_update_status: batchUpdateStatusHandler,
   remarks_open_pr: openPrHandler,
 };
