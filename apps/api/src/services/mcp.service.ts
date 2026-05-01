@@ -1,6 +1,10 @@
 import { type DB, schema } from "@remarks/db";
 import { type AnnotationResponse, type AnnotationStatus, NotFoundError } from "@remarks/shared";
 import { and, asc, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import {
+  type AnnotationEventPublisher,
+  buildAnnotationStreamEvent,
+} from "../lib/annotation-event-bus.js";
 import { capture as captureAnalytics } from "../lib/posthog.js";
 import type { R2Client } from "../lib/r2.js";
 import { getAnnotationById } from "./annotation.service.js";
@@ -357,6 +361,7 @@ export interface AgentUpdateAnnotationStatusArgs {
   // G4: required by upstream Zod refines when `status === "rejected"`. Lands
   // on the resulting event payload as `payload.reason`.
   reason?: string;
+  publisher?: AnnotationEventPublisher;
 }
 
 export interface AgentUpdateAnnotationStatusResult {
@@ -369,13 +374,18 @@ export async function agentUpdateAnnotationStatus(
   db: DB,
   args: AgentUpdateAnnotationStatusArgs
 ): Promise<AgentUpdateAnnotationStatusResult> {
-  const { annotationId, clerkUserId, oauthClientName, status, note, reason } = args;
+  const { annotationId, clerkUserId, oauthClientName, status, note, reason, publisher } = args;
   const actorId = await resolveUserIdByClerkId(db, clerkUserId);
 
   type StatusTransition = {
     from: AnnotationStatus;
     to: AnnotationStatus;
     projectId: string | null;
+    authorId: string;
+    eventId: string;
+    eventCreatedAt: Date;
+    eventType: "agent_acknowledged" | "agent_updated_status";
+    payload: Record<string, unknown>;
   } | null;
 
   const transition = await db.transaction<StatusTransition>(async (tx) => {
@@ -400,22 +410,40 @@ export async function agentUpdateAnnotationStatus(
     // G4: a `reason` is persisted on the payload when the agent rejected the
     // task — its presence is enforced upstream by Zod refines, so the
     // service just spreads it through.
-    const eventType = status === "acknowledged" ? "agent_acknowledged" : "agent_updated_status";
-    await tx.insert(schema.annotationEvents).values({
-      annotationId,
-      actorType: "agent",
-      actorId,
-      actorOauthClientId: oauthClientName,
-      type: eventType,
-      payload: {
-        from: current.status,
-        to: status,
-        ...(note !== undefined ? { note } : {}),
-        ...(reason !== undefined ? { reason } : {}),
-      },
-    });
+    const eventType: "agent_acknowledged" | "agent_updated_status" =
+      status === "acknowledged" ? "agent_acknowledged" : "agent_updated_status";
+    const payload = {
+      from: current.status,
+      to: status,
+      ...(note !== undefined ? { note } : {}),
+      ...(reason !== undefined ? { reason } : {}),
+    };
+    const [eventRow] = await tx
+      .insert(schema.annotationEvents)
+      .values({
+        annotationId,
+        actorType: "agent",
+        actorId,
+        actorOauthClientId: oauthClientName,
+        type: eventType,
+        payload,
+      })
+      .returning({
+        id: schema.annotationEvents.id,
+        createdAt: schema.annotationEvents.createdAt,
+      });
+    if (!eventRow) throw new Error("annotation_events insert returned no rows");
 
-    return { from: current.status, to: status, projectId: current.projectId };
+    return {
+      from: current.status,
+      to: status,
+      projectId: current.projectId,
+      authorId: current.authorId,
+      eventId: eventRow.id,
+      eventCreatedAt: eventRow.createdAt,
+      eventType,
+      payload,
+    };
   });
 
   const after = await db.query.annotations.findFirst({
@@ -437,6 +465,24 @@ export async function agentUpdateAnnotationStatus(
         oauthClientName,
       },
     });
+
+    // G9: broadcast the agent transition.
+    if (publisher) {
+      void publisher.publish(
+        buildAnnotationStreamEvent({
+          eventId: transition.eventId,
+          type: transition.eventType,
+          payload: transition.payload,
+          createdAt: transition.eventCreatedAt,
+          actorType: "agent",
+          actorId,
+          actorOauthClientId: oauthClientName,
+          annotationId,
+          projectId: transition.projectId,
+          authorId: transition.authorId,
+        })
+      );
+    }
   }
 
   return {
@@ -452,6 +498,7 @@ export interface AgentAddAnnotationCommentArgs {
   oauthClientName: string;
   comment: string;
   kind?: AgentCommentKind;
+  publisher?: AnnotationEventPublisher;
 }
 
 export interface AgentAddAnnotationCommentResult {
@@ -463,10 +510,10 @@ export async function agentAddAnnotationComment(
   db: DB,
   args: AgentAddAnnotationCommentArgs
 ): Promise<AgentAddAnnotationCommentResult> {
-  const { annotationId, clerkUserId, oauthClientName, comment, kind } = args;
+  const { annotationId, clerkUserId, oauthClientName, comment, kind, publisher } = args;
   const actorId = await resolveUserIdByClerkId(db, clerkUserId);
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
       columns: { id: true, projectId: true, authorId: true },
@@ -475,6 +522,7 @@ export async function agentAddAnnotationComment(
     const allowed = await userCanAccessAnnotation(tx as unknown as DB, clerkUserId, current);
     if (!allowed) throw new NotFoundError("Annotation");
 
+    const payload = { comment, ...(kind !== undefined ? { kind } : {}) };
     const [row] = await tx
       .insert(schema.annotationEvents)
       .values({
@@ -483,7 +531,7 @@ export async function agentAddAnnotationComment(
         actorId,
         actorOauthClientId: oauthClientName,
         type: "agent_commented",
-        payload: { comment, ...(kind !== undefined ? { kind } : {}) },
+        payload,
       })
       .returning({
         id: schema.annotationEvents.id,
@@ -491,6 +539,32 @@ export async function agentAddAnnotationComment(
       });
     if (!row) throw new Error("annotation_events insert returned no rows");
 
-    return { eventId: row.id, createdAt: row.createdAt.toISOString() };
+    return {
+      eventId: row.id,
+      createdAt: row.createdAt,
+      projectId: current.projectId,
+      authorId: current.authorId,
+      payload,
+    };
   });
+
+  // G9: broadcast post-commit.
+  if (publisher) {
+    void publisher.publish(
+      buildAnnotationStreamEvent({
+        eventId: result.eventId,
+        type: "agent_commented",
+        payload: result.payload,
+        createdAt: result.createdAt,
+        actorType: "agent",
+        actorId,
+        actorOauthClientId: oauthClientName,
+        annotationId,
+        projectId: result.projectId,
+        authorId: result.authorId,
+      })
+    );
+  }
+
+  return { eventId: result.eventId, createdAt: result.createdAt.toISOString() };
 }

@@ -57,6 +57,19 @@ export const envSchema = z.object({
   // handler with this; the SDK rejects unsigned requests. Required for the
   // same reason as INNGEST_EVENT_KEY. Same dashboard, "Signing Key" tab.
   INNGEST_SIGNING_KEY: z.string().min(1),
+  // G9: SSE event-stream connection cap. Keeps the 512 MB Fly machine from
+  // running out of file descriptors / RAM under a thundering herd. The cap is
+  // per-machine; horizontal scaling raises the global ceiling automatically.
+  MAX_SSE_CONNECTIONS: z.coerce.number().int().positive().default(200),
+  // G9: hard cap on a single SSE connection's lifetime, in ms. On expiry the
+  // server emits an `event: rotate` and closes so the client reconnects with
+  // Last-Event-ID — bounds memory usage and refreshes per-user project
+  // membership snapshots without an explicit invalidation channel.
+  MAX_SSE_CONNECTION_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60 * 1000),
 });
 
 export type Env = z.infer<typeof envSchema>;

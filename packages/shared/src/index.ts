@@ -3,6 +3,7 @@ export * from "./env-check.js";
 export * from "./errors.js";
 export * from "./schemas/annotation.js";
 export * from "./schemas/annotation-event.js";
+export * from "./schemas/annotation-stream.js";
 export * from "./schemas/clerk.js";
 export * from "./schemas/common.js";
 export * from "./schemas/extension.js";

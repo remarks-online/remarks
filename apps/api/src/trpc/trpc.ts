@@ -3,6 +3,7 @@ import type { DB } from "@remarks/db";
 import { RemarksError, UnauthorizedError, ValidationError } from "@remarks/shared";
 import { TRPCError, initTRPC } from "@trpc/server";
 import type { AppInngest } from "../inngest/client.js";
+import type { AnnotationEventPublisher } from "../lib/annotation-event-bus.js";
 import type { R2Client } from "../lib/r2.js";
 
 // User shape inlined (rather than imported from plugins/auth.ts) so the
@@ -29,6 +30,11 @@ export interface Context {
   r2: R2Client;
   clerk: ClerkClient;
   inngest: AppInngest;
+  // G9: passed through to mutating service calls so dashboard tRPC mutations
+  // broadcast on the SSE event bus the same way the REST routes do. Loose
+  // interface so the dashboard's type-only AppRouter import doesn't drag in
+  // postgres / Fastify types.
+  annotationEventBus: AnnotationEventPublisher;
   requestId: string;
 }
 

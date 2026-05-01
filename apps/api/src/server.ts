@@ -5,6 +5,7 @@ import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
 import { env } from "./env.js";
 import { inngestServeRoutes } from "./inngest/serve.js";
+import annotationEventBusPlugin from "./plugins/annotation-event-bus.js";
 import authPlugin from "./plugins/auth.js";
 import clerkPlugin from "./plugins/clerk.js";
 import dbPlugin from "./plugins/db.js";
@@ -12,6 +13,7 @@ import inngestPlugin from "./plugins/inngest.js";
 import r2Plugin from "./plugins/r2.js";
 import rawBodyPlugin from "./plugins/raw-body.js";
 import { annotationRoutes } from "./routes/annotations/index.js";
+import { eventsRoutes } from "./routes/events/index.js";
 import { extensionRoutes } from "./routes/extension/index.js";
 import { healthRoutes } from "./routes/health.js";
 import { internalRoutes } from "./routes/internal/index.js";
@@ -78,6 +80,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
   await server.register(rawBodyPlugin);
   await server.register(dbPlugin);
+  await server.register(annotationEventBusPlugin);
   await server.register(r2Plugin);
   await server.register(inngestPlugin);
   await server.register(clerkPlugin, {});
@@ -97,6 +100,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     await authenticated.register(projectRoutes);
     await authenticated.register(uploadRoutes);
     await authenticated.register(annotationRoutes);
+    await authenticated.register(eventsRoutes);
     await authenticated.register(extensionRoutes);
     await authenticated.register(fastifyTRPCPlugin<AppRouter>, {
       prefix: "/trpc",
