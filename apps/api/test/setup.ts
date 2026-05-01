@@ -25,6 +25,8 @@ process.env.R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "unit-test-account";
 process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "unit-test-key";
 process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY ?? "unit-test-secret";
 process.env.R2_BUCKET_SCREENSHOTS = process.env.R2_BUCKET_SCREENSHOTS ?? "remarks-screenshots-test";
+process.env.R2_BUCKET_EXTENSION_BUILDS =
+  process.env.R2_BUCKET_EXTENSION_BUILDS ?? "remarks-extension-builds-test";
 
 // Inngest env is required by envSchema; tests mock `inngest.send` so the SDK
 // never reaches the network — placeholders satisfy parsing.

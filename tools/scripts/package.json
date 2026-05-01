@@ -9,6 +9,7 @@
   "scripts": {
     "seed": "tsx seed.ts",
     "clerk:allowlist-extension": "tsx clerk-allowlist-extension.ts",
+    "upload-extension-build": "tsx upload-extension-build.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check ."
   },

@@ -88,19 +88,62 @@ jobs:
           git tag "extension-v${{ steps.version.outputs.version }}"
           git push origin "extension-v${{ steps.version.outputs.version }}"
 
+      # Build the prod extension here so the resulting zip can be published
+      # to R2 for /app/download-extension (ADR-0017). Repo secrets supply the
+      # prod Clerk + dashboard URLs that wxt bakes into the bundle.
+      - name: Build production extension
+        env:
+          NODE_ENV: production
+          WXT_CLERK_PUBLISHABLE_KEY: ${{ secrets.EXTENSION_PROD_CLERK_PUBLISHABLE_KEY }}
+          WXT_CLERK_SYNC_HOST: ${{ secrets.EXTENSION_PROD_CLERK_SYNC_HOST }}
+          WXT_API_URL: ${{ secrets.EXTENSION_PROD_API_URL }}
+          WXT_DASHBOARD_URL: ${{ secrets.EXTENSION_PROD_DASHBOARD_URL }}
+        run: pnpm --filter @remarks/extension build:prod
+
+      - name: Zip extension
+        run: pnpm --filter @remarks/extension zip
+
+      - name: Locate zip
+        id: zip
+        run: |
+          zip_path=$(ls apps/extension/.output/*-chrome.zip | head -n1)
+          if [ -z "$zip_path" ]; then
+            echo "no chrome zip produced under apps/extension/.output/"; exit 1
+          fi
+          echo "path=$zip_path" >> "$GITHUB_OUTPUT"
+          sha=$(sha256sum "$zip_path" | awk '{print $1}')
+          size=$(stat -c%s "$zip_path")
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "size=$size" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_EXTENSION_BUILDS: ${{ secrets.R2_BUCKET_EXTENSION_BUILDS }}
+          EXTENSION_VERSION: ${{ steps.version.outputs.version }}
+          EXTENSION_ZIP_PATH: ${{ steps.zip.outputs.path }}
+        run: pnpm --filter @remarks/scripts upload-extension-build
+
       - name: Notify
         run: |
-          echo "## Extension version bumped"  >> $GITHUB_STEP_SUMMARY
+          echo "## Extension v${{ steps.version.outputs.version }} published" >> $GITHUB_STEP_SUMMARY
           echo ""                              >> $GITHUB_STEP_SUMMARY
-          echo "Tag pushed: \`extension-v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Tag: \`extension-v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Zip: \`${{ steps.zip.outputs.path }}\` (${{ steps.zip.outputs.size }} bytes, sha256=${{ steps.zip.outputs.sha256 }})" >> $GITHUB_STEP_SUMMARY
           echo ""                              >> $GITHUB_STEP_SUMMARY
-          echo "Build + zip happens locally with prod env. From a clean checkout:" >> $GITHUB_STEP_SUMMARY
+          echo "Uploaded to R2:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`releases/chrome/remarks-chrome-${{ steps.version.outputs.version }}.zip\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`releases/chrome/latest.json\`" >> $GITHUB_STEP_SUMMARY
           echo ""                              >> $GITHUB_STEP_SUMMARY
-          echo '```'                           >> $GITHUB_STEP_SUMMARY
-          echo "git fetch --tags && git checkout extension-v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "pnpm install"                  >> $GITHUB_STEP_SUMMARY
-          echo "pnpm --filter @remarks/extension build:prod" >> $GITHUB_STEP_SUMMARY
-          echo "pnpm --filter @remarks/extension zip"        >> $GITHUB_STEP_SUMMARY
-          echo '```'                           >> $GITHUB_STEP_SUMMARY
+          echo "The dashboard's /app/download-extension page will surface this build immediately." >> $GITHUB_STEP_SUMMARY
           echo ""                              >> $GITHUB_STEP_SUMMARY
-          echo "Then upload \`apps/extension/.output/*-chrome.zip\` to https://chrome.google.com/webstore/devconsole" >> $GITHUB_STEP_SUMMARY
+          echo "Chrome Web Store upload remains manual — drag the zip from artifacts (or rebuild from the tag) to https://chrome.google.com/webstore/devconsole" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload zip as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remarks-chrome-v${{ steps.version.outputs.version }}
+          path: apps/extension/.output/*-chrome.zip
+          retention-days: 90

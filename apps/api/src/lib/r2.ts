@@ -45,6 +45,14 @@ export function createR2Client(env: R2Env): R2Client {
   return { s3: new S3Client(config), bucket: env.R2_BUCKET_SCREENSHOTS };
 }
 
+// Re-uses the existing S3 client but points at a different bucket. Cheaper
+// than constructing a second S3Client (each one allocates its own connection
+// pool) and lets one request fan out to multiple buckets without standing up
+// a second Fastify decorator.
+export function withBucket(client: R2Client, bucket: string): R2Client {
+  return { s3: client.s3, bucket };
+}
+
 export interface PutObjectArgs {
   key: string;
   body: Uint8Array | Buffer | string;

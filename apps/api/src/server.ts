@@ -12,6 +12,7 @@ import inngestPlugin from "./plugins/inngest.js";
 import r2Plugin from "./plugins/r2.js";
 import rawBodyPlugin from "./plugins/raw-body.js";
 import { annotationRoutes } from "./routes/annotations/index.js";
+import { extensionRoutes } from "./routes/extension/index.js";
 import { healthRoutes } from "./routes/health.js";
 import { internalRoutes } from "./routes/internal/index.js";
 import { projectRoutes } from "./routes/projects/index.js";
@@ -96,6 +97,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     await authenticated.register(projectRoutes);
     await authenticated.register(uploadRoutes);
     await authenticated.register(annotationRoutes);
+    await authenticated.register(extensionRoutes);
     await authenticated.register(fastifyTRPCPlugin<AppRouter>, {
       prefix: "/trpc",
       trpcOptions: {

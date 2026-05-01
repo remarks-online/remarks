@@ -5,6 +5,7 @@ export * from "./schemas/annotation.js";
 export * from "./schemas/annotation-event.js";
 export * from "./schemas/clerk.js";
 export * from "./schemas/common.js";
+export * from "./schemas/extension.js";
 export * from "./schemas/inngest-events.js";
 export * from "./schemas/me.js";
 export * from "./schemas/project.js";

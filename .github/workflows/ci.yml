@@ -66,6 +66,7 @@ jobs:
           R2_ACCESS_KEY_ID: minioadmin
           R2_SECRET_ACCESS_KEY: minioadmin
           R2_BUCKET_SCREENSHOTS: remarks-screenshots-test
+          R2_BUCKET_EXTENSION_BUILDS: remarks-extension-builds-test
           # Throwaway value — the /internal/* integration test (task 2.5)
           # constructs `x-internal-auth` from this same env, so any 32+ char
           # string works as long as both sides see the same one.
@@ -139,6 +140,7 @@ jobs:
       R2_ACCESS_KEY_ID: ci_placeholder
       R2_SECRET_ACCESS_KEY: ci_placeholder
       R2_BUCKET_SCREENSHOTS: remarks-screenshots-test
+      R2_BUCKET_EXTENSION_BUILDS: remarks-extension-builds-test
       # Required by env-schema (task 2.5) — none of the e2e specs hit
       # /internal/*, but env.ts validates at module load when Playwright
       # spins up the API webServer.

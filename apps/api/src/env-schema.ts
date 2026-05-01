@@ -35,6 +35,10 @@ export const envSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),
   R2_BUCKET_SCREENSHOTS: z.string().min(1),
+  // Bucket holding signed extension build artifacts (zip + latest.json) used
+  // by the alpha distribution flow at GET /v1/extension/latest. Separate from
+  // screenshots so retention and access can diverge later (ADR-0017).
+  R2_BUCKET_EXTENSION_BUILDS: z.string().min(1),
   // Optional override for S3-compatible endpoints used in tests (MinIO at
   // http://localhost:9000). When unset, r2.ts derives the real endpoint from
   // R2_ACCOUNT_ID.
