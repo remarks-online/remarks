@@ -2,6 +2,7 @@ import { env } from "@/env";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { apiFetch } from "./api-fetch";
 import { trpc } from "./trpc";
 
 /**
@@ -45,6 +46,10 @@ export function SidebarTrpcProvider({
             const t = tokenRef.current;
             return t ? { authorization: `Bearer ${t}` } : {};
           },
+          // Content scripts inherit the host page's origin for CORS, but the
+          // API only allows the dashboard + extension origins. Proxy through
+          // the background SW so the request runs at chrome-extension://...
+          fetch: apiFetch,
         }),
       ],
     })

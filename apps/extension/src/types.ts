@@ -12,6 +12,16 @@ export type BackgroundRequest =
       kind: "capture-screenshot";
       viewportRect: ViewportRect;
       dpr: number;
+    }
+  | {
+      // Content scripts proxy API fetches through the SW so the request runs at
+      // the extension's origin (which the API CORS allowlist covers) instead of
+      // the host page's origin. See apps/extension/src/lib/api-fetch.ts.
+      kind: "api-fetch";
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body: string | null;
     };
 
 export type BackgroundResponse =
@@ -29,6 +39,13 @@ export type BackgroundResponse =
       dataUrl: string;
       width: number;
       height: number;
+    }
+  | {
+      ok: true;
+      kind: "api-fetch";
+      status: number;
+      headers: Record<string, string>;
+      body: string;
     }
   | { ok: false; error: string };
 
