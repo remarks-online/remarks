@@ -106,7 +106,10 @@ jobs:
       - name: Locate zip
         id: zip
         run: |
-          zip_path=$(ls apps/extension/.output/*-chrome.zip | head -n1)
+          # Resolve to an absolute path. The upload step runs the script via
+          # `pnpm --filter @remarks/scripts`, which cd's into tools/scripts/ —
+          # a repo-relative path doesn't survive that cwd shift.
+          zip_path=$(ls "$GITHUB_WORKSPACE"/apps/extension/.output/*-chrome.zip | head -n1)
           if [ -z "$zip_path" ]; then
             echo "no chrome zip produced under apps/extension/.output/"; exit 1
           fi
