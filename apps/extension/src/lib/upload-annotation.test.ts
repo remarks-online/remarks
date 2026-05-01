@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ZodError } from "zod";
+import { apiFetch } from "./api-fetch";
 import type { Capture, ElementCapture, RectCapture } from "./picker-store";
 import { UploadAnnotationError, isRetryable, uploadAnnotation } from "./upload-annotation";
+
+// presign() and createAnnotation() route through the SW-proxy `apiFetch`
+// helper so requests run at the extension's origin (which the API CORS
+// allowlist covers); putObject() still uses global `fetch` to PUT the binary
+// blob directly to R2. Mock both transports against a single shared response
+// queue so each test still expresses the call sequence as one ordered list.
+vi.mock("./api-fetch", () => ({
+  apiFetch: vi.fn(),
+}));
 
 // 1×1 transparent PNG — 67 bytes decoded, ~92-char base64 payload. The size
 // delta is load-bearing for the sizeBytes-accuracy test.
@@ -115,23 +125,34 @@ function emptyResponse(status = 200, text = ""): Response {
 
 type FetchCall = { url: string; init: RequestInit };
 
-function installFetchSequence(responses: Response[]): {
-  calls: FetchCall[];
-  fetchMock: ReturnType<typeof vi.fn>;
-} {
+function installFetchSequence(responses: Response[]): { calls: FetchCall[] } {
   const calls: FetchCall[] = [];
   let idx = 0;
+  const consume = (url: string, init: RequestInit): Response => {
+    calls.push({ url, init });
+    const next = responses[idx++];
+    if (!next) throw new Error(`No mocked response for request #${idx} to ${url}`);
+    return next;
+  };
+
+  vi.mocked(apiFetch).mockImplementation(async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : (input as { url: string }).url;
+    return consume(url, (init ?? {}) as RequestInit);
+  });
+
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url =
       typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    calls.push({ url, init: init ?? {} });
-    const next = responses[idx++];
-    if (!next) throw new Error(`No mocked response for fetch call #${idx} to ${url}`);
-    return next;
+    return consume(url, init ?? {});
   });
-  // Vitest runs in jsdom; fetch lives on globalThis.
   vi.stubGlobal("fetch", fetchMock);
-  return { calls, fetchMock };
+
+  return { calls };
 }
 
 function parseJsonBody(init: RequestInit): Record<string, unknown> {
