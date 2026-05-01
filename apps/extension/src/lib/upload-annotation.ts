@@ -6,6 +6,7 @@ import {
   annotationResponseSchema,
   presignedUploadResponseSchema,
 } from "@remarks/shared";
+import { apiFetch } from "./api-fetch";
 import type { Capture } from "./picker-store";
 
 export type UploadStep = "presign" | "put" | "create";
@@ -126,7 +127,7 @@ async function presign(args: PresignArgs): Promise<PresignedUploadResponse> {
   };
   let res: Response;
   try {
-    res = await fetch(`${args.apiUrl}/uploads/presign`, {
+    res = await apiFetch(`${args.apiUrl}/uploads/presign`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${args.token}`,
@@ -175,6 +176,10 @@ async function presign(args: PresignArgs): Promise<PresignedUploadResponse> {
 }
 
 async function putObject(uploadUrl: string, blob: Blob): Promise<void> {
+  // Direct fetch — the R2 buckets carry their own wildcard CORS rule
+  // (`AllowedOrigins: *` for PUT/GET), so the host page's origin is fine here.
+  // Routing the binary blob through the SW would cost a base64 round-trip and
+  // bump up against chrome.runtime.sendMessage's 10MB structured-clone limit.
   let res: Response;
   try {
     res = await fetch(uploadUrl, {
@@ -243,7 +248,7 @@ async function createAnnotation(args: CreateArgs): Promise<AnnotationResponse> {
     : `${args.apiUrl}/annotations`;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await apiFetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${args.token}`,
