@@ -134,11 +134,11 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 *What:* If hover-mode is missing, extend `picker-controller.ts` to render a transient computed-styles tooltip while picking (font / color / spacing). Keep behind a setting; could be noisy.
 *Where:* `apps/extension/src/lib/picker-controller.ts`, `apps/extension/src/components/CapturePromptPopover.tsx`.
 
-**G13. React component-tree detection (Fiber traversal)** — *M*
+**G13. React component-tree detection (Fiber traversal)** — *M, **DONE 2026-05-01 (ADR-0019)***
 *Why:* For React apps, "this annotation is on `<Dashboard><SubmitButton />>`" is more agent-actionable than a CSS selector. Closes most of the "where in code" gap.
-*What:* In dev environments where `__REACT_DEVTOOLS_GLOBAL_HOOK__` is present, walk the Fiber tree from the picked element up, extract component display names. Persist to `domContext.reactComponents` (already JSONB). Schema is forward-compatible.
-*Where:* `apps/extension/src/lib/dom-context.ts`, optional new file `apps/extension/src/lib/react-fiber.ts`, MCP read path passes through.
-*Risks:* Production-minified React loses display names; agentation accepts this. Document the limitation.
+*What:* `apps/extension/src/lib/react-fiber.ts` walks fibers via `__reactFiber$*` keys; a MAIN-world WXT entrypoint (`fiber-bridge.content.ts`) bridges into the picker via `postMessage`; results land on `domContext.reactComponents` (extended Zod schema, no DB migration) plus `frameworkHint = "react"` on detection. Surfaced in extension popover and dashboard `MetadataPanel`. Sourcemap resolution + editor-jump links broken out as spec-gaps **A24** + **A25**.
+*Where:* `apps/extension/src/lib/react-fiber.ts`, `apps/extension/src/lib/fiber-bridge.ts`, `apps/extension/src/entrypoints/fiber-bridge.content.ts`, `packages/shared/src/schemas/annotation.ts`, `apps/api/src/services/annotation.service.ts`, `apps/dashboard/src/components/annotations/annotation-detail-sheet.tsx`.
+*Risks:* Production-minified React loses display names (accepted); React 19 removed `_debugSource` (accepted, A24 covers sourcemap recovery); Firefox MV3 doesn't honor `world: "MAIN"` (out of scope for Chromium-only).
 
 **G14. Source file detection (file:line) in dev mode** — *S–M, depends on G13 codepath*
 *Why:* Same goal as G13 but more direct: if Vite/webpack source maps expose `__source` on Fiber nodes (React DevTools does this), capture file:line and ship it.

@@ -225,6 +225,9 @@ function buildCreateBody(
     // so we drop a null-or-missing classifier here rather than ship it.
     ...(input.intent ? { intent: input.intent } : {}),
     ...(input.severity ? { severity: input.severity } : {}),
+    // G13: framework detection (currently "react" or absent). Set by
+    // attachReactInfo when the MAIN-world fiber bridge confirms a tree.
+    ...(input.capture.frameworkHint ? { frameworkHint: input.capture.frameworkHint } : {}),
   };
   if (input.capture.kind === "element") {
     return {

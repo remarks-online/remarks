@@ -1,3 +1,4 @@
+import type { ReactComponentNode } from "@remarks/shared";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 import type { DomContext } from "./dom-context";
@@ -27,6 +28,10 @@ interface CaptureBase {
   scroll: { x: number; y: number };
   capturedAt: number;
   screenshot?: CaptureScreenshot;
+  // G13: framework detected for the picked page. Set asynchronously by
+  // attachReactInfo when the MAIN-world fiber bridge confirms a fiber tree.
+  // Only "react" today; expand the union as we add detectors.
+  frameworkHint?: "react";
 }
 
 export interface ElementCapture extends CaptureBase {
@@ -60,6 +65,10 @@ export interface PickerState {
   setHovered: (preview: HoveredPreview | null) => void;
   commit: (capture: Capture) => void;
   setScreenshot: (screenshot: CaptureScreenshot | null) => void;
+  // G13: merge React fiber-walk results into the in-flight element capture.
+  // No-op for rect captures (rectangles don't carry domContext) and when the
+  // capture has been cleared between request and response.
+  attachReactInfo: (info: { components: ReactComponentNode[]; frameworkDetected: boolean }) => void;
   clearCapture: () => void;
   dismissPopover: () => void;
   resumePopover: () => void;
@@ -84,6 +93,23 @@ export const pickerStore = createStore<PickerState>((set) => ({
       }
       const { screenshot: _discard, ...rest } = state.capture;
       return { capture: rest as Capture };
+    }),
+  attachReactInfo: ({ components, frameworkDetected }) =>
+    set((state) => {
+      if (!state.capture) return {};
+      // Rect captures have no domContext to attach reactComponents to. The
+      // fiber bridge is fired only from the element-capture path today, but
+      // narrow defensively in case that contract changes.
+      if (state.capture.kind !== "element") return {};
+      const next: ElementCapture = {
+        ...state.capture,
+        domContext: {
+          ...state.capture.domContext,
+          ...(components.length > 0 ? { reactComponents: components } : {}),
+        },
+        ...(frameworkDetected ? { frameworkHint: "react" as const } : {}),
+      };
+      return { capture: next };
     }),
   clearCapture: () => set({ capture: null, popoverDismissed: false }),
   dismissPopover: () => set({ popoverDismissed: true }),

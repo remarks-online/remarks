@@ -94,3 +94,48 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: Independent. Eventually superseded by A8.
 - **Estimated size**: `m`.
 - **Status**: `in progress`.
+
+## A24 — Source-map-resolved component file paths from production bundles
+
+| # | Done when | Complete |
+|---|---|---|
+| A24 | A production-built React app annotation captures `domContext.reactComponents[].source` with file paths resolved from the page's published sourcemap | [ ] |
+
+- **Spec reference**: not specified. Follow-up to **G13** in `docs/analysis/2026-04-30-agentation-vs-remarks.md` (ADR-0019); complements **G14** (which covers raw `_debugSource` capture in dev only).
+- **Problem**: G13's MAIN-world fiber walk only recovers `_debugSource` from React 16/17/18 dev builds. React 19 removed `_debugSource` (only `_debugStack`, an `Error`, remains); production-minified bundles never had it. So for the most common review surface — preview/staging/prod URLs — the captured component chain has names but no file:line.
+- **Proposed deliverable**:
+  - In the MAIN-world bridge, when `_debugSource` is absent, capture `_debugStack` frames (React 19) or the call-site stack at fiber-creation (React ≤18 prod) as raw text on each `reactComponents[]` entry.
+  - New API service `apps/api/src/services/sourcemap-resolver.service.ts` that, for a given `(pageUrl, bundleUrl, lineNumber, columnNumber)`, fetches the published `.js.map` (cached by ETag in R2 or Upstash KV with a TTL), runs `source-map-js` to resolve the original file/line.
+  - Resolution runs server-side, async, after annotation create; persisted as `domContext.reactComponents[].source.resolvedFromSourceMap = true` so the dashboard can distinguish dev-direct vs map-resolved.
+  - Inngest function batches and rate-limits sourcemap fetches per origin.
+- **Done when**:
+  - Annotation captured on a Vite-prod-built React 18+ app with a published sourcemap (`//# sourceMappingURL=...`) shows resolved `source.fileName` and `source.lineNumber` in the dashboard `MetadataPanel` within ~5s of create.
+  - Sourcemap fetch failures fall back silently (no `source` field, no thrown error).
+  - Integration test in `apps/api/test/integration/` against a fixture sourcemap.
+- **Conflicts / overlaps with spec**: None. Depends on G13 having shipped (the `domContext.reactComponents` field exists and the MAIN-world bridge is in place).
+- **Affected tasks / components**: `apps/extension/src/entrypoints/fiber-bridge.content.ts` (capture stack), `apps/api/src/services/sourcemap-resolver.service.ts` (new), `apps/api/src/inngest/functions/sourcemap-resolve.ts` (new), `packages/shared/src/schemas/annotation.ts` (extend `reactComponentNodeSchema.source`), new dependency `source-map-js` (justify per CLAUDE.md §1.10).
+- **Dependencies**: After **G13** lands (done in ADR-0019).
+- **Estimated size**: `l`.
+- **Status**: `open`.
+
+## A25 — Editor jump links from the dashboard component chain
+
+| # | Done when | Complete |
+|---|---|---|
+| A25 | Clicking a component in the annotation detail sheet opens the file in the user's configured editor (vscode/cursor/jetbrains) at the right line | [ ] |
+
+- **Spec reference**: not specified. Follow-up UX on top of **G13** (`docs/analysis/2026-04-30-agentation-vs-remarks.md`, ADR-0019).
+- **Problem**: G13 surfaces a `domContext.reactComponents` chain with optional `source.fileName` / `source.lineNumber`. The chain is rendered in `apps/dashboard/src/components/annotations/annotation-detail-sheet.tsx`'s `MetadataPanel` as plain breadcrumb text, even when source data is present. The natural UX is "click the component name to open the file" — agentation and click-to-component tools both ship this.
+- **Proposed deliverable**:
+  - Per-user editor preference in dashboard settings: `editor` enum = `vscode | cursor | jetbrains | webstorm | none`. Stored on the existing `users` table or a new `user_preferences` JSONB column (whichever pattern the dashboard already uses for similar prefs).
+  - Dashboard `MetadataPanel`: when `source` is present, wrap the component name in `<a href={editorUrl(pref, source)}>` where `editorUrl` returns `vscode://file/<path>:<line>:<column>`, `cursor://file/...`, etc.
+  - Reuse the existing copy-on-click affordance pattern in `event-row.tsx` for fallback (right-click → "copy file path") when `editor === "none"`.
+- **Done when**:
+  - User picks an editor in `/app/settings`; preference persists across sessions.
+  - On a dev-captured annotation with React 17/18 `_debugSource`, clicking any component name in the detail sheet opens the configured editor at the file:line.
+  - When `source` is absent, the component name renders as plain text (no broken link).
+- **Conflicts / overlaps with spec**: None.
+- **Affected tasks / components**: `apps/dashboard/src/app/app/settings/`, `apps/dashboard/src/components/annotations/annotation-detail-sheet.tsx`, user-preferences schema in `packages/db` and `packages/shared`.
+- **Dependencies**: After **G13** lands (done in ADR-0019). Independent of A24 — works on dev-captured annotations even before sourcemap resolution exists.
+- **Estimated size**: `s`.
+- **Status**: `open`.

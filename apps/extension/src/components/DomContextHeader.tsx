@@ -1,14 +1,34 @@
+import type { ReactComponentKind } from "@remarks/shared";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger, cn } from "@remarks/ui";
 import { ChevronDown } from "lucide-react";
 
 // Accept either the create-time shape (fields optional/undefined) from the
 // picker store or the response-time shape (fields nullable) from the API.
 // Each field may be present-with-value, present-with-null, or absent.
+//
+// `reactComponents` carries an extra wrinkle: the input shape has
+// `source?: {... columnNumber?: number}` while the response shape has
+// `source: {... columnNumber: number | null} | null`. Widen the field here so
+// either shape parses without a runtime translation step.
+interface ReactComponentNodeLike {
+  name: string;
+  kind: ReactComponentKind;
+  source?:
+    | {
+        fileName: string;
+        lineNumber: number;
+        columnNumber?: number | null | undefined;
+      }
+    | null
+    | undefined;
+}
+
 interface DomContextLike {
   tagName?: string | null | undefined;
   classes?: string[] | null | undefined;
   computedStyles?: Record<string, string> | null | undefined;
   ancestors?: Array<{ tagName: string; classes?: string[] | null | undefined }> | null | undefined;
+  reactComponents?: ReactComponentNodeLike[] | null | undefined;
 }
 
 interface Props {
@@ -44,11 +64,22 @@ function breadcrumbCrumbs(domContext: DomContextLike | null | undefined): string
   return crumbs;
 }
 
+function reactComponentTooltip(c: ReactComponentNodeLike): string {
+  const parts: string[] = [c.kind];
+  if (c.source) {
+    const file = c.source.fileName.split("/").slice(-2).join("/");
+    parts.push(`${file}:${c.source.lineNumber}`);
+  }
+  return parts.join(" · ");
+}
+
 export function DomContextHeader({ selector, domContext }: Props) {
   const identifier = elementIdentifier(domContext, selector);
   const crumbs = breadcrumbCrumbs(domContext);
   const computed = domContext?.computedStyles;
   const hasComputed = computed && Object.keys(computed).length > 0;
+  const reactComponents = domContext?.reactComponents ?? [];
+  const hasReact = reactComponents.length > 0;
 
   return (
     <Collapsible className="flex flex-col gap-1.5">
@@ -71,6 +102,16 @@ export function DomContextHeader({ selector, domContext }: Props) {
       {crumbs.length > 0 ? (
         <p className="break-words font-mono text-[11px] leading-snug text-muted-foreground">
           {crumbs.join(" › ")}
+        </p>
+      ) : null}
+      {hasReact ? (
+        <p className="break-words font-mono text-[11px] leading-snug text-foreground/80">
+          {reactComponents.map((c, i) => (
+            <span key={`${c.name}-${i}`} title={reactComponentTooltip(c)}>
+              {i > 0 ? <span className="text-muted-foreground"> ‹ </span> : null}
+              {c.name}
+            </span>
+          ))}
         </p>
       ) : null}
       {hasComputed ? (
