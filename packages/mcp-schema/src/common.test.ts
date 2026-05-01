@@ -209,7 +209,7 @@ describe("mcpRelatedTaskSchema", () => {
 
 describe("re-exported enums", () => {
   test("TASK_STATUSES matches the wire spec", () => {
-    expect([...TASK_STATUSES]).toEqual(["to_do", "doing", "done", "rejected"]);
+    expect([...TASK_STATUSES]).toEqual(["to_do", "doing", "done", "rejected", "acknowledged"]);
   });
 
   test("TASK_TARGET_TYPES matches the wire spec", () => {

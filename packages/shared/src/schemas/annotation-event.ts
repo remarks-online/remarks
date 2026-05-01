@@ -11,6 +11,10 @@ export const ANNOTATION_EVENT_TYPES = [
   "agent_updated_status",
   "agent_commented",
   "comment_edited",
+  // G3: emitted when an agent transitions a task to `acknowledged`. Distinct
+  // from `agent_updated_status` so the dashboard can render a compact "agent
+  // acknowledged" pill rather than a full status-transition row.
+  "agent_acknowledged",
 ] as const;
 
 export type AnnotationEventType = (typeof ANNOTATION_EVENT_TYPES)[number];

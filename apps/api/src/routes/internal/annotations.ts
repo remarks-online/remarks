@@ -30,6 +30,9 @@ const userOrgParamsSchema = z.object({
 });
 
 // Phase 2 §3.2: agents may set doing/done/rejected; cannot reset to to_do.
+// G3 (gap-analysis ADR-0016) adds `acknowledged` so an agent can signal "I've
+// read this task" without yet picking it up — the dashboard renders these via
+// the dedicated `agent_acknowledged` event type.
 // Attribution moves to (clerkUserId, oauthClientName) per ADR-0015. The API
 // resolves the annotation's project itself, then enforces project_members
 // for the Clerk user; cross-project access surfaces as 404 (existence-leak
@@ -37,7 +40,7 @@ const userOrgParamsSchema = z.object({
 const statusUpdateBodySchema = z.object({
   clerkUserId: z.string().min(1),
   oauthClientName: z.string().min(1),
-  status: z.enum(["doing", "done", "rejected"]),
+  status: z.enum(["doing", "done", "rejected", "acknowledged"]),
   note: z.string().optional(),
 });
 

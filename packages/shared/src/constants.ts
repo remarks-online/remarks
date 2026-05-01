@@ -8,12 +8,31 @@ export const MAX_PROJECT_SLUG_LENGTH = 50;
 
 export const PROJECT_SLUG_REGEX = /^[a-z0-9-]+$/;
 
-export const ANNOTATION_STATUSES = ["to_do", "doing", "done", "rejected"] as const;
+// `acknowledged` lives between `to_do` and `doing`: an agent has read the task
+// and signalled receipt, but hasn't started work. Appended last to match the
+// `ALTER TYPE ADD VALUE` ordering applied in migration 0007 — keep new values
+// at the tail so the runtime order stays in sync with the DB.
+export const ANNOTATION_STATUSES = ["to_do", "doing", "done", "rejected", "acknowledged"] as const;
 export const ANNOTATION_TARGET_TYPES = ["element", "rectangle", "route"] as const;
 export const ASSET_KINDS = ["screenshot", "video", "dom_snapshot"] as const;
 export const PROJECT_ROLES = ["admin", "editor", "viewer"] as const;
 
+// Triage-by-priority axis (G2). Nullable on annotations: callers can omit if
+// they don't have a strong opinion. The dashboard sorts blocking → suggestion.
+export const ANNOTATION_SEVERITIES = ["blocking", "important", "suggestion"] as const;
+
+// Action-shape axis (G1). Lets agents distinguish "please fix this" from
+// "I'm asking a question" without parsing the comment.
+export const ANNOTATION_INTENTS = ["fix", "change", "question", "approve"] as const;
+
 export type AnnotationStatus = (typeof ANNOTATION_STATUSES)[number];
 export type AnnotationTargetType = (typeof ANNOTATION_TARGET_TYPES)[number];
+export type AnnotationSeverity = (typeof ANNOTATION_SEVERITIES)[number];
+export type AnnotationIntent = (typeof ANNOTATION_INTENTS)[number];
 export type AssetKind = (typeof ASSET_KINDS)[number];
 export type ProjectRole = (typeof PROJECT_ROLES)[number];
+
+// Statuses that count as "open" (not yet resolved or dismissed). Used by the
+// `get_project_context` open-task counter so agents see all in-flight work,
+// including tasks they've already acknowledged.
+export const OPEN_ANNOTATION_STATUSES = ["to_do", "doing", "acknowledged"] as const;

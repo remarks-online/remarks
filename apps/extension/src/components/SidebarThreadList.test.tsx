@@ -38,6 +38,8 @@ function makeAnnotation(overrides: Partial<AnnotationResponse> = {}): Annotation
     branchName: "main",
     status: "to_do",
     targetType: "element",
+    intent: null,
+    severity: null,
     url: "https://acme.com/page",
     targetSelector: "#hero",
     targetCoords: null,

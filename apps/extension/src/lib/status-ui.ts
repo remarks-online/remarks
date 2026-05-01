@@ -7,6 +7,7 @@ export const STATUS_DOT_CLASS: Record<AnnotationStatus, string> = {
   doing: "bg-blue-500",
   done: "bg-emerald-500",
   rejected: "bg-muted-foreground",
+  acknowledged: "bg-cyan-500",
 };
 
 export const STATUS_LABEL: Record<AnnotationStatus, string> = {
@@ -14,6 +15,7 @@ export const STATUS_LABEL: Record<AnnotationStatus, string> = {
   doing: "Doing",
   done: "Done",
   rejected: "Rejected",
+  acknowledged: "Acknowledged",
 };
 
 export function authorInitials(author: AnnotationResponse["author"]): string {

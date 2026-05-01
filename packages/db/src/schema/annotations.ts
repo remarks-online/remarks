@@ -9,12 +9,30 @@ export const annotationStatusEnum = pgEnum("annotation_status", [
   "doing",
   "done",
   "rejected",
+  // Appended (matches `ALTER TYPE ADD VALUE` ordering in 0007); keep new values
+  // at the end so the runtime enum order stays in sync with the DB.
+  "acknowledged",
 ]);
 
 export const annotationTargetTypeEnum = pgEnum("annotation_target_type", [
   "element",
   "rectangle",
   "route",
+]);
+
+// G1: action-shape classifier. Nullable on the row (default null).
+export const annotationIntentEnum = pgEnum("annotation_intent", [
+  "fix",
+  "change",
+  "question",
+  "approve",
+]);
+
+// G2: triage-by-priority classifier. Nullable on the row (default null).
+export const annotationSeverityEnum = pgEnum("annotation_severity", [
+  "blocking",
+  "important",
+  "suggestion",
 ]);
 
 export const annotations = pgTable(
@@ -32,6 +50,9 @@ export const annotations = pgTable(
       .references(() => users.id),
     status: annotationStatusEnum("status").notNull().default("to_do"),
     targetType: annotationTargetTypeEnum("target_type").notNull(),
+    // Triage classifiers (G1/G2). Both nullable; existing rows backfill as null.
+    intent: annotationIntentEnum("intent"),
+    severity: annotationSeverityEnum("severity"),
 
     url: text("url").notNull(),
     targetSelector: text("target_selector"),

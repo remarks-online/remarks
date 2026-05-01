@@ -9,6 +9,7 @@ export const STATUS_VARIANT: Record<
   doing: "default",
   done: "secondary",
   rejected: "destructive",
+  acknowledged: "outline",
 };
 
 export const STATUS_LABEL: Record<AnnotationResponse["status"], string> = {
@@ -16,8 +17,12 @@ export const STATUS_LABEL: Record<AnnotationResponse["status"], string> = {
   doing: "In progress",
   done: "Done",
   rejected: "Rejected",
+  acknowledged: "Acknowledged",
 };
 
+// `acknowledged` (G3 / ADR-0016) is agent-set; the human-facing status picker
+// keeps the original four values so reviewers don't move tasks into a state
+// that's only meaningful for agents.
 export const STATUS_OPTIONS: ReadonlyArray<{
   value: AnnotationResponse["status"];
   label: string;
