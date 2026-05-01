@@ -88,19 +88,24 @@ jobs:
           git tag "extension-v${{ steps.version.outputs.version }}"
           git push origin "extension-v${{ steps.version.outputs.version }}"
 
-      # Build the prod extension here so the resulting zip can be published
-      # to R2 for /app/download-extension (ADR-0017). Repo secrets supply the
-      # prod Clerk + dashboard URLs that wxt bakes into the bundle.
-      - name: Build production extension
+      # Build the workspace deps (@remarks/shared, @remarks/ui, etc.) the
+      # extension imports. The extension itself is built by `wxt zip` below.
+      - name: Build extension dependencies
+        run: pnpm turbo run build --filter='@remarks/extension^...'
+
+      # `wxt zip` always re-runs an internal build before packaging — it
+      # is not a "compress what's on disk" command. The env block on this
+      # step is what bakes prod Clerk + dashboard URLs into the bundle
+      # that ships to R2 (ADR-0017). Without it the zip lands on R2 with
+      # `import.meta.env.WXT_*` === undefined and the unpacked install
+      # crashes with a ZodError on first load.
+      - name: Zip extension
         env:
           NODE_ENV: production
           WXT_CLERK_PUBLISHABLE_KEY: ${{ secrets.EXTENSION_PROD_CLERK_PUBLISHABLE_KEY }}
           WXT_CLERK_SYNC_HOST: ${{ secrets.EXTENSION_PROD_CLERK_SYNC_HOST }}
           WXT_API_URL: ${{ secrets.EXTENSION_PROD_API_URL }}
           WXT_DASHBOARD_URL: ${{ secrets.EXTENSION_PROD_DASHBOARD_URL }}
-        run: pnpm --filter @remarks/extension build:prod
-
-      - name: Zip extension
         run: pnpm --filter @remarks/extension zip
 
       - name: Locate zip
