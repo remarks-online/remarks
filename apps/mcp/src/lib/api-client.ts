@@ -223,16 +223,7 @@ export async function fetchListOrgAnnotations(
   );
 }
 
-export interface McpDomContextRow {
-  tagName?: string;
-  classes?: string[];
-  textContent?: string;
-  computedStyles?: Record<string, string>;
-  ancestors?: Array<{ tagName: string; classes?: string[] }>;
-}
-
 export interface McpAnnotationRow extends AnnotationResponse {
-  domContext: McpDomContextRow | null;
   frameworkHint: string | null;
 }
 

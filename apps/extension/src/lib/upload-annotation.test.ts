@@ -66,6 +66,7 @@ function validAnnotationResponse(overrides: Record<string, unknown> = {}): Recor
     targetSelector: "main > button.submit",
     targetCoords: null,
     viewport: { width: 1920, height: 1080, dpr: 2 },
+    domContext: null,
     commentText: "This button should use our brand green",
     author: {
       id: AUTHOR_ID,

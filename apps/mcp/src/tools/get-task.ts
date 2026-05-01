@@ -1,5 +1,5 @@
 import { type GetTaskOutput, getTaskInputSchema, getTaskOutputSchema } from "@remarks/mcp-schema";
-import type { McpDomContextRow } from "../lib/api-client.js";
+import type { DomContextResponse } from "@remarks/shared";
 import { McpToolError } from "../lib/mcp-error.js";
 import {
   commentPreview,
@@ -14,18 +14,20 @@ import type { ToolHandler } from "./types.js";
 // internal camelCase shape (matching annotations.dom_context jsonb). Project
 // here, not in a generic mapper — the four tool shapes diverge enough that a
 // generic deep-snake transform would silently translate fields that are
-// specced as camelCase (like `viewport.dpr`).
-function projectDomContext(value: McpDomContextRow | null): GetTaskOutput["dom_context"] {
+// specced as camelCase (like `viewport.dpr`). Inner fields are nullable on
+// the response shape (see domContextResponseSchema); skip nulls so the MCP
+// payload only contains keys with real values.
+function projectDomContext(value: DomContextResponse | null): GetTaskOutput["dom_context"] {
   if (value === null) return null;
   const out: Record<string, unknown> = {};
-  if (value.tagName !== undefined) out.tag_name = value.tagName;
-  if (value.classes !== undefined) out.classes = value.classes;
-  if (value.textContent !== undefined) out.text_content = value.textContent;
-  if (value.computedStyles !== undefined) out.computed_styles = value.computedStyles;
-  if (value.ancestors !== undefined) {
+  if (value.tagName !== null) out.tag_name = value.tagName;
+  if (value.classes !== null) out.classes = value.classes;
+  if (value.textContent !== null) out.text_content = value.textContent;
+  if (value.computedStyles !== null) out.computed_styles = value.computedStyles;
+  if (value.ancestors !== null) {
     out.ancestors = value.ancestors.map((a) => {
       const projected: Record<string, unknown> = { tag_name: a.tagName };
-      if (a.classes !== undefined) projected.classes = a.classes;
+      if (a.classes !== null) projected.classes = a.classes;
       return projected;
     });
   }

@@ -1,3 +1,4 @@
+import type { DomContextValue } from "@remarks/shared";
 import { sql } from "drizzle-orm";
 import { check, index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { branches } from "./branches.js";
@@ -69,13 +70,7 @@ export const annotations = pgTable(
         dpr: number;
       }>()
       .notNull(),
-    domContext: jsonb("dom_context").$type<{
-      tagName?: string;
-      classes?: string[];
-      textContent?: string;
-      computedStyles?: Record<string, string>;
-      ancestors?: Array<{ tagName: string; classes?: string[] }>;
-    } | null>(),
+    domContext: jsonb("dom_context").$type<DomContextValue | null>(),
     frameworkHint: text("framework_hint"),
 
     commentText: text("comment_text").notNull(),

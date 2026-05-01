@@ -26,6 +26,7 @@ function validAnnotation(): AnnotationResponse {
     targetSelector: "button",
     targetCoords: null,
     viewport: { width: 1920, height: 1080, dpr: 2 },
+    domContext: null,
     commentText: "hi",
     author: {
       id: "11111111-4444-4333-8444-555555555555",
