@@ -192,7 +192,7 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
         <SelectTrigger>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent container={portalContainer}>
+        <SelectContent container={popoverRef.current ?? portalContainer}>
           {ANNOTATION_STATUSES.map((s) => (
             <SelectItem key={s} value={s}>
               {STATUS_LABEL[s]}
