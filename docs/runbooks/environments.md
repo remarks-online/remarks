@@ -23,6 +23,7 @@ Constants shared by both tiers (non-secret):
 |---|---|---|---|
 | `DATABASE_URL` | `apps/api/.env.local`, `packages/db/.env` (both Neon `dev` direct) | Fly secret (Neon `main` pooled) | Neon console → dev/main branch → Connection string |
 | `CLERK_SECRET_KEY` | `apps/api/.env.local`, `apps/dashboard/.env.local`, Vercel Preview + Development | Fly secret, Vercel Production | Clerk dashboard → remarks-dev / remarks-prod → API keys |
+| `CLERK_AUTHORIZED_PARTIES` | `apps/api/.env.local` = `http://localhost:3000,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd` | Fly secret = `https://app.remarks.online,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd` | — (immutable; matches dashboard origin + canonical extension ID) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `apps/dashboard/.env.local`, Vercel Preview + Development | Vercel Production | Clerk dashboard → remarks-dev / remarks-prod → API keys |
 | `WXT_CLERK_PUBLISHABLE_KEY` | `apps/extension/.env` (mirrors the publishable key above) | not applicable — Phase 1 ships unsigned dev extensions | — |
 | `CLERK_WEBHOOK_SECRET` | `apps/api/.env.local` | Fly secret | Clerk dashboard → Webhooks → endpoint → Signing Secret |
@@ -48,8 +49,19 @@ Constants shared by both tiers (non-secret):
 **Fly `remarks-api` secrets.** Set with `flyctl secrets set KEY=value --app remarks-api`. Required (enforced by `apps/api/scripts/check-fly-secrets.ts` on every deploy):
 
 ```
-DATABASE_URL, CLERK_SECRET_KEY, CLERK_WEBHOOK_SECRET,
+DATABASE_URL, CLERK_SECRET_KEY, CLERK_WEBHOOK_SECRET, CLERK_AUTHORIZED_PARTIES,
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_SCREENSHOTS
+```
+
+Set `CLERK_AUTHORIZED_PARTIES` on prod (mitigates the [Clerk subdomain cookie
+leak attack](https://clerk.com/docs/reference/backend/verify-token); rejects
+session JWTs minted for any other Clerk app). The value is the comma-separated
+list of dashboard origin + extension origin:
+
+```bash
+flyctl secrets set \
+  CLERK_AUTHORIZED_PARTIES='https://app.remarks.online,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd' \
+  --app remarks-api
 ```
 
 Pipe the Neon prod connection string directly without echoing:

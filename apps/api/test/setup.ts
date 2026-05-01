@@ -5,6 +5,12 @@ process.env.CLERK_WEBHOOK_SECRET =
   process.env.CLERK_WEBHOOK_SECRET ?? "whsec_dW5pdC10ZXN0LXNlY3JldC1ub3QtZm9yLXByb2Q=";
 process.env.CLERK_SECRET_KEY =
   process.env.CLERK_SECRET_KEY ?? "sk_test_dW5pdC10ZXN0LXNlY3JldC1ub3QtZm9yLXByb2Q=";
+// authorizedParties allowlist for verifyToken (auth plugin, A11). Tests mock
+// @clerk/backend so the real verifier never runs, but env-schema validates at
+// module load — placeholder origins satisfy the parse.
+process.env.CLERK_AUTHORIZED_PARTIES =
+  process.env.CLERK_AUTHORIZED_PARTIES ??
+  "http://localhost:3000,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd";
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgres://fake:fake@localhost:5432/fake";
 
 // INTERNAL_API_TOKEN gates the /internal/* scope (task 2.5). Unit tests don't

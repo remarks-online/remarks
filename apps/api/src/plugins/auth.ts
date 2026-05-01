@@ -45,7 +45,10 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
 
     let clerkUserId: string;
     try {
-      const payload = await verifyToken(token, { secretKey: env.CLERK_SECRET_KEY });
+      const payload = await verifyToken(token, {
+        secretKey: env.CLERK_SECRET_KEY,
+        authorizedParties: env.CLERK_AUTHORIZED_PARTIES,
+      });
       clerkUserId = payload.sub;
     } catch (err) {
       request.log.warn({ err }, "clerk token verification failed");

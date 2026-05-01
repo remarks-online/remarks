@@ -5,6 +5,12 @@ process.env.CLERK_WEBHOOK_SECRET =
   process.env.CLERK_WEBHOOK_SECRET ?? "whsec_dW5pdC10ZXN0LXNlY3JldC1ub3QtZm9yLXByb2Q=";
 process.env.CLERK_SECRET_KEY =
   process.env.CLERK_SECRET_KEY ?? "sk_test_dW5pdC10ZXN0LXNlY3JldC1ub3QtZm9yLXByb2Q=";
+// authorizedParties allowlist for verifyToken (auth plugin, A11). Integration
+// tests mock @clerk/backend, so the real verifier never enforces this — the
+// value just satisfies env-schema's strict parse on module load.
+process.env.CLERK_AUTHORIZED_PARTIES =
+  process.env.CLERK_AUTHORIZED_PARTIES ??
+  "http://localhost:3000,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd";
 
 // Default INTERNAL_API_TOKEN to a known throwaway value when the dev hasn't
 // set one in .env.local yet. The internal-auth integration test (task 2.5)
