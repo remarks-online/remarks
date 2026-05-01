@@ -1,4 +1,4 @@
-import { buildDomContext } from "./dom-context";
+import { buildDomContext, compactHoverStyles } from "./dom-context";
 import { elementAtPoint } from "./elements-at-point";
 import { isInSidebarUi, isTypingEvent } from "./picker-guards";
 import {
@@ -11,9 +11,11 @@ import {
 } from "./picker-store";
 import { requestScreenshot } from "./screenshot";
 import { generateSelector } from "./selector-generator";
+import { sidebarStore } from "./sidebar-store";
 
 const ELEMENT_OVERLAY_ID = "rmk-picker-overlay";
 const ELEMENT_LABEL_ID = "rmk-picker-label";
+const ELEMENT_STYLES_ID = "rmk-picker-styles";
 const ELEMENT_BODY_ACTIVE_CLASS = "rmk-picker-active";
 
 const RECT_OVERLAY_ID = "rmk-rect-overlay";
@@ -121,6 +123,61 @@ function createLabelChip(id: string, background: string): HTMLDivElement {
   return el;
 }
 
+function createStylesTooltip(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.id = ELEMENT_STYLES_ID;
+  el.setAttribute("aria-hidden", "true");
+  el.style.cssText = [
+    "position: absolute",
+    "pointer-events: none",
+    "font-family: ui-monospace, SFMono-Regular, Menlo, monospace",
+    "font-size: 11px",
+    "line-height: 1.35",
+    "padding: 6px 8px",
+    "color: #f8fafc",
+    "background: rgba(15, 23, 42, 0.92)",
+    "border-radius: 4px",
+    "box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35)",
+    `z-index: ${Z_INDEX}`,
+    "transform: translate(-9999px, -9999px)",
+    "top: 0",
+    "left: 0",
+    "max-width: 260px",
+    "white-space: normal",
+    "word-break: break-word",
+  ].join(";");
+  return el;
+}
+
+function renderStylesTooltipContent(
+  tooltip: HTMLDivElement,
+  styles: Record<string, string> | undefined
+): boolean {
+  tooltip.replaceChildren();
+  if (!styles) return false;
+  const entries = Object.entries(styles);
+  if (entries.length === 0) return false;
+  const dl = document.createElement("dl");
+  dl.style.cssText = [
+    "margin: 0",
+    "display: grid",
+    "grid-template-columns: max-content 1fr",
+    "gap: 2px 8px",
+  ].join(";");
+  for (const [key, value] of entries) {
+    const dt = document.createElement("dt");
+    dt.textContent = key;
+    dt.style.cssText = "color: rgba(248, 250, 252, 0.6); margin: 0;";
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    dd.style.cssText = "margin: 0; overflow-wrap: anywhere;";
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  }
+  tooltip.appendChild(dl);
+  return true;
+}
+
 function formatElementLabelText(preview: HoveredPreview): string {
   const parts = [preview.tag.toUpperCase()];
   if (preview.classes[0]) parts.push(`.${preview.classes[0]}`);
@@ -181,8 +238,10 @@ function scheduleScreenshot(capture: Capture) {
 function startElementSession(sidebarRoot: Node | null): ActiveSession {
   const overlay = createElementOverlay();
   const label = createLabelChip(ELEMENT_LABEL_ID, "#3B82F6");
+  const stylesTooltip = createStylesTooltip();
   document.body.appendChild(overlay);
   document.body.appendChild(label);
+  document.body.appendChild(stylesTooltip);
   document.body.classList.add(ELEMENT_BODY_ACTIVE_CLASS);
 
   const abort = new AbortController();
@@ -192,6 +251,7 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
   let pinnedParent: Element | null = null;
   let rafScheduled = false;
   let lastPointer: { x: number; y: number } | null = null;
+  let stylesVisible = false;
 
   const resizeObserver =
     typeof ResizeObserver !== "undefined"
@@ -199,6 +259,11 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
           if (hoveredElement) positionOverlay(hoveredElement);
         })
       : null;
+
+  const hideStylesTooltip = () => {
+    stylesTooltip.style.transform = "translate(-9999px, -9999px)";
+    stylesVisible = false;
+  };
 
   const positionOverlay = (el: Element) => {
     const rect = el.getBoundingClientRect();
@@ -210,8 +275,21 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
 
     const labelRect = label.getBoundingClientRect();
     const labelHeight = labelRect.height || 20;
-    const labelY = rect.top < labelHeight + 4 ? y + rect.height + 4 : y - labelHeight - 4;
+    const labelAbove = rect.top >= labelHeight + 4;
+    const labelY = labelAbove ? y - labelHeight - 4 : y + rect.height + 4;
     label.style.transform = `translate(${x}px, ${labelY}px)`;
+
+    if (!stylesVisible) return;
+    const tooltipRect = stylesTooltip.getBoundingClientRect();
+    const tooltipHeight = tooltipRect.height || 80;
+    // Place the tooltip on the opposite side from the label when possible so
+    // both element ID + computed styles stay visible without overlapping the
+    // hovered region.
+    const tooltipBelow = !labelAbove ? rect.bottom + tooltipHeight + 8 <= window.innerHeight : true;
+    const tooltipY = tooltipBelow
+      ? y + rect.height + 4
+      : Math.max(y - tooltipHeight - 4, window.scrollY + 4);
+    stylesTooltip.style.transform = `translate(${x}px, ${tooltipY}px)`;
   };
 
   const setHoveredElement = (el: Element | null) => {
@@ -219,6 +297,7 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
       hoveredElement = null;
       overlay.style.transform = "translate(-9999px, -9999px)";
       label.style.transform = "translate(-9999px, -9999px)";
+      hideStylesTooltip();
       pickerStore.getState().setHovered(null);
       resizeObserver?.disconnect();
       return;
@@ -228,6 +307,14 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
     hoveredElement = el;
     const preview = previewFromElement(el);
     label.textContent = formatElementLabelText(preview);
+
+    if (sidebarStore.getState().showHoverStyles) {
+      stylesVisible = renderStylesTooltipContent(stylesTooltip, compactHoverStyles(el));
+      if (!stylesVisible) hideStylesTooltip();
+    } else {
+      hideStylesTooltip();
+    }
+
     positionOverlay(el);
     pickerStore.getState().setHovered(preview);
 
@@ -264,7 +351,7 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
       }
       const hit = elementAtPoint(lastPointer.x, lastPointer.y);
       if (!hit) return;
-      if (hit === overlay || hit === label) return;
+      if (hit === overlay || hit === label || hit === stylesTooltip) return;
       setHoveredElement(hit);
     });
   };
@@ -325,6 +412,7 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
       abort.abort();
       overlay.remove();
       label.remove();
+      stylesTooltip.remove();
       resizeObserver?.disconnect();
       document.body.classList.remove(ELEMENT_BODY_ACTIVE_CLASS);
     },

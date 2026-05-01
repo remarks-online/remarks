@@ -4,6 +4,7 @@ import { type Dock, type Theme, sidebarStore, useSidebar } from "@/lib/sidebar-s
 import {
   Button,
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -35,6 +36,7 @@ export function readExtensionVersion(): string {
 export function SidebarMoreMenu() {
   const theme = useSidebar((s) => s.theme);
   const dock = useSidebar((s) => s.dock);
+  const showHoverStyles = useSidebar((s) => s.showHoverStyles);
   const container = useShadowRootPortalContainer();
 
   return (
@@ -65,6 +67,15 @@ export function SidebarMoreMenu() {
           <DropdownMenuRadioItem value="left">Left</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="bottom">Bottom</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Picker</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={showHoverStyles}
+          onCheckedChange={(v) => sidebarStore.getState().setShowHoverStyles(Boolean(v))}
+        >
+          Show computed styles on hover
+        </DropdownMenuCheckboxItem>
 
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => sidebarStore.getState().setVisible(false)}>

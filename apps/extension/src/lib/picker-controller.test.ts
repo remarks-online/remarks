@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computeAutoScrollDelta, initPickerController } from "./picker-controller";
 import { pickerStore } from "./picker-store";
+import { sidebarStore } from "./sidebar-store";
 import { byId, q } from "./test-utils";
 
 function resetStore() {
@@ -50,6 +51,7 @@ beforeEach(() => {
   document.body.innerHTML = "";
   setScroll(0, 0);
   resetStore();
+  sidebarStore.getState().reset();
 });
 
 afterEach(() => {
@@ -64,6 +66,7 @@ afterEach(() => {
   document.body.innerHTML = "";
   setScroll(0, 0);
   resetStore();
+  sidebarStore.getState().reset();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -186,11 +189,95 @@ describe("initPickerController — element mode", () => {
     const { teardown } = setupController({ sidebarRoot: null });
     pressElement();
     expect(document.getElementById("rmk-picker-overlay")).not.toBeNull();
+    expect(document.getElementById("rmk-picker-styles")).not.toBeNull();
     teardown();
     expect(document.getElementById("rmk-picker-overlay")).toBeNull();
+    expect(document.getElementById("rmk-picker-styles")).toBeNull();
     resetStore();
     pressElement();
     expect(pickerStore.getState().mode).toBe("idle");
+  });
+
+  describe("hover-styles tooltip", () => {
+    it("creates the tooltip node when entering element mode", () => {
+      setupController({ sidebarRoot: null });
+      pressElement();
+      const tooltip = document.getElementById("rmk-picker-styles");
+      expect(tooltip).not.toBeNull();
+      // Hidden by default since the pref defaults to off.
+      expect(tooltip?.style.transform).toBe("translate(-9999px, -9999px)");
+    });
+
+    it("stays hidden while hovering when the pref is off", () => {
+      document.body.innerHTML =
+        '<button id="go" style="color: rgb(255, 0, 0); padding: 8px;">Go</button>';
+      const btn = byId("go");
+      vi.spyOn(document, "elementFromPoint").mockReturnValue(btn);
+
+      setupController({ sidebarRoot: null });
+      pressElement();
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 10, clientY: 10 }));
+
+      const tooltip = document.getElementById("rmk-picker-styles");
+      expect(tooltip?.style.transform).toBe("translate(-9999px, -9999px)");
+      expect(tooltip?.textContent ?? "").toBe("");
+    });
+
+    it("renders rows and positions the tooltip when the pref is on", () => {
+      document.body.innerHTML =
+        '<button id="go" style="color: rgb(255, 0, 0); padding: 8px; font-family: Helvetica;">Go</button>';
+      const btn = byId("go");
+      vi.spyOn(document, "elementFromPoint").mockReturnValue(btn);
+
+      sidebarStore.getState().setShowHoverStyles(true);
+      setupController({ sidebarRoot: null });
+      pressElement();
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 10, clientY: 10 }));
+
+      const tooltip = document.getElementById("rmk-picker-styles");
+      expect(tooltip).not.toBeNull();
+      expect(tooltip?.style.transform).not.toBe("translate(-9999px, -9999px)");
+      // dl + dt + dd structure.
+      expect(tooltip?.querySelector("dl")).not.toBeNull();
+      const labels = Array.from(tooltip?.querySelectorAll("dt") ?? []).map((n) => n.textContent);
+      expect(labels).toContain("color");
+      expect(labels).toContain("padding");
+      expect(labels).toContain("font-family");
+    });
+
+    it("hides the tooltip again when the cursor leaves into the sidebar root", () => {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const sidebarRoot = host.attachShadow({ mode: "open" });
+      const sidebarChild = document.createElement("div");
+      sidebarRoot.appendChild(sidebarChild);
+
+      document.body.innerHTML +=
+        '<button id="go" style="color: rgb(255, 0, 0); padding: 8px;">Go</button>';
+      const btn = byId("go");
+      const elementFromPoint = vi.spyOn(document, "elementFromPoint");
+      elementFromPoint.mockReturnValue(btn);
+
+      sidebarStore.getState().setShowHoverStyles(true);
+      setupController({ sidebarRoot });
+      pressElement();
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 10, clientY: 10 }));
+
+      const tooltip = document.getElementById("rmk-picker-styles");
+      expect(tooltip?.style.transform).not.toBe("translate(-9999px, -9999px)");
+
+      // Now move into the sidebar — picker-controller resolves this via
+      // composedPath, but isInSidebarUi also checks elementFromPoint as a
+      // fallback. Re-target to a node inside the shadow root.
+      elementFromPoint.mockReturnValue(sidebarChild);
+      const ev = new MouseEvent("mousemove", { clientX: 10, clientY: 10, bubbles: true });
+      Object.defineProperty(ev, "composedPath", {
+        value: () => [sidebarChild, sidebarRoot, host, document.body],
+      });
+      window.dispatchEvent(ev);
+
+      expect(tooltip?.style.transform).toBe("translate(-9999px, -9999px)");
+    });
   });
 });
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   HEIGHT_MAX,
   HEIGHT_MIN,
+  type PersistedSidebarPrefs,
   WIDTH_MAX,
   WIDTH_MIN,
   clampHeight,
@@ -122,6 +123,7 @@ describe("sidebarStore actions", () => {
       width: 450,
       height: 300,
       theme: "dark",
+      showHoverStyles: true,
     });
     const state = sidebarStore.getState();
     expect(state.visible).toBe(false);
@@ -129,6 +131,7 @@ describe("sidebarStore actions", () => {
     expect(state.width).toBe(450);
     expect(state.height).toBe(300);
     expect(state.theme).toBe("dark");
+    expect(state.showHoverStyles).toBe(true);
     // in-memory-only fields untouched by hydrate
     expect(state.draftComment).toBe("in progress");
     expect(state.statusFilter).toBe("all");
@@ -141,8 +144,31 @@ describe("sidebarStore actions", () => {
       width: 9999,
       height: 50,
       theme: "auto",
+      showHoverStyles: false,
     });
     expect(sidebarStore.getState().width).toBe(WIDTH_MAX);
     expect(sidebarStore.getState().height).toBe(HEIGHT_MIN);
+  });
+
+  it("hydrate falls back to the default when showHoverStyles is missing from persisted snapshot", () => {
+    // Older clients persisted snapshots without this field; loadSidebarPrefs
+    // type-asserts the result, so the runtime value can be undefined.
+    const legacy = {
+      visible: true,
+      dock: "right",
+      width: 360,
+      height: 280,
+      theme: "auto",
+    } as unknown as PersistedSidebarPrefs;
+    sidebarStore.getState().hydrate(legacy);
+    expect(sidebarStore.getState().showHoverStyles).toBe(false);
+  });
+
+  it("setShowHoverStyles toggles the pref", () => {
+    expect(sidebarStore.getState().showHoverStyles).toBe(false);
+    sidebarStore.getState().setShowHoverStyles(true);
+    expect(sidebarStore.getState().showHoverStyles).toBe(true);
+    sidebarStore.getState().setShowHoverStyles(false);
+    expect(sidebarStore.getState().showHoverStyles).toBe(false);
   });
 });

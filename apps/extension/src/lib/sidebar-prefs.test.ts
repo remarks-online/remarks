@@ -73,6 +73,7 @@ describe("sidebar-prefs", () => {
       width: 320,
       height: 240,
       theme: "auto",
+      showHoverStyles: false,
     });
     saveSidebarPrefs({
       visible: true,
@@ -80,6 +81,7 @@ describe("sidebar-prefs", () => {
       width: 360,
       height: 240,
       theme: "auto",
+      showHoverStyles: true,
     });
 
     // Before debounce elapses, nothing is written.
@@ -91,6 +93,7 @@ describe("sidebar-prefs", () => {
     // Last call wins.
     expect(prefs?.dock).toBe("left");
     expect(prefs?.width).toBe(360);
+    expect(prefs?.showHoverStyles).toBe(true);
   });
 
   it("watchSidebarPrefs fires when the persisted value changes", async () => {
@@ -107,6 +110,7 @@ describe("sidebar-prefs", () => {
       width: 320,
       height: 280,
       theme: "dark",
+      showHoverStyles: false,
     });
     await vi.advanceTimersByTimeAsync(SIDEBAR_PREFS_DEBOUNCE_MS + 5);
 
