@@ -275,6 +275,37 @@ export default defineBackground(() => {
           });
         return true;
       }
+      if (message.kind === "api-fetch") {
+        // Defense-in-depth: the SW will only proxy our own API. Without this
+        // a compromised content script could turn the SW into an open relay
+        // that bypasses CORS for any host the manifest grants us.
+        if (!message.url.startsWith(env.WXT_API_URL)) {
+          sendResponse({ ok: false, error: "url_not_allowed" });
+          return true;
+        }
+        fetch(message.url, {
+          method: message.method,
+          headers: message.headers,
+          body: message.body,
+        })
+          .then(async (res) => {
+            const headers: Record<string, string> = {};
+            res.headers.forEach((value, key) => {
+              headers[key] = value;
+            });
+            sendResponse({
+              ok: true,
+              kind: "api-fetch",
+              status: res.status,
+              headers,
+              body: await res.text(),
+            });
+          })
+          .catch((err) => {
+            sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+          });
+        return true;
+      }
       sendResponse({ ok: false, error: "unknown_message_kind" });
       return true;
     }
