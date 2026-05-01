@@ -192,14 +192,14 @@ export function CapturePromptPopover({ onSubmit }: Props) {
         >
           <SelectTrigger
             aria-label="Intent"
-            className="h-8 flex-1 text-xs"
+            className="h-8 flex-1 min-w-0 text-xs"
             data-testid="capture-intent-select"
           >
             <SelectValue placeholder="Intent" />
           </SelectTrigger>
           <SelectContent container={popoverRef.current ?? portalContainer}>
             <SelectItem value={UNSET} className="text-xs">
-              Intent: uncategorized
+              Uncategorized
             </SelectItem>
             {ANNOTATION_INTENTS.map((i) => (
               <SelectItem key={i} value={i} className="text-xs">
@@ -216,14 +216,14 @@ export function CapturePromptPopover({ onSubmit }: Props) {
         >
           <SelectTrigger
             aria-label="Severity"
-            className="h-8 flex-1 text-xs"
+            className="h-8 flex-1 min-w-0 text-xs"
             data-testid="capture-severity-select"
           >
             <SelectValue placeholder="Severity" />
           </SelectTrigger>
           <SelectContent container={popoverRef.current ?? portalContainer}>
             <SelectItem value={UNSET} className="text-xs">
-              Severity: uncategorized
+              Uncategorized
             </SelectItem>
             {ANNOTATION_SEVERITIES.map((s) => (
               <SelectItem key={s} value={s} className="text-xs">
