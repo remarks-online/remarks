@@ -4,6 +4,7 @@ import { capture } from "@/lib/analytics";
 import { detectExtension } from "@/lib/extension-detect";
 import { Button } from "@remarks/ui";
 import { CheckCircle2, ChromeIcon, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 // Read NEXT_PUBLIC_* directly — see analytics.ts for why we don't import the
@@ -121,26 +122,13 @@ export function StepInstallExtension({ onAdvance }: Props) {
       </div>
 
       {!webStoreUrl ? (
-        <details className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-sm">
-          <summary className="cursor-pointer font-medium">
-            Loading the extension manually (dev / pre-Web-Store)
-          </summary>
-          <ol className="mt-3 list-decimal space-y-1 pl-5 text-muted-foreground">
-            <li>
-              Build the extension once:{" "}
-              <code className="rounded bg-muted px-1">pnpm --filter @remarks/extension dev</code>.
-            </li>
-            <li>
-              Open <code className="rounded bg-muted px-1">chrome://extensions</code> and enable
-              Developer mode.
-            </li>
-            <li>
-              Click <em>Load unpacked</em> and select{" "}
-              <code className="rounded bg-muted px-1">apps/extension/.output/chrome-mv3</code>.
-            </li>
-            <li>Pin the Remarks icon in the toolbar — your dashboard session is already shared.</li>
-          </ol>
-        </details>
+        <p className="text-sm text-muted-foreground">
+          Or{" "}
+          <Link href="/app/download-extension" className="underline">
+            download the extension manually
+          </Link>{" "}
+          if you&apos;d rather load an unpacked build.
+        </p>
       ) : null}
     </div>
   );

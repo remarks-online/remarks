@@ -28,6 +28,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               >
                 Connect agent
               </Link>
+              <Link
+                href="/app/download-extension"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Download extension
+              </Link>
               <OrganizationSwitcher
                 afterSelectOrganizationUrl="/app/projects"
                 afterCreateOrganizationUrl="/app/projects"

@@ -38,12 +38,15 @@ if (isLocalMinio) {
   process.env.R2_ACCESS_KEY_ID = "minioadmin";
   process.env.R2_SECRET_ACCESS_KEY = "minioadmin";
   process.env.R2_BUCKET_SCREENSHOTS = "remarks-screenshots-test";
+  process.env.R2_BUCKET_EXTENSION_BUILDS = "remarks-extension-builds-test";
 } else {
   process.env.R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "test";
   process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "minioadmin";
   process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY ?? "minioadmin";
   process.env.R2_BUCKET_SCREENSHOTS =
     process.env.R2_BUCKET_SCREENSHOTS ?? "remarks-screenshots-test";
+  process.env.R2_BUCKET_EXTENSION_BUILDS =
+    process.env.R2_BUCKET_EXTENSION_BUILDS ?? "remarks-extension-builds-test";
 }
 
 // Inngest env is required by envSchema; integration tests mock `inngest.send`

@@ -13,9 +13,9 @@ reviewer cross-checks the manifest against the Privacy tab disclosures.
 
 ## 1. Release process
 
-The version bump and tag are automated. The build, zip, and upload to the
-store are manual — they need production Clerk credentials that live in the
-developer's local `.env.production`, not in GitHub Actions secrets.
+The version bump, tag, **production build, zip, and R2 upload** are automated
+(ADR-0017). The Chrome Web Store upload itself remains manual — CWS doesn't
+expose a scriptable upload endpoint and rejects tampered submissions.
 
 ### 1.1 Automated: version bump + tag (CI)
 
@@ -31,27 +31,30 @@ touches `apps/extension/**`. It:
 4. Writes the local-build commands into the run summary so the developer
    has them at hand.
 
-CI does **not** build or zip — that's the manual half of the flow.
+CI **also** builds, zips, and uploads the prod build to R2 so the dashboard's
+`/app/download-extension` page can serve it to alpha testers (ADR-0017). The
+zip is also retained as a workflow artifact for 90 days, so the dev submitting
+to CWS can pull it directly instead of rebuilding.
 
 To override the auto-patch (e.g., for a minor or major release), bump
 `apps/extension/package.json` `version` manually in the PR. The workflow
-detects the delta and skips the auto-bump but still tags.
+detects the delta and skips the auto-bump but still tags + builds + uploads.
 
-### 1.2 Manual: build, zip, upload (developer)
+### 1.2 Pull the zip and upload to CWS (developer)
 
-After CI tags the release, the developer who's submitting to the Chrome
-Web Store does the rest from their machine. Prereq: `apps/extension/.env.production`
-exists locally with `pk_live_…` Clerk creds (see `apps/extension/.env.example`
-lines 23–43 for the exact shape and the one-time `clerk-allowlist-extension.ts`
-allowlist step).
+After CI runs, grab the zip from the workflow run's artifacts (or rebuild
+locally from the tag if you prefer to verify byte-for-byte):
 
 ```bash
-# Pull the tagged release
+# Option A: pull the artifact
+gh run download <run-id> -n remarks-chrome-v<version> -D /tmp/
+
+# Option B: rebuild from the tag (matches CI's prod env exactly only if
+# apps/extension/.env.production locally matches the GitHub Actions secrets;
+# see docs/runbooks/extension-distribution.md §"Local rebuild")
 git fetch --tags
 git checkout extension-v<version>
 pnpm install --frozen-lockfile
-
-# Build + zip with production env
 pnpm --filter @remarks/extension build:prod
 pnpm --filter @remarks/extension zip
 # → apps/extension/.output/<name>-<version>-chrome.zip

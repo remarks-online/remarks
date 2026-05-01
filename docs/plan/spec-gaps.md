@@ -67,3 +67,30 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: Independent of the extension prod-build flow (Phase 0/1 spec §6.2) for the dashboard surface; **after** that flow for the prod-extension surface (otherwise prod-built extensions still hit dev Clerk).
 - **Estimated size**: `s` once the Apple Developer account is in place; otherwise blocked on enrolment.
 - **Status**: `open`.
+
+## A23 — Alpha extension distribution via R2 + dashboard download page
+
+| # | Done when | Complete |
+|---|---|---|
+| A23 | CI uploads each release zip to R2; `/app/download-extension` surfaces a Clerk-gated download with the running version visible in the extension's three-dot menu | [x] |
+
+- **Spec reference**: not specified. Bridges A8 (Chrome Web Store submission, still open) so alpha testers can install before the store listing lands.
+- **Problem**: The extension is invitation-only alpha but there's no self-serve install path. The founder is the bottleneck for every install — they have to build, zip, and hand the file off manually.
+- **Proposed deliverable**:
+  - New private R2 bucket `remarks-extension-builds` (prod) / `remarks-extension-builds-dev` (dev). New required env var `R2_BUCKET_EXTENSION_BUILDS` on the API.
+  - `.github/workflows/extension-release.yml` extended to build (`build:prod`), zip (`pnpm zip`), sha256, and upload to `releases/chrome/remarks-chrome-<version>.zip` + `releases/chrome/latest.json` via `tools/scripts/upload-extension-build.ts`.
+  - New API endpoint `GET /v1/extension/latest` (Clerk-authed) returns `{ version, downloadUrl, sha256, sizeBytes, uploadedAt }` with a 1-hour presigned URL minted per visit.
+  - New dashboard page `/app/download-extension` (server component) renders install instructions and a `Download Remarks v<version> (.zip)` button. New top-nav link.
+  - Onboarding's "Loading manually" panel reduced to a one-line link to the new page.
+  - Extension's three-dot menu shows `Remarks v<version>` (read from `chrome.runtime.getManifest()`) so users know what they have installed.
+  - **ADR-0017**, **`docs/runbooks/extension-distribution.md`**, and updates to **`docs/store/chrome-web-store.md`** §1.
+- **Done when**:
+  - A push to `main` touching `apps/extension/**` results in a new key under `releases/chrome/` and an updated `latest.json` in the prod bucket.
+  - `/app/download-extension` renders the latest version on the button and the download click downloads the matching zip.
+  - The extension three-dot menu's footer shows the manifest version of the running extension.
+  - Integration test for `/extension/latest` passes against MinIO.
+- **Conflicts / overlaps with spec**: None. Bridges A8 — when the Chrome Web Store listing lands, decide whether to keep this path as a fallback or sunset it (redirect to the CWS URL).
+- **Affected tasks / components**: `apps/api/src/routes/extension/`, `apps/api/src/lib/r2.ts` (new `withBucket` helper), `apps/api/src/env-schema.ts`, `apps/dashboard/src/app/app/download-extension/`, `apps/dashboard/src/app/app/layout.tsx`, `apps/dashboard/src/app/app/onboarding/_components/step-install-extension.tsx`, `apps/extension/src/components/SidebarMoreMenu.tsx`, `tools/scripts/upload-extension-build.ts`, `.github/workflows/extension-release.yml`, `.github/workflows/ci.yml`.
+- **Dependencies**: Independent. Eventually superseded by A8.
+- **Estimated size**: `m`.
+- **Status**: `in progress`.

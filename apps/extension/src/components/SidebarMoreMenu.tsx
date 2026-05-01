@@ -23,6 +23,19 @@ function openPopupFallback() {
   void chrome.tabs.create({ url: `${env.WXT_DASHBOARD_URL}` });
 }
 
+// Read once at module load — manifest version doesn't change at runtime, and
+// dodging a useEffect keeps this component synchronous for SSR snapshots in
+// tests. Falls back to "?.?.?" if the runtime API isn't available (e.g. a
+// component test rendering outside an extension context). Exported so it can
+// be unit-tested without standing up a Radix DropdownMenu in jsdom.
+export function readExtensionVersion(): string {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return "?.?.?";
+  }
+}
+
 export function SidebarMoreMenu({ compact }: Props) {
   const theme = useSidebar((s) => s.theme);
   const dock = useSidebar((s) => s.dock);
@@ -96,6 +109,11 @@ export function SidebarMoreMenu({ compact }: Props) {
           <ExternalLink />
           Open Remarks dashboard
         </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+        <div className="px-2 pb-1 pt-0.5 text-xs text-muted-foreground">
+          Remarks v{readExtensionVersion()}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
