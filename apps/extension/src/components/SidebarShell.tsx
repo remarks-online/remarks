@@ -213,10 +213,13 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
     [projectId]
   );
 
-  // Literal tRPC v10 query key for `annotations.list`. task 1.29 can switch
-  // to `getQueryKey(trpc.annotations.list)` if it wants finer-grained filters.
+  // Both list keys must be invalidated: `list` is the project-scoped query and
+  // `listForUser` is the personal-mode query. The sidebar and pin layer both
+  // pick one based on whether `projectId` is null, so a successful drain in
+  // personal mode would never refresh if we only invalidated `list`.
   const invalidateAnnotationsList = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: [["annotations", "list"]] });
+    void queryClient.invalidateQueries({ queryKey: [["annotations", "listForUser"]] });
   }, [queryClient]);
 
   useOutboxDrain({

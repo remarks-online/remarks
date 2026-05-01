@@ -17,8 +17,12 @@ export function AnnotationPin({ annotationId, cx, cy, size = 28 }: Props) {
   const style: CSSProperties = {
     // Anchor the pin tip at (cx, cy). The tip is at viewBox (256, 390),
     // i.e. ~50% horizontally and ~76% vertically through a 512 box. So we
-    // translate(-50%, -76%).
+    // translate(-50%, -76%) and pivot scale around the same point so the tip
+    // stays put when the pin grows on hover (otherwise the box scales around
+    // its center, the tip drifts, and the cursor falls off the edge — kicking
+    // off a hover/unhover ping-pong).
     transform: `translate3d(${Math.round(cx)}px, ${Math.round(cy)}px, 0) translate(-50%, -76%)`,
+    transformOrigin: "50% 76%",
   };
 
   return (
@@ -36,7 +40,6 @@ export function AnnotationPin({ annotationId, cx, cy, size = 28 }: Props) {
       className={cn(
         "pointer-events-auto absolute top-0 left-0 cursor-pointer border-0 bg-transparent p-0 drop-shadow-md transition-transform duration-150 ease-out",
         "data-[hovered=true]:scale-125 data-[hovered=true]:drop-shadow-lg",
-        "hover:scale-125 hover:drop-shadow-lg",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       )}
       style={style}
