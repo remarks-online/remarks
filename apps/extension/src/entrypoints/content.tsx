@@ -25,7 +25,7 @@ export default defineContentScript({
   allFrames: false,
   async main(ctx) {
     // Hydrate persisted sidebar prefs before the first render so dock/width/
-    // compact state land in sync storage and don't flash the defaults.
+    // height/theme state land from sync storage and don't flash the defaults.
     const persisted = await loadSidebarPrefs();
     if (persisted) sidebarStore.getState().hydrate(persisted);
 

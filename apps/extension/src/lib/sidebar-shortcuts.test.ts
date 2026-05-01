@@ -47,6 +47,12 @@ describe("⌘⇧F — toggle visible", () => {
     expect(sidebarStore.getState().visible).toBe(true);
   });
 
+  it("does nothing with Alt held (reserved for dock combos)", () => {
+    sidebarStore.getState().setVisible(true);
+    keydown({ key: "F", code: "KeyF", metaKey: true, shiftKey: true, altKey: true });
+    expect(sidebarStore.getState().visible).toBe(true);
+  });
+
   it("ignores ⌘⇧F when typing in a textarea inside a shadow root", () => {
     // Regression for the same shadow-retargeting class of bug as the picker
     // controller — composedPath()[0] resolves the deep target.
@@ -73,10 +79,34 @@ describe("⌘⇧F — toggle visible", () => {
   });
 });
 
-describe("⌘⇧D — cycle dock", () => {
-  it("advances the dock", () => {
+describe("⌘⇧⌥R / L / B — set dock directly", () => {
+  it("⌘⇧⌥R sets dock to right", () => {
+    sidebarStore.getState().setDock("left");
+    keydown({ key: "R", code: "KeyR", metaKey: true, shiftKey: true, altKey: true });
+    expect(sidebarStore.getState().dock).toBe("right");
+  });
+
+  it("⌘⇧⌥L sets dock to left", () => {
     sidebarStore.getState().setDock("right");
-    keydown({ key: "D", code: "KeyD", metaKey: true, shiftKey: true });
+    keydown({ key: "L", code: "KeyL", metaKey: true, shiftKey: true, altKey: true });
+    expect(sidebarStore.getState().dock).toBe("left");
+  });
+
+  it("⌘⇧⌥B sets dock to bottom", () => {
+    sidebarStore.getState().setDock("right");
+    keydown({ key: "B", code: "KeyB", metaKey: true, shiftKey: true, altKey: true });
+    expect(sidebarStore.getState().dock).toBe("bottom");
+  });
+
+  it("Ctrl+Shift+Alt+R works on Windows-style modifiers", () => {
+    sidebarStore.getState().setDock("left");
+    keydown({ key: "R", code: "KeyR", ctrlKey: true, shiftKey: true, altKey: true });
+    expect(sidebarStore.getState().dock).toBe("right");
+  });
+
+  it("does nothing without Alt — preserves ⌘⇧R for the browser's hard reload", () => {
+    sidebarStore.getState().setDock("left");
+    keydown({ key: "R", code: "KeyR", metaKey: true, shiftKey: true });
     expect(sidebarStore.getState().dock).toBe("left");
   });
 });

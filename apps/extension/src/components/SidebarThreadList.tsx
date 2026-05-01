@@ -19,7 +19,6 @@ interface Props {
 export function SidebarThreadList({ projectId, branch }: Props) {
   const url = useCurrentUrl();
   const statusFilter = useSidebar((s) => s.statusFilter);
-  const compact = useSidebar((s) => s.compact);
   const status = statusFilter === "all" ? undefined : statusFilter;
 
   const projectQuery = trpc.annotations.list.useInfiniteQuery(
@@ -73,7 +72,7 @@ export function SidebarThreadList({ projectId, branch }: Props) {
   return (
     <div className="flex flex-col gap-1.5 px-2 py-2">
       {items.map((item) => (
-        <ThreadItem key={item.id} annotation={item} compact={compact} />
+        <ThreadItem key={item.id} annotation={item} />
       ))}
       {query.hasNextPage ? (
         <div className="flex justify-center pt-1">
@@ -137,10 +136,9 @@ function SidebarThreadListEmpty({ filtered }: { filtered: boolean }) {
 
 interface ThreadItemProps {
   annotation: AnnotationResponse;
-  compact: boolean;
 }
 
-function ThreadItem({ annotation, compact }: ThreadItemProps) {
+function ThreadItem({ annotation }: ThreadItemProps) {
   const screenshot = annotation.assets.find((a) => a.kind === "screenshot");
   const initials = authorInitials(annotation.author);
   const authorLabel = annotation.author.name ?? annotation.author.email ?? "Unknown";
@@ -192,12 +190,8 @@ function ThreadItem({ annotation, compact }: ThreadItemProps) {
             {date.toLocaleDateString()}
           </time>
         </div>
-        <p
-          className={cn("mt-1 text-xs text-foreground", compact ? "line-clamp-2" : "line-clamp-3")}
-        >
-          {annotation.commentText}
-        </p>
-        {hostname && !compact ? (
+        <p className="mt-1 line-clamp-3 text-xs text-foreground">{annotation.commentText}</p>
+        {hostname ? (
           <p className="mt-1 truncate text-[11px] text-muted-foreground">{hostname}</p>
         ) : null}
       </div>

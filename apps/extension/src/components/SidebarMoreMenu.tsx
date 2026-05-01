@@ -15,10 +15,6 @@ import {
 } from "@remarks/ui";
 import { ExternalLink, MoreHorizontal } from "lucide-react";
 
-interface Props {
-  compact: boolean;
-}
-
 function openPopupFallback() {
   void chrome.tabs.create({ url: `${env.WXT_DASHBOARD_URL}` });
 }
@@ -36,21 +32,15 @@ export function readExtensionVersion(): string {
   }
 }
 
-export function SidebarMoreMenu({ compact }: Props) {
+export function SidebarMoreMenu() {
   const theme = useSidebar((s) => s.theme);
   const dock = useSidebar((s) => s.dock);
-  const manualCompact = useSidebar((s) => s.compact);
   const container = useShadowRootPortalContainer();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="More options"
-          className={compact ? "h-8 w-8" : "h-8 w-8"}
-        >
+        <Button variant="ghost" size="icon" aria-label="More options" className="h-8 w-8">
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -77,9 +67,6 @@ export function SidebarMoreMenu({ compact }: Props) {
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => sidebarStore.getState().setCompact(!manualCompact)}>
-          {manualCompact ? "Expand sidebar" : "Compact mode"}
-        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => sidebarStore.getState().setVisible(false)}>
           Hide sidebar
           <DropdownMenuShortcut>⌘⇧F</DropdownMenuShortcut>
@@ -95,8 +82,12 @@ export function SidebarMoreMenu({ compact }: Props) {
             <dd className="font-mono">⌘⇧X</dd>
             <dt>Toggle sidebar</dt>
             <dd className="font-mono">⌘⇧F</dd>
-            <dt>Cycle dock</dt>
-            <dd className="font-mono">⌘⇧D</dd>
+            <dt>Dock right</dt>
+            <dd className="font-mono">⌘⇧⌥R</dd>
+            <dt>Dock left</dt>
+            <dd className="font-mono">⌘⇧⌥L</dd>
+            <dt>Dock bottom</dt>
+            <dd className="font-mono">⌘⇧⌥B</dd>
             <dt>Post comment</dt>
             <dd className="font-mono">⌘⏎</dd>
             <dt>Cancel picker</dt>

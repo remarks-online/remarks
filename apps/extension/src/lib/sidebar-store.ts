@@ -9,7 +9,6 @@ export const WIDTH_MIN = 320;
 export const WIDTH_MAX = 520;
 export const HEIGHT_MIN = 200;
 export const HEIGHT_MAX = 600;
-export const DOCK_CYCLE: readonly Dock[] = ["right", "left", "bottom"] as const;
 
 export function clampWidth(value: number): number {
   const rounded = Math.round(value);
@@ -25,16 +24,9 @@ export function clampHeight(value: number): number {
   return rounded;
 }
 
-export function nextDock(current: Dock): Dock {
-  const idx = DOCK_CYCLE.indexOf(current);
-  // biome-ignore lint/style/noNonNullAssertion: DOCK_CYCLE is non-empty and idx wraps via modulo.
-  return DOCK_CYCLE[(idx + 1) % DOCK_CYCLE.length]!;
-}
-
 export interface PersistedSidebarPrefs {
   visible: boolean;
   dock: Dock;
-  compact: boolean;
   width: number;
   height: number;
   theme: Theme;
@@ -47,8 +39,6 @@ export interface SidebarState extends PersistedSidebarPrefs {
   setVisible: (visible: boolean) => void;
   toggleVisible: () => void;
   setDock: (dock: Dock) => void;
-  cycleDock: () => void;
-  setCompact: (compact: boolean) => void;
   setWidth: (width: number) => void;
   setHeight: (height: number) => void;
   setTheme: (theme: Theme) => void;
@@ -61,7 +51,6 @@ export interface SidebarState extends PersistedSidebarPrefs {
 export const SIDEBAR_DEFAULTS: PersistedSidebarPrefs = {
   visible: true,
   dock: "right",
-  compact: false,
   width: 360,
   height: 280,
   theme: "auto",
@@ -74,8 +63,6 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
   setVisible: (visible) => set({ visible }),
   toggleVisible: () => set({ visible: !get().visible }),
   setDock: (dock) => set({ dock }),
-  cycleDock: () => set({ dock: nextDock(get().dock) }),
-  setCompact: (compact) => set({ compact }),
   setWidth: (width) => set({ width: clampWidth(width) }),
   setHeight: (height) => set({ height: clampHeight(height) }),
   setTheme: (theme) => set({ theme }),
@@ -85,7 +72,6 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
     set({
       visible: prefs.visible,
       dock: prefs.dock,
-      compact: prefs.compact,
       width: clampWidth(prefs.width),
       height: clampHeight(prefs.height),
       theme: prefs.theme,
@@ -106,7 +92,6 @@ export function getPersistablePrefs(state: SidebarState): PersistedSidebarPrefs 
   return {
     visible: state.visible,
     dock: state.dock,
-    compact: state.compact,
     width: state.width,
     height: state.height,
     theme: state.theme,

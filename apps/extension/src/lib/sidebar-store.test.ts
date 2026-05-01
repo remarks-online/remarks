@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  DOCK_CYCLE,
   HEIGHT_MAX,
   HEIGHT_MIN,
   WIDTH_MAX,
   WIDTH_MIN,
   clampHeight,
   clampWidth,
-  nextDock,
   sidebarStore,
 } from "./sidebar-store";
 
@@ -37,28 +35,10 @@ describe("clampWidth / clampHeight", () => {
   });
 });
 
-describe("nextDock", () => {
-  it("cycles right → left → bottom → right", () => {
-    expect(nextDock("right")).toBe(DOCK_CYCLE[1]);
-    expect(nextDock("left")).toBe(DOCK_CYCLE[2]);
-    expect(nextDock("bottom")).toBe(DOCK_CYCLE[0]);
-  });
-});
-
 describe("sidebarStore actions", () => {
   it("setDock updates the dock", () => {
     sidebarStore.getState().setDock("left");
     expect(sidebarStore.getState().dock).toBe("left");
-  });
-
-  it("cycleDock advances through the cycle", () => {
-    sidebarStore.getState().setDock("right");
-    sidebarStore.getState().cycleDock();
-    expect(sidebarStore.getState().dock).toBe("left");
-    sidebarStore.getState().cycleDock();
-    expect(sidebarStore.getState().dock).toBe("bottom");
-    sidebarStore.getState().cycleDock();
-    expect(sidebarStore.getState().dock).toBe("right");
   });
 
   it("setWidth clamps to the allowed range", () => {
@@ -75,10 +55,8 @@ describe("sidebarStore actions", () => {
     expect(sidebarStore.getState().height).toBe(HEIGHT_MIN);
   });
 
-  it("setCompact, setVisible, setTheme, setStatusFilter, setDraftComment update their slots", () => {
+  it("setVisible, setTheme, setStatusFilter, setDraftComment update their slots", () => {
     const s = sidebarStore.getState();
-    s.setCompact(true);
-    expect(sidebarStore.getState().compact).toBe(true);
     s.setVisible(false);
     expect(sidebarStore.getState().visible).toBe(false);
     s.setTheme("dark");
@@ -102,7 +80,6 @@ describe("sidebarStore actions", () => {
     sidebarStore.getState().hydrate({
       visible: false,
       dock: "bottom",
-      compact: true,
       width: 450,
       height: 300,
       theme: "dark",
@@ -110,7 +87,6 @@ describe("sidebarStore actions", () => {
     const state = sidebarStore.getState();
     expect(state.visible).toBe(false);
     expect(state.dock).toBe("bottom");
-    expect(state.compact).toBe(true);
     expect(state.width).toBe(450);
     expect(state.height).toBe(300);
     expect(state.theme).toBe("dark");
@@ -123,7 +99,6 @@ describe("sidebarStore actions", () => {
     sidebarStore.getState().hydrate({
       visible: true,
       dock: "right",
-      compact: false,
       width: 9999,
       height: 50,
       theme: "auto",
