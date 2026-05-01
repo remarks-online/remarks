@@ -1,4 +1,4 @@
-import { MAX_COMMENT_LENGTH } from "@remarks/shared";
+import { MAX_COMMENT_LENGTH, rejectionReasonSchema } from "@remarks/shared";
 import { z } from "zod";
 import {
   agentUpdateStatusSchema,
@@ -116,12 +116,28 @@ const getTaskTool = {
 
 // --- remarks_update_task_status ---
 
-export const updateTaskStatusInputSchema = z.object({
-  task_id: z.string().uuid(),
-  status: agentUpdateStatusSchema,
-  note: z.string().optional(),
-  idempotency_key: idempotencyKeySchema.optional(),
-});
+// G4: rejecting a task requires a `reason` (10–500 chars, trimmed) that
+// lands in the resulting event payload so reviewers see why the agent
+// dismissed the work. `note` stays as optional commentary for non-rejection
+// transitions (e.g. "starting work" with status: doing). The shared
+// `rejectionReasonSchema` (re-used from packages/shared) keeps the bounds
+// identical across the user-auth and MCP request bodies.
+export const updateTaskStatusInputSchema = z
+  .object({
+    task_id: z.string().uuid(),
+    status: agentUpdateStatusSchema,
+    note: z.string().optional(),
+    reason: rejectionReasonSchema.optional(),
+    idempotency_key: idempotencyKeySchema.optional(),
+  })
+  .refine((data) => !(data.status === "rejected") || data.reason !== undefined, {
+    message: "reason is required when status is rejected",
+    path: ["reason"],
+  })
+  .refine((data) => data.reason === undefined || data.status === "rejected", {
+    message: "reason is only allowed when status is rejected",
+    path: ["reason"],
+  });
 
 export type UpdateTaskStatusInput = z.infer<typeof updateTaskStatusInputSchema>;
 
@@ -136,7 +152,7 @@ export type UpdateTaskStatusOutput = z.infer<typeof updateTaskStatusOutputSchema
 const updateTaskStatusTool = {
   name: "remarks_update_task_status",
   description:
-    "Updates a task's status. Use `acknowledged` to confirm receipt of a task without committing to do it yet (useful when triaging a batch). Use `doing` when starting work, `done` when the code change is committed, `rejected` if the task cannot or should not be done. Include a `note` when rejecting to explain why. Typical sequence: to_do → (acknowledged →) doing → done. Skipping intermediate states is allowed but loses useful signal about progress.",
+    "Updates a task's status. Use `acknowledged` to confirm receipt of a task without committing to do it yet (useful when triaging a batch). Use `doing` when starting work, `done` when the code change is committed, `rejected` if the task cannot or should not be done. **A `reason` is required when status is `rejected` (10–500 chars)** — it surfaces in the task's activity feed so the reviewer understands the dismissal. `note` is optional free-form commentary for non-rejection transitions (e.g. \"starting work\" with status: doing). Typical sequence: to_do → (acknowledged →) doing → done. Skipping intermediate states is allowed but loses useful signal about progress.",
   input: updateTaskStatusInputSchema,
   output: updateTaskStatusOutputSchema,
 } as const;
@@ -169,17 +185,26 @@ const addTaskCommentTool = {
 
 // --- remarks_batch_update_status (Phase 2 spec §3.2 Batching) ---
 
+// G4: each update row carries the same rejection contract as the single-update
+// tool — `reason` required when status is `rejected`, refused otherwise.
+const batchUpdateStatusUpdateSchema = z
+  .object({
+    task_id: z.string().uuid(),
+    status: agentUpdateStatusSchema,
+    note: z.string().optional(),
+    reason: rejectionReasonSchema.optional(),
+  })
+  .refine((data) => !(data.status === "rejected") || data.reason !== undefined, {
+    message: "reason is required when status is rejected",
+    path: ["reason"],
+  })
+  .refine((data) => data.reason === undefined || data.status === "rejected", {
+    message: "reason is only allowed when status is rejected",
+    path: ["reason"],
+  });
+
 export const batchUpdateStatusInputSchema = z.object({
-  updates: z
-    .array(
-      z.object({
-        task_id: z.string().uuid(),
-        status: agentUpdateStatusSchema,
-        note: z.string().optional(),
-      })
-    )
-    .min(1)
-    .max(50),
+  updates: z.array(batchUpdateStatusUpdateSchema).min(1).max(50),
   idempotency_key: idempotencyKeySchema.optional(),
 });
 
@@ -200,7 +225,7 @@ export type BatchUpdateStatusOutput = z.infer<typeof batchUpdateStatusOutputSche
 const batchUpdateStatusTool = {
   name: "remarks_batch_update_status",
   description:
-    "Updates multiple task statuses in a single call. Use this when processing a batch of related tasks to reduce round-trips. Partial failures are reported per-task; the call itself does not fail if individual updates fail.",
+    "Updates multiple task statuses in a single call. Use this when processing a batch of related tasks to reduce round-trips. Each row follows the same rules as `remarks_update_task_status` — in particular, a `reason` (10–500 chars) is required on any row whose status is `rejected`. Partial failures are reported per-task; the call itself does not fail if individual updates fail.",
   input: batchUpdateStatusInputSchema,
   output: batchUpdateStatusOutputSchema,
 } as const;

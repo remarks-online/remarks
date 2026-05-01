@@ -1,4 +1,4 @@
-import { MAX_COMMENT_LENGTH, ValidationError } from "@remarks/shared";
+import { MAX_COMMENT_LENGTH, ValidationError, rejectionReasonSchema } from "@remarks/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { listAnnotationsForUser } from "../../services/annotation.service.js";
@@ -33,16 +33,30 @@ const userOrgParamsSchema = z.object({
 // G3 (gap-analysis ADR-0016) adds `acknowledged` so an agent can signal "I've
 // read this task" without yet picking it up — the dashboard renders these via
 // the dedicated `agent_acknowledged` event type.
+// G4 (gap analysis): rejection requires a `reason` (10–500 chars, trimmed)
+// that is persisted on the resulting event payload so reviewers can see why
+// the agent dismissed the task. `note` stays as optional commentary for
+// non-rejection transitions.
 // Attribution moves to (clerkUserId, oauthClientName) per ADR-0015. The API
 // resolves the annotation's project itself, then enforces project_members
 // for the Clerk user; cross-project access surfaces as 404 (existence-leak
 // posture preserved).
-const statusUpdateBodySchema = z.object({
-  clerkUserId: z.string().min(1),
-  oauthClientName: z.string().min(1),
-  status: z.enum(["doing", "done", "rejected", "acknowledged"]),
-  note: z.string().optional(),
-});
+const statusUpdateBodySchema = z
+  .object({
+    clerkUserId: z.string().min(1),
+    oauthClientName: z.string().min(1),
+    status: z.enum(["doing", "done", "rejected", "acknowledged"]),
+    note: z.string().optional(),
+    reason: rejectionReasonSchema.optional(),
+  })
+  .refine((data) => !(data.status === "rejected") || data.reason !== undefined, {
+    message: "reason is required when status is rejected",
+    path: ["reason"],
+  })
+  .refine((data) => data.reason === undefined || data.status === "rejected", {
+    message: "reason is only allowed when status is rejected",
+    path: ["reason"],
+  });
 
 const commentBodySchema = z.object({
   clerkUserId: z.string().min(1),
@@ -86,6 +100,7 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
       oauthClientName: bodyResult.data.oauthClientName,
       status: bodyResult.data.status,
       ...(bodyResult.data.note !== undefined ? { note: bodyResult.data.note } : {}),
+      ...(bodyResult.data.reason !== undefined ? { reason: bodyResult.data.reason } : {}),
     });
     return reply.code(200).send(result);
   });

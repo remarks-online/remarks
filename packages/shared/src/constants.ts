@@ -6,6 +6,12 @@ export const MAX_BRANCH_NAME_LENGTH = 255;
 export const MAX_PROJECT_NAME_LENGTH = 100;
 export const MAX_PROJECT_SLUG_LENGTH = 50;
 
+// G4: a `reason` is required whenever an annotation transitions to
+// `rejected`. Min length discourages lazy "no" responses; max keeps the
+// JSONB payload reasonable. Both bounds are post-trim.
+export const MIN_REJECTION_REASON_LENGTH = 10;
+export const MAX_REJECTION_REASON_LENGTH = 500;
+
 export const PROJECT_SLUG_REGEX = /^[a-z0-9-]+$/;
 
 // `acknowledged` lives between `to_do` and `doing`: an agent has read the task

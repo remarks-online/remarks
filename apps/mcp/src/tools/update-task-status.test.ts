@@ -58,6 +58,7 @@ describe("updateTaskStatusHandler", () => {
       CLERK_USER_ID,
       STUB_AUTH.oauthClientName,
       "doing",
+      undefined,
       undefined
     );
     expect(idempotency.check).not.toHaveBeenCalled();
@@ -167,5 +168,73 @@ describe("updateTaskStatusHandler", () => {
         { auth: STUB_AUTH, api: makeApi(), idempotency: makeIdempotency(), requestId: "req_test" }
       )
     ).rejects.toBeInstanceOf(McpToolError);
+  });
+
+  // G4
+  it("rejected without reason → VALIDATION_ERROR (schema-level refine)", async () => {
+    const updateAnnotationStatus = vi.fn();
+    const api = makeApi({ updateAnnotationStatus });
+    await expect(
+      updateTaskStatusHandler(
+        { task_id: TASK_ID, status: "rejected" },
+        { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+      )
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(updateAnnotationStatus).not.toHaveBeenCalled();
+  });
+
+  it("rejected with valid reason → API called with reason argument", async () => {
+    const updateAnnotationStatus = vi.fn().mockResolvedValue({
+      id: TASK_ID,
+      status: "rejected",
+      updatedAt: "2026-04-26T10:00:00.000Z",
+    });
+    const api = makeApi({ updateAnnotationStatus });
+
+    await updateTaskStatusHandler(
+      { task_id: TASK_ID, status: "rejected", reason: "duplicate of #123" },
+      { auth: STUB_AUTH, api, idempotency: makeIdempotency(), requestId: "req_test" }
+    );
+
+    expect(updateAnnotationStatus).toHaveBeenCalledWith(
+      TASK_ID,
+      CLERK_USER_ID,
+      STUB_AUTH.oauthClientName,
+      "rejected",
+      undefined,
+      "duplicate of #123"
+    );
+  });
+
+  it("idempotency check includes reason in payload hash", async () => {
+    const updateAnnotationStatus = vi.fn().mockResolvedValue({
+      id: TASK_ID,
+      status: "rejected",
+      updatedAt: "2026-04-26T10:00:00.000Z",
+    });
+    const check = vi.fn().mockResolvedValue({ kind: "miss" });
+    const idempotency = makeIdempotency({ check });
+
+    await updateTaskStatusHandler(
+      {
+        task_id: TASK_ID,
+        status: "rejected",
+        reason: "duplicate of #123",
+        idempotency_key: IDEMPOTENCY_KEY,
+      },
+      {
+        auth: STUB_AUTH,
+        api: makeApi({ updateAnnotationStatus }),
+        idempotency,
+        requestId: "req_test",
+      }
+    );
+
+    expect(check).toHaveBeenCalledWith({
+      tool: "remarks_update_task_status",
+      tokenId: CLERK_USER_ID,
+      key: IDEMPOTENCY_KEY,
+      payload: { task_id: TASK_ID, status: "rejected", reason: "duplicate of #123" },
+    });
   });
 });

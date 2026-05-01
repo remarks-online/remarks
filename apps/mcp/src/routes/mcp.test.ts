@@ -286,6 +286,7 @@ describe("POST /mcp", () => {
       CLERK_USER_ID,
       "Claude Code",
       "doing",
+      undefined,
       undefined
     );
     const envelope = parseJsonRpcResponse(response.body);

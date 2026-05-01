@@ -19,10 +19,14 @@ export const updateTaskStatusHandler: ToolHandler = async (args, ctx) => {
 
   // Hash the request-shape fields the API actually consumes — the
   // idempotency_key itself isn't part of the payload (it's the cache key).
+  // G4: `reason` participates in the hash so a replay with a different
+  // dismissal reason surfaces as CONFLICT instead of silently returning the
+  // cached result.
   const idemPayload = {
     task_id: input.task_id,
     status: input.status,
     ...(input.note !== undefined ? { note: input.note } : {}),
+    ...(input.reason !== undefined ? { reason: input.reason } : {}),
   };
 
   if (input.idempotency_key) {
@@ -43,7 +47,8 @@ export const updateTaskStatusHandler: ToolHandler = async (args, ctx) => {
     ctx.auth.clerkUserId,
     ctx.auth.oauthClientName,
     input.status,
-    input.note
+    input.note,
+    input.reason
   );
   if (!result) {
     throw new McpToolError("NOT_FOUND", "Task not found");

@@ -7,8 +7,10 @@ import {
   ASSET_KINDS,
   MAX_BRANCH_NAME_LENGTH,
   MAX_COMMENT_LENGTH,
+  MAX_REJECTION_REASON_LENGTH,
   MAX_SELECTOR_LENGTH,
   MAX_TEXT_CONTENT_LENGTH,
+  MIN_REJECTION_REASON_LENGTH,
 } from "../constants.js";
 
 export const annotationStatusSchema = z.enum(ANNOTATION_STATUSES);
@@ -155,13 +157,33 @@ export const annotationResponseSchema = z.object({
 
 export type AnnotationResponse = z.infer<typeof annotationResponseSchema>;
 
+// G4: rejection requires a `reason` that lands in the `status_changed` event
+// payload. The refines below enforce the contract — `reason` is mandatory
+// (post-trim, ≥ MIN chars) when transitioning to `rejected`, and refused on
+// any other status to surface miswired callers early. Trimming happens at the
+// schema layer so all consumers see normalized text.
+export const rejectionReasonSchema = z
+  .string()
+  .trim()
+  .min(MIN_REJECTION_REASON_LENGTH)
+  .max(MAX_REJECTION_REASON_LENGTH);
+
 export const updateAnnotationRequestSchema = z
   .object({
     status: annotationStatusSchema.optional(),
     commentText: z.string().min(1).max(MAX_COMMENT_LENGTH).optional(),
+    reason: rejectionReasonSchema.optional(),
   })
   .refine((data) => data.status !== undefined || data.commentText !== undefined, {
     message: "At least one field must be provided",
+  })
+  .refine((data) => !(data.status === "rejected") || data.reason !== undefined, {
+    message: "reason is required when status is rejected",
+    path: ["reason"],
+  })
+  .refine((data) => data.reason === undefined || data.status === "rejected", {
+    message: "reason is only allowed when status is rejected",
+    path: ["reason"],
   });
 
 export type UpdateAnnotationRequest = z.infer<typeof updateAnnotationRequestSchema>;

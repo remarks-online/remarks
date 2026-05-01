@@ -115,12 +115,12 @@ describe("updateTaskStatusInputSchema", () => {
     );
   });
 
-  test("accepts a rejected transition with note + idempotency_key", () => {
+  test("accepts a rejected transition with reason + idempotency_key", () => {
     expect(
       updateTaskStatusInputSchema.safeParse({
         task_id: uuid,
         status: "rejected",
-        note: "out of scope",
+        reason: "out of scope for this sprint",
         idempotency_key: otherUuid,
       }).success
     ).toBe(true);
@@ -140,6 +140,45 @@ describe("updateTaskStatusInputSchema", () => {
         idempotency_key: "not-a-uuid",
       }).success
     ).toBe(false);
+  });
+
+  // G4
+  test("rejects a rejected transition without a reason", () => {
+    expect(
+      updateTaskStatusInputSchema.safeParse({ task_id: uuid, status: "rejected" }).success
+    ).toBe(false);
+  });
+
+  test("rejects a too-short reason on rejected", () => {
+    expect(
+      updateTaskStatusInputSchema.safeParse({
+        task_id: uuid,
+        status: "rejected",
+        reason: "nope",
+      }).success
+    ).toBe(false);
+  });
+
+  test("rejects a reason on a non-rejected transition", () => {
+    expect(
+      updateTaskStatusInputSchema.safeParse({
+        task_id: uuid,
+        status: "doing",
+        reason: "starting work on this",
+      }).success
+    ).toBe(false);
+  });
+
+  test("trims the reason before length validation", () => {
+    const parsed = updateTaskStatusInputSchema.safeParse({
+      task_id: uuid,
+      status: "rejected",
+      reason: "   duplicate ticket  ",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.reason).toBe("duplicate ticket");
+    }
   });
 });
 
@@ -209,6 +248,23 @@ describe("batchUpdateStatusInputSchema", () => {
         updates: [{ task_id: uuid, status: "to_do" }],
       }).success
     ).toBe(false);
+  });
+
+  // G4
+  test("rejects when a row has status: rejected without a reason", () => {
+    expect(
+      batchUpdateStatusInputSchema.safeParse({
+        updates: [{ task_id: uuid, status: "rejected" }],
+      }).success
+    ).toBe(false);
+  });
+
+  test("accepts a row with status: rejected and a valid reason", () => {
+    expect(
+      batchUpdateStatusInputSchema.safeParse({
+        updates: [{ task_id: uuid, status: "rejected", reason: "duplicate of #123" }],
+      }).success
+    ).toBe(true);
   });
 });
 
