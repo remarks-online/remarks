@@ -121,13 +121,7 @@ export function StepInstallExtension({ onAdvance }: Props) {
               </Button>
             ) : (
               <Button asChild>
-                <a
-                  href="https://github.com/breschio/remarks"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Get the extension
-                </a>
+                <Link href="/app/download-extension">Get the extension</Link>
               </Button>
             )}
             <Button variant="ghost" onClick={handleManual}>
@@ -160,16 +154,6 @@ export function StepInstallExtension({ onAdvance }: Props) {
           </>
         )}
       </div>
-
-      {!webStoreUrl && !isPreInstalled ? (
-        <p className="text-sm text-muted-foreground">
-          Or{" "}
-          <Link href="/app/download-extension" className="underline">
-            download the extension manually
-          </Link>{" "}
-          if you&apos;d rather load an unpacked build.
-        </p>
-      ) : null}
     </div>
   );
 }
