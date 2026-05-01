@@ -67,6 +67,45 @@ describe("sidebarStore actions", () => {
     expect(sidebarStore.getState().draftComment).toBe("hello");
   });
 
+  it("setStatusFilter accepts the agent-set 'acknowledged' value", () => {
+    sidebarStore.getState().setStatusFilter("acknowledged");
+    expect(sidebarStore.getState().statusFilter).toBe("acknowledged");
+  });
+
+  it("setIntentFilter / setSeverityFilter update their slots", () => {
+    const s = sidebarStore.getState();
+    s.setIntentFilter("fix");
+    expect(sidebarStore.getState().intentFilter).toBe("fix");
+    s.setSeverityFilter("blocking");
+    expect(sidebarStore.getState().severityFilter).toBe("blocking");
+  });
+
+  it("setDraftIntent / setDraftSeverity round-trip null", () => {
+    const s = sidebarStore.getState();
+    s.setDraftIntent("question");
+    s.setDraftSeverity("important");
+    expect(sidebarStore.getState().draftIntent).toBe("question");
+    expect(sidebarStore.getState().draftSeverity).toBe("important");
+    s.setDraftIntent(null);
+    s.setDraftSeverity(null);
+    expect(sidebarStore.getState().draftIntent).toBeNull();
+    expect(sidebarStore.getState().draftSeverity).toBeNull();
+  });
+
+  it("reset clears draft intent / severity / filters back to defaults", () => {
+    const s = sidebarStore.getState();
+    s.setDraftIntent("fix");
+    s.setDraftSeverity("blocking");
+    s.setIntentFilter("change");
+    s.setSeverityFilter("important");
+    sidebarStore.getState().reset();
+    const after = sidebarStore.getState();
+    expect(after.draftIntent).toBeNull();
+    expect(after.draftSeverity).toBeNull();
+    expect(after.intentFilter).toBe("all");
+    expect(after.severityFilter).toBe("all");
+  });
+
   it("toggleVisible flips visibility", () => {
     sidebarStore.getState().setVisible(true);
     sidebarStore.getState().toggleVisible();

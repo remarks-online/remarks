@@ -1,5 +1,5 @@
 import { AnnotationPinLayer } from "@/components/AnnotationPinLayer";
-import { CapturePromptPopover } from "@/components/CapturePromptPopover";
+import { CapturePromptPopover, type DraftClassifiers } from "@/components/CapturePromptPopover";
 import { SidebarBranchSelector } from "@/components/SidebarBranchSelector";
 import { SidebarCapturePanel } from "@/components/SidebarCapturePanel";
 import { SidebarHeader } from "@/components/SidebarHeader";
@@ -219,7 +219,7 @@ function SidebarBody({ projectId, token, clerkOrgId }: SidebarBodyProps) {
   });
 
   const onSubmit = useCallback(
-    async (text: string, cap: Capture | null) => {
+    async (text: string, cap: Capture | null, classifiers: DraftClassifiers) => {
       if (!cap) return;
       await enqueueOutbox({
         id: crypto.randomUUID(),
@@ -229,11 +229,16 @@ function SidebarBody({ projectId, token, clerkOrgId }: SidebarBodyProps) {
           branch: projectId ? branch : null,
           capture: cap,
           commentText: text,
+          intent: classifiers.intent,
+          severity: classifiers.severity,
         },
       });
       // Clear the draft + capture immediately so the user can move on; the
       // outbox now owns the item.
-      sidebarStore.getState().setDraftComment("");
+      const store = sidebarStore.getState();
+      store.setDraftComment("");
+      store.setDraftIntent(null);
+      store.setDraftSeverity(null);
       pickerStore.getState().clearCapture();
       // Don't await — the drain is a best-effort kick; the 30s interval and
       // window `online` listener (mounted by useOutboxDrain) are the safety

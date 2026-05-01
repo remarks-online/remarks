@@ -1,9 +1,12 @@
+import type { AnnotationIntent, AnnotationSeverity } from "@remarks/shared";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 export type Dock = "right" | "left" | "bottom";
 export type Theme = "auto" | "light" | "dark";
-export type StatusFilter = "to_do" | "doing" | "done" | "rejected" | "all";
+export type StatusFilter = "to_do" | "doing" | "done" | "rejected" | "acknowledged" | "all";
+export type IntentFilter = AnnotationIntent | "all";
+export type SeverityFilter = AnnotationSeverity | "all";
 
 export const WIDTH_MIN = 320;
 export const WIDTH_MAX = 520;
@@ -35,7 +38,11 @@ export interface PersistedSidebarPrefs {
 export interface SidebarState extends PersistedSidebarPrefs {
   // In-memory only; not persisted across sessions.
   statusFilter: StatusFilter;
+  intentFilter: IntentFilter;
+  severityFilter: SeverityFilter;
   draftComment: string;
+  draftIntent: AnnotationIntent | null;
+  draftSeverity: AnnotationSeverity | null;
   setVisible: (visible: boolean) => void;
   toggleVisible: () => void;
   setDock: (dock: Dock) => void;
@@ -43,7 +50,11 @@ export interface SidebarState extends PersistedSidebarPrefs {
   setHeight: (height: number) => void;
   setTheme: (theme: Theme) => void;
   setStatusFilter: (filter: StatusFilter) => void;
+  setIntentFilter: (filter: IntentFilter) => void;
+  setSeverityFilter: (filter: SeverityFilter) => void;
   setDraftComment: (text: string) => void;
+  setDraftIntent: (value: AnnotationIntent | null) => void;
+  setDraftSeverity: (value: AnnotationSeverity | null) => void;
   hydrate: (prefs: PersistedSidebarPrefs) => void;
   reset: () => void;
 }
@@ -59,7 +70,11 @@ export const SIDEBAR_DEFAULTS: PersistedSidebarPrefs = {
 export const sidebarStore = createStore<SidebarState>((set, get) => ({
   ...SIDEBAR_DEFAULTS,
   statusFilter: "all",
+  intentFilter: "all",
+  severityFilter: "all",
   draftComment: "",
+  draftIntent: null,
+  draftSeverity: null,
   setVisible: (visible) => set({ visible }),
   toggleVisible: () => set({ visible: !get().visible }),
   setDock: (dock) => set({ dock }),
@@ -67,7 +82,11 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
   setHeight: (height) => set({ height: clampHeight(height) }),
   setTheme: (theme) => set({ theme }),
   setStatusFilter: (statusFilter) => set({ statusFilter }),
+  setIntentFilter: (intentFilter) => set({ intentFilter }),
+  setSeverityFilter: (severityFilter) => set({ severityFilter }),
   setDraftComment: (draftComment) => set({ draftComment }),
+  setDraftIntent: (draftIntent) => set({ draftIntent }),
+  setDraftSeverity: (draftSeverity) => set({ draftSeverity }),
   hydrate: (prefs) =>
     set({
       visible: prefs.visible,
@@ -80,7 +99,11 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
     set({
       ...SIDEBAR_DEFAULTS,
       statusFilter: "all",
+      intentFilter: "all",
+      severityFilter: "all",
       draftComment: "",
+      draftIntent: null,
+      draftSeverity: null,
     }),
 }));
 

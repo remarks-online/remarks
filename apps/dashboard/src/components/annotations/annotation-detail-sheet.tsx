@@ -23,7 +23,23 @@ import {
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EventRow } from "./event-row";
-import { STATUS_LABEL, STATUS_OPTIONS, STATUS_VARIANT, safeHostname } from "./status-ui";
+import {
+  INTENT_LABEL,
+  INTENT_OPTIONS,
+  INTENT_VARIANT,
+  SEVERITY_LABEL,
+  SEVERITY_OPTIONS,
+  SEVERITY_VARIANT,
+  STATUS_LABEL,
+  STATUS_OPTIONS,
+  STATUS_VARIANT,
+  safeHostname,
+} from "./status-ui";
+
+// Sentinel value for the "Unset" item in the intent / severity selects. The
+// underlying schema accepts `null` to clear; the Select component requires a
+// non-empty string for each item.
+const UNSET = "__unset__" as const;
 
 interface AnnotationDetailSheetProps {
   selectedId: string | null;
@@ -75,6 +91,11 @@ function DetailBody({ id, onClose }: { id: string; onClose: () => void }) {
             ...previous,
             ...(input.status ? { status: input.status } : {}),
             ...(input.commentText ? { commentText: input.commentText } : {}),
+            // intent / severity accept null to clear; check for `undefined`
+            // (no-op) rather than truthy so the optimistic patch reflects
+            // null-clears immediately.
+            ...(input.intent !== undefined ? { intent: input.intent } : {}),
+            ...(input.severity !== undefined ? { severity: input.severity } : {}),
           }
         );
       }
@@ -143,6 +164,16 @@ function DetailBody({ id, onClose }: { id: string; onClose: () => void }) {
           <Badge variant={STATUS_VARIANT[annotation.status]}>
             {STATUS_LABEL[annotation.status]}
           </Badge>
+          {annotation.severity ? (
+            <Badge variant={SEVERITY_VARIANT[annotation.severity]}>
+              {SEVERITY_LABEL[annotation.severity]}
+            </Badge>
+          ) : null}
+          {annotation.intent ? (
+            <Badge variant={INTENT_VARIANT[annotation.intent]}>
+              {INTENT_LABEL[annotation.intent]}
+            </Badge>
+          ) : null}
           <span className="text-sm font-normal text-muted-foreground">{annotation.targetType}</span>
         </div>
         <p className="truncate text-sm text-muted-foreground">
@@ -230,6 +261,64 @@ function DetailBody({ id, onClose }: { id: string; onClose: () => void }) {
             isSaving={updateMutation.isPending}
           />
         ) : null}
+      </section>
+
+      <section>
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Intent
+        </h3>
+        <div className="mt-2">
+          <Select
+            value={annotation.intent ?? UNSET}
+            onValueChange={(value) => {
+              const next = value === UNSET ? null : (value as AnnotationResponse["intent"]);
+              if (next === annotation.intent) return;
+              updateMutation.mutate({ id, input: { intent: next } });
+            }}
+            disabled={updateMutation.isPending}
+          >
+            <SelectTrigger aria-label="Intent">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET}>Uncategorized</SelectItem>
+              {INTENT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {INTENT_LABEL[opt.value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Severity
+        </h3>
+        <div className="mt-2">
+          <Select
+            value={annotation.severity ?? UNSET}
+            onValueChange={(value) => {
+              const next = value === UNSET ? null : (value as AnnotationResponse["severity"]);
+              if (next === annotation.severity) return;
+              updateMutation.mutate({ id, input: { severity: next } });
+            }}
+            disabled={updateMutation.isPending}
+          >
+            <SelectTrigger aria-label="Severity">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET}>Uncategorized</SelectItem>
+              {SEVERITY_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {SEVERITY_LABEL[opt.value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </section>
 
       <section>

@@ -15,6 +15,11 @@ export const ANNOTATION_EVENT_TYPES = [
   // from `agent_updated_status` so the dashboard can render a compact "agent
   // acknowledged" pill rather than a full status-transition row.
   "agent_acknowledged",
+  // ADR-0018: emitted when a user reclassifies intent / severity via the
+  // PATCH path. Payload `{ from, to }`; both ends may be null when clearing
+  // back to "uncategorized".
+  "intent_changed",
+  "severity_changed",
 ] as const;
 
 export type AnnotationEventType = (typeof ANNOTATION_EVENT_TYPES)[number];

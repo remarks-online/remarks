@@ -61,6 +61,8 @@ async function seedBranch(
 
 interface SeedAnnotationOverrides {
   status?: typeof schema.annotations.$inferInsert.status;
+  intent?: typeof schema.annotations.$inferInsert.intent;
+  severity?: typeof schema.annotations.$inferInsert.severity;
   url?: string;
   targetSelector?: string | null;
   updatedAt?: Date;
@@ -83,6 +85,8 @@ async function seedAnnotation(
       branchId: args.branchId,
       authorId: args.authorId,
       status: args.status ?? "to_do",
+      intent: args.intent ?? null,
+      severity: args.severity ?? null,
       targetType: "element",
       url: args.url ?? "https://example.test/page",
       targetSelector: args.targetSelector === undefined ? "button.primary" : args.targetSelector,
@@ -356,6 +360,56 @@ describe("GET /internal/mcp/projects/:projectId/annotations (integration)", () =
     const body = res.json();
     expect(body.items).toHaveLength(1);
     expect(body.items[0].branchName).toBe("feat/x");
+  });
+
+  test("intents=fix,question and severities=blocking filter independently", async () => {
+    const db = await getIntegrationDb();
+    const { project, user } = await seedProjectAndUser(db);
+    const main = await seedBranch(db, project.id, "main");
+
+    await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: main.id,
+      authorId: user.id,
+      intent: "fix",
+      severity: "blocking",
+    });
+    await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: main.id,
+      authorId: user.id,
+      intent: "question",
+      severity: "blocking",
+    });
+    await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: main.id,
+      authorId: user.id,
+      intent: "approve",
+      severity: "suggestion",
+    });
+    await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: main.id,
+      authorId: user.id,
+      intent: "fix",
+      severity: "important",
+    });
+
+    // CSV intents picks up two rows (fix + question), severity narrows to one.
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/projects/${project.id}/annotations?intents=fix,question&severities=blocking`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items).toHaveLength(2);
+    for (const item of body.items) {
+      expect(["fix", "question"]).toContain(item.intent);
+      expect(item.severity).toBe("blocking");
+    }
   });
 
   test("no statuses param → no status filter (returns all)", async () => {

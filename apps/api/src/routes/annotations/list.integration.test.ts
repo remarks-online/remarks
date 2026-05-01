@@ -219,6 +219,88 @@ describe("GET /projects/:projectId/annotations (integration)", () => {
     for (const item of body.items) expect(item.status).toBe("done");
   });
 
+  test("filter: intent=fix returns only fix annotations", async () => {
+    const { orgClerkId, userClerkId, userId, projectId } = await seedProjectWithMember({
+      role: "viewer",
+    });
+    const db = await getIntegrationDb();
+    const [branch] = await db
+      .insert(schema.branches)
+      .values({ projectId, name: "main" })
+      .returning();
+    if (!branch) throw new Error("branch seed returned no rows");
+
+    const intents = ["fix", "change", "question", "approve", null] as const;
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      projectId,
+      branchId: branch.id,
+      authorId: userId,
+      status: "to_do" as const,
+      targetType: "element" as const,
+      intent: intents[i % intents.length],
+      url: "https://staging.acme.com/page",
+      targetSelector: `#el-${i}`,
+      viewport: { width: 1920, height: 1080, dpr: 2 },
+      commentText: `Comment ${i}`,
+    }));
+    await db.insert(schema.annotations).values(rows);
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "GET",
+      url: `/projects/${projectId}/annotations?intent=fix`,
+      headers: { authorization: BEARER },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items).toHaveLength(2);
+    for (const item of body.items) expect(item.intent).toBe("fix");
+  });
+
+  test("filter: severity=blocking returns only blocking annotations", async () => {
+    const { orgClerkId, userClerkId, userId, projectId } = await seedProjectWithMember({
+      role: "viewer",
+    });
+    const db = await getIntegrationDb();
+    const [branch] = await db
+      .insert(schema.branches)
+      .values({ projectId, name: "main" })
+      .returning();
+    if (!branch) throw new Error("branch seed returned no rows");
+
+    const severities = ["blocking", "important", "suggestion", null] as const;
+    const rows = Array.from({ length: 8 }, (_, i) => ({
+      projectId,
+      branchId: branch.id,
+      authorId: userId,
+      status: "to_do" as const,
+      targetType: "element" as const,
+      severity: severities[i % severities.length],
+      url: "https://staging.acme.com/page",
+      targetSelector: `#el-${i}`,
+      viewport: { width: 1920, height: 1080, dpr: 2 },
+      commentText: `Comment ${i}`,
+    }));
+    await db.insert(schema.annotations).values(rows);
+
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const res = await server.inject({
+      method: "GET",
+      url: `/projects/${projectId}/annotations?severity=blocking`,
+      headers: { authorization: BEARER },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.items).toHaveLength(2);
+    for (const item of body.items) expect(item.severity).toBe("blocking");
+  });
+
   test("filter: branch=main returns only annotations on that branch", async () => {
     const { orgClerkId, userClerkId, userId, projectId } = await seedProjectWithMember({
       role: "viewer",

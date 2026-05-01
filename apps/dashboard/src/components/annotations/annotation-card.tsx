@@ -1,6 +1,10 @@
 "use client";
 
 import {
+  INTENT_LABEL,
+  INTENT_VARIANT,
+  SEVERITY_LABEL,
+  SEVERITY_VARIANT,
   STATUS_LABEL,
   STATUS_VARIANT,
   authorInitials,
@@ -48,6 +52,16 @@ export function AnnotationCard({ annotation, isSelected, onSelect }: AnnotationC
               <Badge variant={STATUS_VARIANT[annotation.status]}>
                 {STATUS_LABEL[annotation.status]}
               </Badge>
+              {annotation.severity ? (
+                <Badge variant={SEVERITY_VARIANT[annotation.severity]}>
+                  {SEVERITY_LABEL[annotation.severity]}
+                </Badge>
+              ) : null}
+              {annotation.intent ? (
+                <Badge variant={INTENT_VARIANT[annotation.intent]}>
+                  {INTENT_LABEL[annotation.intent]}
+                </Badge>
+              ) : null}
               <span className="text-xs text-muted-foreground">{annotation.targetType}</span>
               <span className="text-xs text-muted-foreground">·</span>
               <time className="text-xs text-muted-foreground">

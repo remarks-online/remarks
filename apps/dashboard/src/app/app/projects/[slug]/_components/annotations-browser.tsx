@@ -2,8 +2,22 @@
 
 import { AnnotationCard } from "@/components/annotations/annotation-card";
 import { AnnotationDetailSheet } from "@/components/annotations/annotation-detail-sheet";
+import {
+  AnnotationFilters,
+  type IntentFilter,
+  type SeverityFilter,
+  type StatusFilter,
+} from "@/components/annotations/annotation-filters";
 import { trpc } from "@/lib/trpc-client";
-import type { AnnotationListResponse, AnnotationResponse } from "@remarks/shared";
+import {
+  ANNOTATION_INTENTS,
+  ANNOTATION_SEVERITIES,
+  ANNOTATION_STATUSES,
+  type AnnotationIntent,
+  type AnnotationListResponse,
+  type AnnotationResponse,
+  type AnnotationSeverity,
+} from "@remarks/shared";
 import { Button } from "@remarks/ui";
 import { MessageSquarePlus } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -17,6 +31,27 @@ interface AnnotationsBrowserProps {
   primaryBranch: string;
 }
 
+function parseStatus(raw: string | null): StatusFilter {
+  if (!raw) return "all";
+  return (ANNOTATION_STATUSES as readonly string[]).includes(raw)
+    ? (raw as AnnotationResponse["status"])
+    : "all";
+}
+
+function parseIntent(raw: string | null): IntentFilter {
+  if (!raw) return "all";
+  return (ANNOTATION_INTENTS as readonly string[]).includes(raw)
+    ? (raw as AnnotationIntent)
+    : "all";
+}
+
+function parseSeverity(raw: string | null): SeverityFilter {
+  if (!raw) return "all";
+  return (ANNOTATION_SEVERITIES as readonly string[]).includes(raw)
+    ? (raw as AnnotationSeverity)
+    : "all";
+}
+
 export function AnnotationsBrowser({
   projectId,
   initialData,
@@ -26,28 +61,56 @@ export function AnnotationsBrowser({
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("a");
+  const status = parseStatus(searchParams.get("status"));
+  const intent = parseIntent(searchParams.get("intent"));
+  const severity = parseSeverity(searchParams.get("severity"));
 
   // refetchInterval on useInfiniteQuery refetches every loaded page in order;
   // safe under (createdAt DESC, id DESC) keyset cursors — already-loaded pages
   // stay stable, new top items appear at the top.
   const { data, hasNextPage, fetchNextPage, isFetchingNextPage, isError } =
     trpc.annotations.list.useInfiniteQuery(
-      { projectId, limit: ANNOTATION_LIST_PAGE_SIZE },
       {
-        initialData: { pages: [initialData], pageParams: [undefined] },
+        projectId,
+        limit: ANNOTATION_LIST_PAGE_SIZE,
+        ...(status !== "all" ? { status } : {}),
+        ...(intent !== "all" ? { intent } : {}),
+        ...(severity !== "all" ? { severity } : {}),
+      },
+      {
+        // Cache hits are scoped to the input shape, so swapping filters resets
+        // the cursor cleanly. The server-supplied initial page is only the
+        // unfiltered list; reset to undefined so the first fetch matches the
+        // active filter rather than re-using a mismatched seed.
+        ...(status === "all" && intent === "all" && severity === "all"
+          ? { initialData: { pages: [initialData], pageParams: [undefined] } }
+          : {}),
         initialCursor: undefined,
         getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
         refetchInterval: 5000,
         refetchIntervalInBackground: false,
       }
     );
-  const items = data?.pages.flatMap((p) => p.items) ?? initialData.items;
+  const items = data?.pages.flatMap((p) => p.items) ?? [];
+
+  const filtersActive = status !== "all" || intent !== "all" || severity !== "all";
 
   const setSelected = useCallback(
     (id: string | null) => {
       const params = new URLSearchParams(searchParams.toString());
       if (id) params.set("a", id);
       else params.delete("a");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const setFilter = useCallback(
+    (key: "status" | "intent" | "severity", value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (value === "all") params.delete(key);
+      else params.set(key, value);
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
@@ -65,27 +128,50 @@ export function AnnotationsBrowser({
     </div>
   ) : null;
 
+  const filtersBar = (
+    <div className="mt-6">
+      <AnnotationFilters
+        status={status}
+        intent={intent}
+        severity={severity}
+        onStatusChange={(v) => setFilter("status", v)}
+        onIntentChange={(v) => setFilter("intent", v)}
+        onSeverityChange={(v) => setFilter("severity", v)}
+      />
+    </div>
+  );
+
   if (items.length === 0) {
     return (
       <>
+        {filtersBar}
         {staleBanner}
         <div className="mt-12 flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <MessageSquarePlus className="h-7 w-7" aria-hidden />
           </div>
-          <h2 className="mt-4 text-lg font-semibold">No annotations yet</h2>
+          <h2 className="mt-4 text-lg font-semibold">
+            {filtersActive ? "No annotations match these filters" : "No annotations yet"}
+          </h2>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Install the Remarks extension, open your site, and click any element to leave your first
-            annotation on this project. New annotations appear here grouped by the branch you picked
-            when you captured them.
+            {filtersActive
+              ? "Try clearing one of the filters above to widen the list."
+              : "Install the Remarks extension, open your site, and click any element to leave your first annotation on this project. New annotations appear here grouped by the branch you picked when you captured them."}
           </p>
         </div>
+        <AnnotationDetailSheet
+          selectedId={selectedId}
+          onOpenChange={(open) => {
+            if (!open) setSelected(null);
+          }}
+        />
       </>
     );
   }
 
   return (
     <>
+      {filtersBar}
       {staleBanner}
       <div className="mt-10 space-y-10">
         {groups.map((group) => (

@@ -1,5 +1,7 @@
 import {
+  type AnnotationIntent,
   type AnnotationResponse,
+  type AnnotationSeverity,
   type CreateAnnotationRequest,
   type PresignedUploadRequest,
   type PresignedUploadResponse,
@@ -58,6 +60,10 @@ export interface UploadAnnotationInput {
   // Caller guarantees non-null (button is disabled unless capture present).
   capture: Capture;
   commentText: string;
+  // ADR-0016: optional triage classifiers; both default to null when omitted
+  // (rendered as "uncategorized" everywhere).
+  intent?: AnnotationIntent | null;
+  severity?: AnnotationSeverity | null;
 }
 
 export async function uploadAnnotation(input: UploadAnnotationInput): Promise<AnnotationResponse> {
@@ -214,6 +220,11 @@ function buildCreateBody(
     viewport: input.capture.viewport,
     commentText: input.commentText,
     ...(screenshotAssetId ? { screenshotAssetId } : {}),
+    // CreateAnnotationRequest.intent / .severity are `optional` (undefined
+    // omitted when serialized). null isn't accepted by the create schema,
+    // so we drop a null-or-missing classifier here rather than ship it.
+    ...(input.intent ? { intent: input.intent } : {}),
+    ...(input.severity ? { severity: input.severity } : {}),
   };
   if (input.capture.kind === "element") {
     return {

@@ -1,8 +1,10 @@
 import { type DB, schema } from "@remarks/db";
 import {
   type AnnotationEventResponse,
+  type AnnotationIntent,
   type AnnotationListResponse,
   type AnnotationResponse,
+  type AnnotationSeverity,
   type AnnotationStatus,
   type CreateAnnotationRequest,
   type DomContextResponse,
@@ -228,6 +230,9 @@ export interface ListAnnotationsServiceQuery {
   // array directly so `remarks_list_tasks` can default to ["to_do","doing"]
   // (Phase 2 spec §3.2).
   statuses?: AnnotationStatus[] | undefined;
+  // G1/G2 multi-value filters. Same wrapping convention as `statuses`.
+  intents?: AnnotationIntent[] | undefined;
+  severities?: AnnotationSeverity[] | undefined;
   branch?: string | undefined;
   url?: string | undefined;
 }
@@ -281,10 +286,20 @@ export async function listAnnotations(
     query.statuses && query.statuses.length > 0
       ? inArray(schema.annotations.status, query.statuses)
       : undefined;
+  const intentPredicate =
+    query.intents && query.intents.length > 0
+      ? inArray(schema.annotations.intent, query.intents)
+      : undefined;
+  const severityPredicate =
+    query.severities && query.severities.length > 0
+      ? inArray(schema.annotations.severity, query.severities)
+      : undefined;
 
   const where = and(
     eq(schema.annotations.projectId, projectId),
     statusPredicate,
+    intentPredicate,
+    severityPredicate,
     branchFilterId ? eq(schema.annotations.branchId, branchFilterId) : undefined,
     query.url ? eq(schema.annotations.url, query.url) : undefined,
     cursorPredicate
@@ -342,6 +357,8 @@ export interface ListAnnotationsForUserArgs {
   query: {
     url?: string | undefined;
     statuses?: AnnotationStatus[] | undefined;
+    intents?: AnnotationIntent[] | undefined;
+    severities?: AnnotationSeverity[] | undefined;
     cursor?: string | undefined;
     limit: number;
     // Scope selector:
@@ -441,11 +458,21 @@ export async function listAnnotationsForUser(
     query.statuses && query.statuses.length > 0
       ? inArray(schema.annotations.status, query.statuses)
       : undefined;
+  const intentPredicate =
+    query.intents && query.intents.length > 0
+      ? inArray(schema.annotations.intent, query.intents)
+      : undefined;
+  const severityPredicate =
+    query.severities && query.severities.length > 0
+      ? inArray(schema.annotations.severity, query.severities)
+      : undefined;
 
   const where = and(
     visibilityPredicate,
     query.url ? eq(schema.annotations.url, query.url) : undefined,
     statusPredicate,
+    intentPredicate,
+    severityPredicate,
     cursorPredicate
   );
 
@@ -576,23 +603,37 @@ export async function updateAnnotation(
   const statusTransition = await db.transaction<StatusTransition | null>(async (tx) => {
     const current = await tx.query.annotations.findFirst({
       where: eq(schema.annotations.id, annotationId),
-      columns: { id: true, status: true, commentText: true, projectId: true },
+      columns: {
+        id: true,
+        status: true,
+        commentText: true,
+        projectId: true,
+        intent: true,
+        severity: true,
+      },
     });
     if (!current) throw new NotFoundError("Annotation");
 
     const statusChanged = input.status !== undefined && input.status !== current.status;
     const commentChanged =
       input.commentText !== undefined && input.commentText !== current.commentText;
+    // ADR-0018: undefined → no change; null clears; equal value is a no-op.
+    const intentChanged = input.intent !== undefined && input.intent !== current.intent;
+    const severityChanged = input.severity !== undefined && input.severity !== current.severity;
 
-    // Body validation already requires at least one field; if neither produces
+    // Body validation already requires at least one field; if no field produces
     // an actual change there's nothing to write and no event to emit.
-    if (!statusChanged && !commentChanged) return null;
+    if (!statusChanged && !commentChanged && !intentChanged && !severityChanged) {
+      return null;
+    }
 
     await tx
       .update(schema.annotations)
       .set({
         ...(statusChanged ? { status: input.status } : {}),
         ...(commentChanged ? { commentText: input.commentText } : {}),
+        ...(intentChanged ? { intent: input.intent ?? null } : {}),
+        ...(severityChanged ? { severity: input.severity ?? null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(schema.annotations.id, annotationId));
@@ -623,6 +664,26 @@ export async function updateAnnotation(
         actorOauthClientId: null,
         type: "comment_edited",
         payload: { previousLength: current.commentText.length },
+      });
+    }
+    if (intentChanged) {
+      await tx.insert(schema.annotationEvents).values({
+        annotationId,
+        actorType: "user",
+        actorId,
+        actorOauthClientId: null,
+        type: "intent_changed",
+        payload: { from: current.intent, to: input.intent ?? null },
+      });
+    }
+    if (severityChanged) {
+      await tx.insert(schema.annotationEvents).values({
+        annotationId,
+        actorType: "user",
+        actorId,
+        actorOauthClientId: null,
+        type: "severity_changed",
+        payload: { from: current.severity, to: input.severity ?? null },
       });
     }
 

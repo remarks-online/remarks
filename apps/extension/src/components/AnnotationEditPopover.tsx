@@ -1,11 +1,15 @@
 import { annotationStore, useAnnotationUi } from "@/lib/annotation-store";
 import { computePopoverPlacement } from "@/lib/popover-position";
 import { useShadowRootPortalContainer } from "@/lib/shadow-root-context";
-import { STATUS_LABEL } from "@/lib/status-ui";
+import { INTENT_LABEL, SEVERITY_LABEL, STATUS_LABEL } from "@/lib/status-ui";
 import { trpc } from "@/lib/trpc";
 import {
+  ANNOTATION_INTENTS,
+  ANNOTATION_SEVERITIES,
   ANNOTATION_STATUSES,
+  type AnnotationIntent,
   type AnnotationResponse,
+  type AnnotationSeverity,
   type AnnotationStatus,
 } from "@remarks/shared";
 import {
@@ -24,6 +28,9 @@ import { DomContextHeader } from "./DomContextHeader";
 
 const POPOVER_WIDTH = 320;
 const POPOVER_FALLBACK_HEIGHT = 240;
+
+// Sentinel for the Select "Unset" item; the schema accepts null to clear.
+const UNSET = "__unset__" as const;
 
 interface ViewportState {
   scrollX: number;
@@ -51,12 +58,16 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
 
   const [draft, setDraft] = useState<string>("");
   const [status, setStatus] = useState<AnnotationStatus>("to_do");
+  const [intent, setIntent] = useState<AnnotationIntent | null>(null);
+  const [severity, setSeverity] = useState<AnnotationSeverity | null>(null);
 
   // Reset the form whenever the selected annotation changes (open/swap).
   useEffect(() => {
     if (!annotation) return;
     setDraft(annotation.commentText);
     setStatus(annotation.status);
+    setIntent(annotation.intent);
+    setSeverity(annotation.severity);
   }, [annotation]);
 
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -137,16 +148,29 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
   if (!annotation) return null;
 
   const dirty =
-    draft.trim().length > 0 && (draft !== annotation.commentText || status !== annotation.status);
+    draft.trim().length > 0 &&
+    (draft !== annotation.commentText ||
+      status !== annotation.status ||
+      intent !== annotation.intent ||
+      severity !== annotation.severity);
   const canSubmit = dirty && draft.trim().length > 0 && !updateMutation.isPending;
 
   const screenshot = annotation.assets.find((a) => a.kind === "screenshot");
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    const input: { commentText?: string; status?: AnnotationStatus } = {};
+    const input: {
+      commentText?: string;
+      status?: AnnotationStatus;
+      intent?: AnnotationIntent | null;
+      severity?: AnnotationSeverity | null;
+    } = {};
     if (draft !== annotation.commentText) input.commentText = draft.trim();
     if (status !== annotation.status) input.status = status;
+    // intent / severity accept null to clear — send only when changed (else
+    // `undefined` means no-op per ADR-0018).
+    if (intent !== annotation.intent) input.intent = intent;
+    if (severity !== annotation.severity) input.severity = severity;
     updateMutation.mutate({ id: annotation.id, input });
   };
 
@@ -189,7 +213,7 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
         className="resize-none"
       />
       <Select value={status} onValueChange={(v) => setStatus(v as AnnotationStatus)}>
-        <SelectTrigger>
+        <SelectTrigger aria-label="Status">
           <SelectValue />
         </SelectTrigger>
         <SelectContent container={popoverRef.current ?? portalContainer}>
@@ -200,6 +224,40 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
           ))}
         </SelectContent>
       </Select>
+      <div className="flex gap-1.5">
+        <Select
+          value={intent ?? UNSET}
+          onValueChange={(v) => setIntent(v === UNSET ? null : (v as AnnotationIntent))}
+        >
+          <SelectTrigger aria-label="Intent" className="flex-1">
+            <SelectValue placeholder="Intent" />
+          </SelectTrigger>
+          <SelectContent container={popoverRef.current ?? portalContainer}>
+            <SelectItem value={UNSET}>Uncategorized</SelectItem>
+            {ANNOTATION_INTENTS.map((i) => (
+              <SelectItem key={i} value={i}>
+                {INTENT_LABEL[i]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={severity ?? UNSET}
+          onValueChange={(v) => setSeverity(v === UNSET ? null : (v as AnnotationSeverity))}
+        >
+          <SelectTrigger aria-label="Severity" className="flex-1">
+            <SelectValue placeholder="Severity" />
+          </SelectTrigger>
+          <SelectContent container={popoverRef.current ?? portalContainer}>
+            <SelectItem value={UNSET}>Uncategorized</SelectItem>
+            {ANNOTATION_SEVERITIES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {SEVERITY_LABEL[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {updateMutation.isError ? (
         <p className="text-[11px] text-destructive">{updateMutation.error.message}</p>
       ) : null}

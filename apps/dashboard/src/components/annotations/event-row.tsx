@@ -1,9 +1,23 @@
 "use client";
 
-import type { AnnotationEventResponse, AnnotationStatus } from "@remarks/shared";
-import { CheckCircle2, Edit3, MessageSquarePlus, Plus, Workflow } from "lucide-react";
+import type {
+  AnnotationEventResponse,
+  AnnotationIntent,
+  AnnotationSeverity,
+  AnnotationStatus,
+} from "@remarks/shared";
+import {
+  CheckCircle2,
+  CircleCheck,
+  Edit3,
+  Flag,
+  MessageSquarePlus,
+  Plus,
+  Tag,
+  Workflow,
+} from "lucide-react";
 import type { ReactNode } from "react";
-import { STATUS_LABEL } from "./status-ui";
+import { INTENT_LABEL, SEVERITY_LABEL, STATUS_LABEL } from "./status-ui";
 
 interface EventRowProps {
   event: AnnotationEventResponse;
@@ -59,6 +73,26 @@ function formatEvent(event: AnnotationEventResponse): FormattedEvent {
       return formatStatusChange(event, actor, "changed status");
     case "agent_updated_status":
       return formatStatusChange(event, actor, "updated status");
+    case "intent_changed": {
+      const from = event.payload.from as AnnotationIntent | null | undefined;
+      const to = event.payload.to as AnnotationIntent | null | undefined;
+      const fromLabel = from ? INTENT_LABEL[from] : "Uncategorized";
+      const toLabel = to ? INTENT_LABEL[to] : "Uncategorized";
+      return {
+        icon: <Tag className="h-4 w-4" />,
+        headline: `${actor} changed intent: ${fromLabel} → ${toLabel}`,
+      };
+    }
+    case "severity_changed": {
+      const from = event.payload.from as AnnotationSeverity | null | undefined;
+      const to = event.payload.to as AnnotationSeverity | null | undefined;
+      const fromLabel = from ? SEVERITY_LABEL[from] : "Uncategorized";
+      const toLabel = to ? SEVERITY_LABEL[to] : "Uncategorized";
+      return {
+        icon: <Flag className="h-4 w-4" />,
+        headline: `${actor} changed severity: ${fromLabel} → ${toLabel}`,
+      };
+    }
     case "comment_edited":
       return { icon: <Edit3 className="h-4 w-4" />, headline: `${actor} edited the comment` };
     case "comment_added":
@@ -70,7 +104,7 @@ function formatEvent(event: AnnotationEventResponse): FormattedEvent {
       return { icon: <CheckCircle2 className="h-4 w-4" />, headline: `${actor} resolved this` };
     case "agent_acknowledged":
       return {
-        icon: <Workflow className="h-4 w-4" />,
+        icon: <CircleCheck className="h-4 w-4" />,
         headline: `${actor} acknowledged this`,
       };
     case "agent_commented": {
