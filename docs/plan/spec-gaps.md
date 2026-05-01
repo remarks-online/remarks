@@ -120,7 +120,7 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 | # | Done when | Complete |
 |---|---|---|
-| A23 | Inngest scheduled function reaps R2 keys not referenced by `annotation_assets` within 24h of orphaning | [ ] |
+| A23 ✓ | Inngest scheduled function reaps R2 keys not referenced by `annotation_assets` within 24h of orphaning | [x] |
 
 - **Spec reference**: `docs/plan/remarks-phase-2-spec.md` line 846 (task 2.30 final clause: "nightly sweep reconciles R2 against the `annotation_assets` table to clean up Phase 1 orphans").
 - **Problem**: Issue #76 shipped on-delete cleanup for `deleteAnnotation` / `deleteProject` / `deleteOrg` but explicitly de-scoped the recurring sweeper. Phase 1 created R2 objects without on-delete cleanup, so any keys orphaned before issue #76 are still in the bucket; in steady state the sweeper is also the safety net for the rare case where Inngest publish fails after the DB delete commits (`apps/api/src/inngest/publish.ts` swallows + logs).
@@ -133,4 +133,4 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Affected tasks / components**: `apps/api/src/inngest/functions/r2-orphan-sweep.ts` (new), `apps/api/src/inngest/serve.ts` (register), test suite (integration vs MinIO).
 - **Dependencies**: After issue #76 (Inngest scaffold + on-delete cleanup).
 - **Estimated size**: `m`.
-- **Status**: `open`.
+- **Status**: `done in PR #91`.
