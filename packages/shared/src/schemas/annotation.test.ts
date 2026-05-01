@@ -122,6 +122,8 @@ describe("annotationResponseSchema", () => {
     branchName: "main",
     status: "to_do" as const,
     targetType: "element" as const,
+    intent: null,
+    severity: null,
     url: "https://example.com/page",
     targetSelector: "button.primary",
     targetCoords: null,

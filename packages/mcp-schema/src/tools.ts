@@ -136,7 +136,7 @@ export type UpdateTaskStatusOutput = z.infer<typeof updateTaskStatusOutputSchema
 const updateTaskStatusTool = {
   name: "remarks_update_task_status",
   description:
-    "Updates a task's status. Use `doing` when starting work, `done` when the code change is committed, `rejected` if the task cannot or should not be done. Include a `note` when rejecting to explain why. Always follow the sequence: to_do → doing → done. Skipping doing (to_do → done directly) is allowed but discouraged — it loses useful signal about when work was in progress.",
+    "Updates a task's status. Use `acknowledged` to confirm receipt of a task without committing to do it yet (useful when triaging a batch). Use `doing` when starting work, `done` when the code change is committed, `rejected` if the task cannot or should not be done. Include a `note` when rejecting to explain why. Typical sequence: to_do → (acknowledged →) doing → done. Skipping intermediate states is allowed but loses useful signal about progress.",
   input: updateTaskStatusInputSchema,
   output: updateTaskStatusOutputSchema,
 } as const;

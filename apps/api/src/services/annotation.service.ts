@@ -133,6 +133,10 @@ export async function createAnnotation(
         branchId,
         authorId: author.id,
         targetType: input.targetType,
+        // G1/G2: optional triage classifiers. Both default to null when the
+        // caller doesn't supply them.
+        intent: input.intent ?? null,
+        severity: input.severity ?? null,
         url: input.url,
         targetSelector: input.targetSelector ?? null,
         targetCoords: input.targetCoords ?? null,
@@ -730,6 +734,8 @@ function toAnnotationResponse(args: {
     branchName: row.projectId ? (branchName ?? null) : null,
     status: row.status,
     targetType: row.targetType,
+    intent: row.intent,
+    severity: row.severity,
     url: row.url,
     targetSelector: row.targetSelector,
     targetCoords: row.targetCoords ?? null,

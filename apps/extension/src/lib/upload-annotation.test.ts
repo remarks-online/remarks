@@ -60,6 +60,8 @@ function validAnnotationResponse(overrides: Record<string, unknown> = {}): Recor
     branchName: "main",
     status: "to_do",
     targetType: "element",
+    intent: null,
+    severity: null,
     url: "https://app.example.com/checkout",
     targetSelector: "main > button.submit",
     targetCoords: null,

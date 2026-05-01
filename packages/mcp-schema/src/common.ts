@@ -44,7 +44,9 @@ export type McpErrorPayload = z.infer<typeof mcpErrorPayloadSchema>;
 export const idempotencyKeySchema = z.string().uuid();
 
 // Subset of statuses agents may set; agents cannot reset to to_do (§3.2).
-export const AGENT_UPDATE_STATUSES = ["doing", "done", "rejected"] as const;
+// `acknowledged` (G3) lets the agent signal "I've read this task" without
+// committing to do the work yet — useful for triage and hands-free loops.
+export const AGENT_UPDATE_STATUSES = ["doing", "done", "rejected", "acknowledged"] as const;
 export type AgentUpdateStatus = (typeof AGENT_UPDATE_STATUSES)[number];
 export const agentUpdateStatusSchema = z.enum(AGENT_UPDATE_STATUSES);
 

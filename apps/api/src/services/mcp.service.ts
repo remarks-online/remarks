@@ -5,10 +5,11 @@ import { capture as captureAnalytics } from "../lib/posthog.js";
 import type { R2Client } from "../lib/r2.js";
 import { getAnnotationById } from "./annotation.service.js";
 
-// Subset of statuses agents may set (Phase 2 spec §3.2 update_task_status).
-// Agents cannot reset to to_do; the schema in @remarks/mcp-schema enforces
-// this at the wire layer, but the type here makes intent explicit.
-type AgentSettableStatus = "doing" | "done" | "rejected";
+// Subset of statuses agents may set (Phase 2 spec §3.2 update_task_status,
+// extended by G3 / ADR-0016 with `acknowledged`). Agents cannot reset to
+// to_do; the schema in @remarks/mcp-schema enforces this at the wire layer,
+// but the type here makes intent explicit.
+type AgentSettableStatus = "doing" | "done" | "rejected" | "acknowledged";
 
 // Subset of mcpCommentKindSchema in @remarks/mcp-schema. Re-stated here so
 // this service has no @remarks/mcp-schema dep (clean dependency direction:
@@ -159,7 +160,9 @@ export async function getMcpProjectContext(
   // dropped via HAVING. last_activity intentionally spans all statuses so a
   // branch where everything just shipped still surfaces if it later gets a
   // new open task.
-  const openCount = sql<number>`COUNT(*) FILTER (WHERE ${schema.annotations.status} IN ('to_do','doing'))`;
+  // "Open" includes `acknowledged` (G3): an agent has noticed the task but
+  // hasn't completed work, so it's still in-flight from a triage perspective.
+  const openCount = sql<number>`COUNT(*) FILTER (WHERE ${schema.annotations.status} IN ('to_do','doing','acknowledged'))`;
   // postgres-js parses timestamp *columns* into Date but doesn't infer the
   // type for raw aggregate expressions like MAX(...) — they come back as the
   // serialized string. Cast in SQL to ISO so the application layer doesn't
@@ -175,7 +178,9 @@ export async function getMcpProjectContext(
     .innerJoin(schema.annotations, eq(schema.annotations.branchId, schema.branches.id))
     .where(eq(schema.branches.projectId, projectId))
     .groupBy(schema.branches.id, schema.branches.name)
-    .having(sql`COUNT(*) FILTER (WHERE ${schema.annotations.status} IN ('to_do','doing')) > 0`)
+    .having(
+      sql`COUNT(*) FILTER (WHERE ${schema.annotations.status} IN ('to_do','doing','acknowledged')) > 0`
+    )
     .orderBy(desc(sql`MAX(${schema.annotations.updatedAt})`));
 
   return {
@@ -400,12 +405,16 @@ export async function agentUpdateAnnotationStatus(
       .set({ status, updatedAt: new Date() })
       .where(eq(schema.annotations.id, annotationId));
 
+    // G3: ack transitions get a dedicated event type so the dashboard can
+    // render "agent acknowledged" as a compact pill rather than a full
+    // status-change row. All other agent transitions stay as `agent_updated_status`.
+    const eventType = status === "acknowledged" ? "agent_acknowledged" : "agent_updated_status";
     await tx.insert(schema.annotationEvents).values({
       annotationId,
       actorType: "agent",
       actorId,
       actorOauthClientId: oauthClientName,
-      type: "agent_updated_status",
+      type: eventType,
       payload: {
         from: current.status,
         to: status,

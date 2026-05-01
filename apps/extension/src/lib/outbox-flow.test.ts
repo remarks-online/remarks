@@ -29,6 +29,8 @@ function validAnnotation(): AnnotationResponse {
     branchName: "main",
     status: "to_do",
     targetType: "element",
+    intent: null,
+    severity: null,
     url: "https://app.example.com/x",
     targetSelector: "button",
     targetCoords: null,

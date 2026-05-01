@@ -51,7 +51,12 @@ export const updateTaskStatusHandler: ToolHandler = async (args, ctx) => {
   // The API returns a broader status enum (includes "to_do") because the
   // table column is the full annotation status; agents only ever reach this
   // path with one of the agent-settable values, but Zod re-narrows on parse.
-  if (result.status !== "doing" && result.status !== "done" && result.status !== "rejected") {
+  if (
+    result.status !== "doing" &&
+    result.status !== "done" &&
+    result.status !== "rejected" &&
+    result.status !== "acknowledged"
+  ) {
     // Defensive: would mean the API returned a status the agent didn't
     // request, which shouldn't happen. Surface as INTERNAL so the agent
     // doesn't loop on a malformed response.

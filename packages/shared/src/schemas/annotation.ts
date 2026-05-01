@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  ANNOTATION_INTENTS,
+  ANNOTATION_SEVERITIES,
   ANNOTATION_STATUSES,
   ANNOTATION_TARGET_TYPES,
   ASSET_KINDS,
@@ -12,6 +14,10 @@ import {
 export const annotationStatusSchema = z.enum(ANNOTATION_STATUSES);
 
 export const annotationTargetTypeSchema = z.enum(ANNOTATION_TARGET_TYPES);
+
+export const annotationSeveritySchema = z.enum(ANNOTATION_SEVERITIES);
+
+export const annotationIntentSchema = z.enum(ANNOTATION_INTENTS);
 
 export const viewportSchema = z.object({
   width: z.number().int().positive(),
@@ -56,6 +62,10 @@ export const createAnnotationRequestSchema = z
     frameworkHint: z.string().optional(),
     commentText: z.string().min(1).max(MAX_COMMENT_LENGTH),
     screenshotAssetId: z.string().uuid().optional(),
+    // Optional triage classifiers (G1/G2). Both default to null; the dashboard
+    // and MCP read paths render a missing value as "uncategorized".
+    intent: annotationIntentSchema.optional(),
+    severity: annotationSeveritySchema.optional(),
   })
   .refine(
     (data) => {
@@ -83,6 +93,9 @@ export const annotationResponseSchema = z.object({
   branchName: z.string().nullable(),
   status: annotationStatusSchema,
   targetType: annotationTargetTypeSchema,
+  // G1/G2 triage classifiers. Null when the author left them unset.
+  intent: annotationIntentSchema.nullable(),
+  severity: annotationSeveritySchema.nullable(),
   url: z.string().url(),
   targetSelector: z.string().nullable(),
   targetCoords: rectSchema.nullable(),
