@@ -34,7 +34,7 @@ export function AnnotationPin({ annotationId, cx, cy, size = 28 }: Props) {
         annotationStore.getState().setSelected(annotationId);
       }}
       className={cn(
-        "absolute top-0 left-0 cursor-pointer border-0 bg-transparent p-0 transition-transform duration-150 ease-out",
+        "pointer-events-auto absolute top-0 left-0 cursor-pointer border-0 bg-transparent p-0 drop-shadow-md transition-transform duration-150 ease-out",
         "data-[hovered=true]:scale-125 data-[hovered=true]:drop-shadow-lg",
         "hover:scale-125 hover:drop-shadow-lg",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"

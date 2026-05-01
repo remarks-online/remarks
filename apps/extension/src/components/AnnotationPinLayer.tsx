@@ -105,11 +105,7 @@ export function AnnotationPinLayer({ projectId, branch }: Props) {
 
   return (
     <>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0"
-        style={{ zIndex: 2147483645 }}
-      >
+      <div className="pointer-events-none fixed inset-0" style={{ zIndex: 2147483645 }}>
         {visible.map((pin) => (
           <AnnotationPin
             key={pin.id}

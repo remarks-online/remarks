@@ -148,15 +148,21 @@ function ThreadItem({ annotation, compact }: ThreadItemProps) {
   const date = new Date(annotation.createdAt);
   const hovered = useAnnotationUi((s) => s.hoveredAnnotationId === annotation.id);
 
+  const open = () => annotationStore.getState().setSelected(annotation.id);
+
   return (
-    <article
+    <button
+      type="button"
       className={cn(
-        "flex items-start gap-2 rounded-md border bg-card p-2 text-card-foreground transition-colors",
+        "flex w-full cursor-pointer items-start gap-2 rounded-md border bg-card p-2 text-left text-card-foreground transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         hovered ? "border-primary bg-primary/5" : "border-border"
       )}
-      aria-label={`Annotation by ${authorLabel}`}
+      data-remarks-thread-item={annotation.id}
+      aria-label={`Open annotation by ${authorLabel}`}
       onMouseEnter={() => annotationStore.getState().setHovered(annotation.id)}
       onMouseLeave={() => annotationStore.getState().setHovered(null)}
+      onClick={open}
     >
       {screenshot ? (
         <img
@@ -195,6 +201,6 @@ function ThreadItem({ annotation, compact }: ThreadItemProps) {
           <p className="mt-1 truncate text-[11px] text-muted-foreground">{hostname}</p>
         ) : null}
       </div>
-    </article>
+    </button>
   );
 }
