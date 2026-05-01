@@ -200,7 +200,9 @@ describe("uploadAnnotation", () => {
       viewport: { width: 1920, height: 1080, dpr: 2 },
     });
     expect(createBody.domContext).toBeDefined();
-    expect(createBody.targetCoords).toBeUndefined();
+    // Element captures send the bounding rect at capture time so the on-page
+    // pin marker can render without re-resolving the selector.
+    expect(createBody.targetCoords).toEqual({ x: 100, y: 200, width: 80, height: 40 });
   });
 
   test("happy path with rect capture maps kind 'rect' → targetType 'rectangle'", async () => {

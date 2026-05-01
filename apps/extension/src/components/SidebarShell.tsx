@@ -1,3 +1,4 @@
+import { AnnotationPinLayer } from "@/components/AnnotationPinLayer";
 import { CapturePromptPopover } from "@/components/CapturePromptPopover";
 import { SidebarBranchSelector } from "@/components/SidebarBranchSelector";
 import { SidebarCapturePanel } from "@/components/SidebarCapturePanel";
@@ -257,6 +258,7 @@ function SidebarBody({ projectId, token, clerkOrgId, compact }: SidebarBodyProps
 
   return (
     <>
+      <AnnotationPinLayer projectId={projectId} branch={projectId ? branch : null} />
       {projectId ? <SidebarBranchSelector value={branch} onChange={onBranchChange} /> : null}
       <SidebarStatusTabs compact={compact} />
       <div className="flex-1 overflow-y-auto">

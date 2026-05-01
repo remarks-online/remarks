@@ -348,6 +348,15 @@ function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
           </dd>
         </>
       ) : null}
+      {annotation.targetCoords ? (
+        <>
+          <dt className="text-muted-foreground">Position</dt>
+          <dd>
+            {Math.round(annotation.targetCoords.x)}, {Math.round(annotation.targetCoords.y)} ·{" "}
+            {Math.round(annotation.targetCoords.width)}×{Math.round(annotation.targetCoords.height)}
+          </dd>
+        </>
+      ) : null}
       <dt className="text-muted-foreground">Viewport</dt>
       <dd>
         {annotation.viewport.width}×{annotation.viewport.height} @ {annotation.viewport.dpr}×

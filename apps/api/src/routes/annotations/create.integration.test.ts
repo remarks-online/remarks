@@ -324,6 +324,31 @@ describe("POST /projects/:projectId/annotations (integration)", () => {
     expect(res.json().error.code).toBe("NOT_FOUND");
   });
 
+  test("element targetType with targetCoords → 201, coords round-trip in response", async () => {
+    const { orgClerkId, userClerkId, projectId } = await seedProjectWithMember({
+      role: "editor",
+    });
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+
+    const targetCoords = { x: 120, y: 480, width: 96, height: 32 };
+    const res = await server.inject({
+      method: "POST",
+      url: `/projects/${projectId}/annotations`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: baseAnnotationPayload({ targetCoords }),
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      targetType: "element",
+      targetSelector: "body > main > button.submit",
+      targetCoords,
+    });
+  });
+
   test("element targetType without targetSelector → 400 VALIDATION_ERROR", async () => {
     const { orgClerkId, userClerkId, projectId } = await seedProjectWithMember({
       role: "editor",
