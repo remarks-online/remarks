@@ -112,9 +112,10 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
       if (!popoverRef.current) return;
       const path = event.composedPath();
       if (path.includes(popoverRef.current)) return;
-      // Clicking another pin should re-target, not close-then-open.
+      // Clicking another pin or another panel row should re-target, not close-then-open.
       const target = event.target as Element | null;
       if (target?.closest?.("[data-remarks-pin]")) return;
+      if (target?.closest?.("[data-remarks-thread-item]")) return;
       close();
     };
     window.addEventListener("keydown", onKey);
