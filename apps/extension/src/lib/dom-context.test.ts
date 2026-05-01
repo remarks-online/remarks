@@ -1,6 +1,6 @@
 import { MAX_TEXT_CONTENT_LENGTH, domContextSchema } from "@remarks/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildDomContext } from "./dom-context";
+import { buildDomContext, compactHoverStyles } from "./dom-context";
 import { q } from "./test-utils";
 
 afterEach(() => {
@@ -78,6 +78,60 @@ describe("buildDomContext", () => {
     const ctx = buildDomContext(q("div"));
     if (ctx.computedStyles) {
       expect(Object.keys(ctx.computedStyles).length).toBeLessThanOrEqual(40);
+    }
+  });
+});
+
+describe("compactHoverStyles", () => {
+  it("returns only the hover-tooltip subset of properties", () => {
+    document.body.innerHTML = [
+      '<div style="',
+      "display: flex;",
+      "color: rgb(255, 0, 0);",
+      "background-color: rgb(0, 0, 255);",
+      "padding: 8px;",
+      "font-family: Helvetica;",
+      "font-size: 14px;",
+      "font-weight: 700;",
+      "margin: 4px;",
+      '"></div>',
+    ].join("");
+    const styles = compactHoverStyles(q("div"));
+    expect(styles).toBeDefined();
+    // Hover whitelist is intentionally narrower than the post-pick whitelist.
+    expect(styles?.display).toBeUndefined();
+    expect(styles?.color).toBe("rgb(255, 0, 0)");
+    expect(styles?.["background-color"]).toBe("rgb(0, 0, 255)");
+    expect(styles?.padding).toBe("8px");
+    expect(styles?.margin).toBe("4px");
+    expect(styles?.["font-family"]).toBe("Helvetica");
+    expect(styles?.["font-size"]).toBe("14px");
+    expect(styles?.["font-weight"]).toBe("700");
+  });
+
+  it("drops noise values like 'auto' / 'none'", () => {
+    document.body.innerHTML = '<div style="margin: auto; background-color: none;"></div>';
+    const styles = compactHoverStyles(q("div"));
+    if (styles) {
+      expect(styles.margin).toBeUndefined();
+      expect(styles["background-color"]).toBeUndefined();
+    }
+  });
+
+  it("returns undefined when nothing meaningful remains", () => {
+    document.body.innerHTML = "<div></div>";
+    const el = q<HTMLDivElement>("div");
+    // Force every property to a noise value to simulate an unstyled element.
+    const view = el.ownerDocument.defaultView;
+    if (!view) throw new Error("defaultView missing in jsdom");
+    const original = view.getComputedStyle.bind(view);
+    view.getComputedStyle = (() => ({
+      getPropertyValue: () => "none",
+    })) as unknown as typeof view.getComputedStyle;
+    try {
+      expect(compactHoverStyles(el)).toBeUndefined();
+    } finally {
+      view.getComputedStyle = original;
     }
   });
 });

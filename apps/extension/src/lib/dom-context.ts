@@ -57,6 +57,18 @@ const COMPUTED_STYLE_PROPS = [
 // Default-equivalent values that add no signal — drop to keep the panel scannable.
 const NOISE_VALUES = new Set(["", "none", "normal", "auto", "rgba(0, 0, 0, 0)"]);
 
+// Compact subset rendered in the hover tooltip while picking. Keeps the
+// floating panel ≤ 7 rows so it doesn't dominate the cursor.
+const HOVER_STYLE_PROPS = [
+  "font-family",
+  "font-size",
+  "font-weight",
+  "color",
+  "background-color",
+  "padding",
+  "margin",
+] as const;
+
 function tagName(el: Element): string {
   return el.namespaceURI === "http://www.w3.org/2000/svg" ? el.tagName : el.tagName.toLowerCase();
 }
@@ -77,20 +89,32 @@ function snapshotAncestor(el: Element): AncestorSnapshot {
   return classes.length > 0 ? { tagName: tagName(el), classes } : { tagName: tagName(el) };
 }
 
-function computedStyles(el: Element): Record<string, string> | undefined {
+function pickStyles(
+  el: Element,
+  props: readonly string[],
+  max: number
+): Record<string, string> | undefined {
   const view = el.ownerDocument?.defaultView;
   if (!view) return undefined;
   const style = view.getComputedStyle(el);
   const out: Record<string, string> = {};
   let count = 0;
-  for (const prop of COMPUTED_STYLE_PROPS) {
-    if (count >= MAX_COMPUTED_STYLE_KEYS) break;
+  for (const prop of props) {
+    if (count >= max) break;
     const value = style.getPropertyValue(prop).trim();
     if (NOISE_VALUES.has(value)) continue;
     out[prop] = value;
     count++;
   }
   return count > 0 ? out : undefined;
+}
+
+function computedStyles(el: Element): Record<string, string> | undefined {
+  return pickStyles(el, COMPUTED_STYLE_PROPS, MAX_COMPUTED_STYLE_KEYS);
+}
+
+export function compactHoverStyles(el: Element): Record<string, string> | undefined {
+  return pickStyles(el, HOVER_STYLE_PROPS, HOVER_STYLE_PROPS.length);
 }
 
 export function buildDomContext(el: Element): DomContext {

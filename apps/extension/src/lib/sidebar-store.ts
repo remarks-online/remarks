@@ -33,6 +33,7 @@ export interface PersistedSidebarPrefs {
   width: number;
   height: number;
   theme: Theme;
+  showHoverStyles: boolean;
 }
 
 export interface SidebarState extends PersistedSidebarPrefs {
@@ -49,6 +50,7 @@ export interface SidebarState extends PersistedSidebarPrefs {
   setWidth: (width: number) => void;
   setHeight: (height: number) => void;
   setTheme: (theme: Theme) => void;
+  setShowHoverStyles: (show: boolean) => void;
   setStatusFilter: (filter: StatusFilter) => void;
   setIntentFilter: (filter: IntentFilter) => void;
   setSeverityFilter: (filter: SeverityFilter) => void;
@@ -65,6 +67,7 @@ export const SIDEBAR_DEFAULTS: PersistedSidebarPrefs = {
   width: 360,
   height: 280,
   theme: "auto",
+  showHoverStyles: false,
 };
 
 export const sidebarStore = createStore<SidebarState>((set, get) => ({
@@ -81,6 +84,7 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
   setWidth: (width) => set({ width: clampWidth(width) }),
   setHeight: (height) => set({ height: clampHeight(height) }),
   setTheme: (theme) => set({ theme }),
+  setShowHoverStyles: (showHoverStyles) => set({ showHoverStyles }),
   setStatusFilter: (statusFilter) => set({ statusFilter }),
   setIntentFilter: (intentFilter) => set({ intentFilter }),
   setSeverityFilter: (severityFilter) => set({ severityFilter }),
@@ -94,6 +98,7 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
       width: clampWidth(prefs.width),
       height: clampHeight(prefs.height),
       theme: prefs.theme,
+      showHoverStyles: prefs.showHoverStyles ?? SIDEBAR_DEFAULTS.showHoverStyles,
     }),
   reset: () =>
     set({
@@ -118,5 +123,6 @@ export function getPersistablePrefs(state: SidebarState): PersistedSidebarPrefs 
     width: state.width,
     height: state.height,
     theme: state.theme,
+    showHoverStyles: state.showHoverStyles,
   };
 }
