@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - "apps/extension/**"
+      # Edits to this workflow itself should also trigger a release — otherwise
+      # bug fixes to the build/upload steps land on main but never run, and
+      # the broken artifact stays on R2 until someone happens to push an
+      # apps/extension change. Use `[skip ci]` in the commit message to suppress.
+      - ".github/workflows/extension-release.yml"
       - "!apps/extension/scripts/release.mjs"
       - "!apps/extension/scripts/README.md"
       - "!apps/extension/**/*.md"
