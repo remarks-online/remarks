@@ -448,6 +448,11 @@ function frameworkLabel(hint: string): string {
 function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
   const authorLabel = annotation.author.name ?? annotation.author.email ?? "Unknown";
   const reactComponents = annotation.domContext?.reactComponents ?? null;
+  // G14: pick the leaf-most component that carries `_debugSource`. Minified
+  // wrappers and host-style HOCs often have no source on the leaf even when a
+  // parent does, so a `find` on the chain (which is leaf-to-root per ADR-0019)
+  // beats picking index 0.
+  const sourceComponent = reactComponents?.find((c) => c.source) ?? null;
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
       <dt className="text-muted-foreground">Branch</dt>
@@ -498,6 +503,17 @@ function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
                 </span>
               );
             })}
+          </dd>
+        </>
+      ) : null}
+      {sourceComponent?.source ? (
+        <>
+          <dt className="text-muted-foreground">Source</dt>
+          <dd className="break-all font-mono">
+            {sourceComponent.source.fileName}:{sourceComponent.source.lineNumber}
+            {sourceComponent.source.columnNumber !== null
+              ? `:${sourceComponent.source.columnNumber}`
+              : ""}
           </dd>
         </>
       ) : null}
