@@ -184,7 +184,9 @@ export default function PrivacyPage() {
           <li>Detect, investigate, and prevent abuse, fraud, or security incidents.</li>
           <li>Provide customer support.</li>
           <li>Improve the Service through aggregate analytics and debugging.</li>
-          <li>Comply with legal obligations and enforce our agreements.</li>
+          <li>
+            Comply with legal obligations and enforce <Link href="/terms">our agreements</Link>.
+          </li>
           <li>Communicate with you about the Service (transactional notices, security alerts).</li>
         </ul>
         <p>
@@ -226,8 +228,9 @@ export default function PrivacyPage() {
         <p>
           We engage third-party service providers (&ldquo;
           <strong>subprocessors</strong>&rdquo;) to operate the Service. Each subprocessor is bound
-          by a written agreement (Data Processing Addendum, or &ldquo;DPA&rdquo;) that requires them
-          to process personal data only on our instructions and to safeguard it appropriately.
+          by a written agreement (
+          <Link href="/dpa">Data Processing Addendum, or &ldquo;DPA&rdquo;</Link>) that requires
+          them to process personal data only on our instructions and to safeguard it appropriately.
         </p>
         <p>Current subprocessors:</p>
         <ul>
