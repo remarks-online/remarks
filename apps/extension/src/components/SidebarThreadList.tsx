@@ -1,3 +1,4 @@
+import { annotationStore, useAnnotationUi } from "@/lib/annotation-store";
 import { useSidebar } from "@/lib/sidebar-store";
 import { STATUS_DOT_CLASS, STATUS_LABEL, authorInitials, safeHostname } from "@/lib/status-ui";
 import { trpc } from "@/lib/trpc";
@@ -145,11 +146,17 @@ function ThreadItem({ annotation, compact }: ThreadItemProps) {
   const authorLabel = annotation.author.name ?? annotation.author.email ?? "Unknown";
   const hostname = safeHostname(annotation.url);
   const date = new Date(annotation.createdAt);
+  const hovered = useAnnotationUi((s) => s.hoveredAnnotationId === annotation.id);
 
   return (
     <article
-      className="flex items-start gap-2 rounded-md border border-border bg-card p-2 text-card-foreground"
+      className={cn(
+        "flex items-start gap-2 rounded-md border bg-card p-2 text-card-foreground transition-colors",
+        hovered ? "border-primary bg-primary/5" : "border-border"
+      )}
       aria-label={`Annotation by ${authorLabel}`}
+      onMouseEnter={() => annotationStore.getState().setHovered(annotation.id)}
+      onMouseLeave={() => annotationStore.getState().setHovered(null)}
     >
       {screenshot ? (
         <img

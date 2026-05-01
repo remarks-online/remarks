@@ -215,6 +215,9 @@ function buildCreateBody(
       ...base,
       targetType: "element",
       targetSelector: input.capture.selector,
+      // Anchor for the on-page pin marker. Selector stays primary; coords are
+      // a fallback when the selector breaks after a deploy.
+      targetCoords: input.capture.targetCoords,
       domContext: input.capture.domContext,
     };
   }
