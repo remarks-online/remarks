@@ -223,6 +223,18 @@ export async function fetchListOrgAnnotations(
   );
 }
 
+// G8b: cross-scope (personal + every member project, regardless of org). Backs
+// `remarks_get_all_pending`. Mirrors the personal/org helpers above.
+export async function fetchListAllAnnotations(
+  clerkUserId: string,
+  params: ListUserAnnotationsParams
+): Promise<AnnotationListResponse | null> {
+  return getJson<AnnotationListResponse>(
+    `/internal/mcp/users/${encodeURIComponent(clerkUserId)}/all-annotations${buildUserListQuery(params)}`,
+    "all annotation list"
+  );
+}
+
 export interface McpAnnotationRow extends AnnotationResponse {
   frameworkHint: string | null;
 }

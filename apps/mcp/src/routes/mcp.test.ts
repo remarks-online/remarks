@@ -174,7 +174,7 @@ describe("POST /mcp", () => {
     expect(response.headers["www-authenticate"]).toContain("oauth-protected-resource");
   });
 
-  it("tools/list returns all 8 Remarks tools with their names", async () => {
+  it("tools/list returns all 12 Remarks tools with their names", async () => {
     const response = await server.inject({
       method: "POST",
       url: "/mcp",
@@ -202,11 +202,15 @@ describe("POST /mcp", () => {
         "remarks_get_project_context",
         "remarks_update_task_status",
         "remarks_add_task_comment",
+        "remarks_acknowledge",
+        "remarks_dismiss",
+        "remarks_get_pending",
+        "remarks_get_all_pending",
         "remarks_batch_update_status",
         "remarks_open_pr",
       ])
     );
-    expect(names).toHaveLength(8);
+    expect(names).toHaveLength(12);
   });
 
   it("tools/call remarks_whoami routes through the handler", async () => {
