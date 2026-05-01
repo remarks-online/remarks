@@ -2,6 +2,7 @@ import {
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   type S3ClientConfig,
@@ -126,6 +127,42 @@ export async function deleteObjects(client: R2Client, keys: string[]): Promise<v
       Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
     })
   );
+}
+
+export interface R2ObjectSummary {
+  key: string;
+  lastModified: Date;
+  size: number;
+}
+
+// Async generator yielding one ListObjectsV2 page (≤1000 keys) at a time so
+// the caller can stream the bucket without buffering it. Drives pagination
+// with NextContinuationToken until IsTruncated is false. Entries missing
+// Key or LastModified are skipped — the SDK types them optional but in
+// practice both are always set.
+export async function* listAllObjects(
+  client: R2Client
+): AsyncGenerator<R2ObjectSummary[], void, void> {
+  let continuationToken: string | undefined;
+  do {
+    const res = await client.s3.send(
+      new ListObjectsV2Command({
+        Bucket: client.bucket,
+        ContinuationToken: continuationToken,
+      })
+    );
+    const page: R2ObjectSummary[] = [];
+    for (const obj of res.Contents ?? []) {
+      if (!obj.Key || !obj.LastModified) continue;
+      page.push({
+        key: obj.Key,
+        lastModified: obj.LastModified,
+        size: obj.Size ?? 0,
+      });
+    }
+    if (page.length > 0) yield page;
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (continuationToken);
 }
 
 // Returns null when the object does not exist (404/NotFound). Other errors
