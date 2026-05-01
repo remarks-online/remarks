@@ -2,6 +2,7 @@ import type { ClerkClient } from "@clerk/backend";
 import { RemarksError, ValidationError } from "@remarks/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { env } from "../env.js";
 
 const mocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
@@ -137,6 +138,42 @@ describe("auth plugin", () => {
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("UNAUTHORIZED");
     expect(mocks.findFirst).not.toHaveBeenCalled();
+  });
+
+  test("rejects tokens whose `azp` claim is not in the allowlist (A11)", async () => {
+    // Clerk's verifyToken throws when the token's `azp` doesn't match
+    // `authorizedParties`. We mock that rejection and assert the auth plugin
+    // surfaces a 401 — Clerk's SDK is the one enforcing the check, so the
+    // sibling test below guarantees we're actually passing the allowlist in.
+    mocks.verifyToken.mockRejectedValueOnce(new Error("Invalid 'azp' claim. Expected one of: ..."));
+    const res = await server.inject({
+      method: "GET",
+      url: "/_protected",
+      headers: { authorization: "Bearer evil.azp.token" },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("UNAUTHORIZED");
+    expect(mocks.findFirst).not.toHaveBeenCalled();
+  });
+
+  test("passes authorizedParties from env to verifyToken (A11)", async () => {
+    // The reject-path test covers what happens when verifyToken rejects, but
+    // the *security* of the mitigation depends on us actually handing Clerk
+    // the allowlist. Assert the SDK was invoked with our env's parsed array.
+    mocks.verifyToken.mockResolvedValueOnce({ sub: "user_123" });
+    mocks.findFirst.mockResolvedValueOnce(SAMPLE_USER);
+    mocks.getOrganizationMembershipList.mockResolvedValueOnce({ data: [] });
+    const res = await server.inject({
+      method: "GET",
+      url: "/_protected",
+      headers: { authorization: "Bearer valid.token" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.verifyToken).toHaveBeenCalledWith(
+      "valid.token",
+      expect.objectContaining({ authorizedParties: env.CLERK_AUTHORIZED_PARTIES })
+    );
+    expect(env.CLERK_AUTHORIZED_PARTIES.length).toBeGreaterThan(0);
   });
 
   test("lazily provisions the user when no DB row exists, then proceeds", async () => {

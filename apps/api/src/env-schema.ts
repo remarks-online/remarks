@@ -11,6 +11,22 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   CLERK_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
   CLERK_SECRET_KEY: z.string().startsWith("sk_"),
+  // Comma-separated allowlist of `azp` (authorized party) origins that issued
+  // session JWTs are accepted from. Passed to @clerk/backend `verifyToken`.
+  // Mitigates Clerk's "subdomain cookie leaking attack" — a token minted for
+  // some other application on a Clerk subdomain replayed against our API. See
+  // https://clerk.com/docs/reference/backend/verify-token. Required in every
+  // environment; must include the dashboard origin and the extension origin.
+  CLERK_AUTHORIZED_PARTIES: z
+    .string()
+    .min(1)
+    .transform((s) =>
+      s
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean)
+    )
+    .pipe(z.array(z.string().min(1)).min(1)),
   // Shared secret carried on every internal MCP→API call (`x-internal-auth`
   // header). The MCP server reads the same value from its own env and the
   // /internal/* scope refuses requests that don't match. Phase 2 spec §5.4.

@@ -122,6 +122,11 @@ jobs:
       # picks up the resulting session.
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      # authorizedParties allowlist for the API's @clerk/backend verifyToken
+      # call (A11). Required by env-schema; the dashboard webServer + extension
+      # popup both sign in against this dev Clerk instance, so the dashboard
+      # origin and the canonical extension ID must both be allowed.
+      CLERK_AUTHORIZED_PARTIES: http://localhost:3000,chrome-extension://baikikfefeheiildmfoaicbjbnbecgjd
       # Webhook secret — never invoked in this suite, but the api initializes
       # standardwebhooks' Webhook(secret) at module load (apps/api/src/routes/webhooks/clerk.ts),
       # which base64-decodes the secret eagerly. The placeholder must be valid
