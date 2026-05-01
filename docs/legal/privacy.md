@@ -120,7 +120,7 @@ We use the information we collect for the following purposes:
 | Detect, investigate, and prevent abuse, fraud, or security incidents | Account, technical data, request logs |
 | Provide customer support                | Account, user content (when shared by the user)           |
 | Improve the Service (aggregate analytics, debugging) | Technical data, request logs, anonymized usage events |
-| Comply with legal obligations and enforce our agreements | All categories as required                |
+| Comply with legal obligations and enforce [our agreements](/terms) | All categories as required      |
 | Communicate with you about the Service (transactional notices, security alerts) | Account |
 
 We do **not** use your information to serve advertising, retarget you on
@@ -152,9 +152,9 @@ We share information only as described below.
 ### 6.1 Service providers and subprocessors
 
 We engage third-party service providers ("**subprocessors**") to operate
-the Service. Each subprocessor is bound by a written agreement (Data
-Processing Addendum, or "DPA") that requires them to process personal data
-only on our instructions and to safeguard it appropriately.
+the Service. Each subprocessor is bound by a written agreement
+([Data Processing Addendum, or "DPA"](/dpa)) that requires them to process
+personal data only on our instructions and to safeguard it appropriately.
 
 Current subprocessors:
 
@@ -187,7 +187,7 @@ We may disclose information:
   before disclosure.
 - **To protect rights, property, and safety.** To investigate, prevent, or
   take action regarding suspected fraud, security incidents, violations of
-  our Terms of Service, or harm to others.
+  our [Terms of Service](/terms), or harm to others.
 - **In a corporate transaction.** If Remarks is involved in a merger,
   acquisition, financing, reorganization, bankruptcy, or sale of assets,
   information may be transferred to the successor entity. We will notify

@@ -24,9 +24,12 @@ export default function HomePage() {
           </Link>
         </SignedIn>
       </div>
-      <footer className="mt-24 text-sm text-slate-500">
+      <footer className="mt-24 flex gap-4 text-sm text-slate-500">
         <Link href="/privacy" className="hover:text-slate-900">
           Privacy Policy
+        </Link>
+        <Link href="/terms" className="hover:text-slate-900">
+          Terms of Service
         </Link>
       </footer>
     </main>
