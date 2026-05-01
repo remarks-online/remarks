@@ -229,6 +229,52 @@ describe("uploadAnnotation", () => {
     expect(createBody.targetCoords).toEqual({ x: 100, y: 200, width: 80, height: 40 });
   });
 
+  test("intent and severity flow into the create body when set", async () => {
+    const { calls } = installFetchSequence([
+      jsonResponse({ status: 201, body: validPresignResponse() }),
+      emptyResponse(200),
+      jsonResponse({ status: 201, body: validAnnotationResponse() }),
+    ]);
+
+    await uploadAnnotation({
+      token: TOKEN,
+      apiUrl: API_URL,
+      projectId: PROJECT_ID,
+      branch: "main",
+      capture: makeElementCapture(),
+      commentText: "Hi",
+      intent: "fix",
+      severity: "blocking",
+    });
+
+    const createBody = parseJsonBody(calls[2]?.init ?? {});
+    expect(createBody.intent).toBe("fix");
+    expect(createBody.severity).toBe("blocking");
+  });
+
+  test("null intent/severity are omitted from the create body", async () => {
+    const { calls } = installFetchSequence([
+      jsonResponse({ status: 201, body: validPresignResponse() }),
+      emptyResponse(200),
+      jsonResponse({ status: 201, body: validAnnotationResponse() }),
+    ]);
+
+    await uploadAnnotation({
+      token: TOKEN,
+      apiUrl: API_URL,
+      projectId: PROJECT_ID,
+      branch: "main",
+      capture: makeElementCapture(),
+      commentText: "Hi",
+      intent: null,
+      severity: null,
+    });
+
+    const createBody = parseJsonBody(calls[2]?.init ?? {});
+    expect("intent" in createBody).toBe(false);
+    expect("severity" in createBody).toBe(false);
+  });
+
   test("happy path with rect capture maps kind 'rect' → targetType 'rectangle'", async () => {
     const { calls } = installFetchSequence([
       jsonResponse({ status: 201, body: validPresignResponse() }),

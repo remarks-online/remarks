@@ -1,7 +1,7 @@
 # 0016. Annotation schema v1 — intent, severity, and the acknowledged status
 
 Date: 2026-04-30
-Status: Accepted
+Status: Accepted (the immutability clause in § 5 superseded by ADR-0018; the rest stands)
 
 ## Context
 

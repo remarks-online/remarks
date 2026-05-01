@@ -1,15 +1,40 @@
 import { type Capture, pickerStore, usePicker } from "@/lib/picker-store";
 import { type DocRect, computePopoverPlacement } from "@/lib/popover-position";
+import { useShadowRootPortalContainer } from "@/lib/shadow-root-context";
 import { sidebarStore, useSidebar } from "@/lib/sidebar-store";
-import { Button, cn } from "@remarks/ui";
+import { INTENT_LABEL, SEVERITY_LABEL } from "@/lib/status-ui";
+import {
+  ANNOTATION_INTENTS,
+  ANNOTATION_SEVERITIES,
+  type AnnotationIntent,
+  type AnnotationSeverity,
+} from "@remarks/shared";
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  cn,
+} from "@remarks/ui";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DomContextHeader } from "./DomContextHeader";
 
 const POPOVER_WIDTH = 320;
 const POPOVER_FALLBACK_HEIGHT = 220;
 
+// Sentinel for the optional Intent / Severity selects; the schema accepts
+// null / undefined to mean "uncategorized".
+const UNSET = "__unset__" as const;
+
+export interface DraftClassifiers {
+  intent: AnnotationIntent | null;
+  severity: AnnotationSeverity | null;
+}
+
 interface Props {
-  onSubmit: (text: string, capture: Capture) => void;
+  onSubmit: (text: string, capture: Capture, classifiers: DraftClassifiers) => void;
 }
 
 function targetDocRectFor(capture: Capture): DocRect {
@@ -23,6 +48,9 @@ export function CapturePromptPopover({ onSubmit }: Props) {
   const capture = usePicker((s) => s.capture);
   const dismissed = usePicker((s) => s.popoverDismissed);
   const draft = useSidebar((s) => s.draftComment);
+  const draftIntent = useSidebar((s) => s.draftIntent);
+  const draftSeverity = useSidebar((s) => s.draftSeverity);
+  const portalContainer = useShadowRootPortalContainer();
 
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -107,11 +135,14 @@ export function CapturePromptPopover({ onSubmit }: Props) {
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(draft.trim(), capture);
+    onSubmit(draft.trim(), capture, { intent: draftIntent, severity: draftSeverity });
   };
 
   function handleDiscard() {
-    sidebarStore.getState().setDraftComment("");
+    const store = sidebarStore.getState();
+    store.setDraftComment("");
+    store.setDraftIntent(null);
+    store.setDraftSeverity(null);
     pickerStore.getState().clearCapture();
   }
 
@@ -152,6 +183,56 @@ export function CapturePromptPopover({ onSubmit }: Props) {
           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         )}
       />
+      <div className="flex gap-1.5">
+        <Select
+          value={draftIntent ?? UNSET}
+          onValueChange={(v) =>
+            sidebarStore.getState().setDraftIntent(v === UNSET ? null : (v as AnnotationIntent))
+          }
+        >
+          <SelectTrigger
+            aria-label="Intent"
+            className="h-8 flex-1 text-xs"
+            data-testid="capture-intent-select"
+          >
+            <SelectValue placeholder="Intent" />
+          </SelectTrigger>
+          <SelectContent container={popoverRef.current ?? portalContainer}>
+            <SelectItem value={UNSET} className="text-xs">
+              Intent: uncategorized
+            </SelectItem>
+            {ANNOTATION_INTENTS.map((i) => (
+              <SelectItem key={i} value={i} className="text-xs">
+                {INTENT_LABEL[i]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={draftSeverity ?? UNSET}
+          onValueChange={(v) =>
+            sidebarStore.getState().setDraftSeverity(v === UNSET ? null : (v as AnnotationSeverity))
+          }
+        >
+          <SelectTrigger
+            aria-label="Severity"
+            className="h-8 flex-1 text-xs"
+            data-testid="capture-severity-select"
+          >
+            <SelectValue placeholder="Severity" />
+          </SelectTrigger>
+          <SelectContent container={popoverRef.current ?? portalContainer}>
+            <SelectItem value={UNSET} className="text-xs">
+              Severity: uncategorized
+            </SelectItem>
+            {ANNOTATION_SEVERITIES.map((s) => (
+              <SelectItem key={s} value={s} className="text-xs">
+                {SEVERITY_LABEL[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] text-muted-foreground">⌘⏎ to post</p>
         <div className="flex gap-1.5">

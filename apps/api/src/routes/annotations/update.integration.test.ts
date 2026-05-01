@@ -230,6 +230,100 @@ describe("PATCH /annotations/:annotationId (integration)", () => {
     expect(events.filter((e) => e.type === "comment_edited")).toHaveLength(1);
   });
 
+  test("editor sets intent → 200, intent_changed event written, response carries new value", async () => {
+    const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: false });
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { intent: "fix" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().intent).toBe("fix");
+
+    const db = await getIntegrationDb();
+    const events = await db.query.annotationEvents.findMany({
+      where: eq(schema.annotationEvents.annotationId, seeded.annotationId),
+    });
+    const intentEvents = events.filter((e) => e.type === "intent_changed");
+    expect(intentEvents).toHaveLength(1);
+    expect(intentEvents[0]).toMatchObject({
+      type: "intent_changed",
+      actorType: "user",
+      payload: { from: null, to: "fix" },
+    });
+  });
+
+  test("editor sets severity then clears it back to null → two events, payload {from,to}", async () => {
+    const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: false });
+
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+    let res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { severity: "blocking" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().severity).toBe("blocking");
+
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+    res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { severity: null },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().severity).toBeNull();
+
+    const db = await getIntegrationDb();
+    const events = await db.query.annotationEvents.findMany({
+      where: eq(schema.annotationEvents.annotationId, seeded.annotationId),
+      orderBy: (events, { asc }) => [asc(events.createdAt), asc(events.id)],
+    });
+    const severityEvents = events.filter((e) => e.type === "severity_changed");
+    expect(severityEvents).toHaveLength(2);
+    expect(severityEvents[0]?.payload).toMatchObject({ from: null, to: "blocking" });
+    expect(severityEvents[1]?.payload).toMatchObject({ from: "blocking", to: null });
+  });
+
+  test("intent + severity in one call → both events emitted", async () => {
+    const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: true });
+    mockAuth({
+      clerkUserId: seeded.userClerkId,
+      memberships: [{ clerkOrgId: seeded.orgClerkId, role: "org:member" }],
+    });
+
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/annotations/${seeded.annotationId}`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: { intent: "approve", severity: "suggestion" },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const db = await getIntegrationDb();
+    const events = await db.query.annotationEvents.findMany({
+      where: eq(schema.annotationEvents.annotationId, seeded.annotationId),
+    });
+    expect(events.filter((e) => e.type === "intent_changed")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "severity_changed")).toHaveLength(1);
+  });
+
   test("empty body → 400 VALIDATION_ERROR", async () => {
     const seeded = await seedAnnotation({ role: "editor", authorIsCurrentUser: true });
     mockAuth({

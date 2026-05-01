@@ -57,6 +57,13 @@
       "when": 1777601347190,
       "tag": "0007_intent_severity_acknowledged",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777661395264,
+      "tag": "0008_intent_severity_changed_events",
+      "breakpoints": true
     }
   ]
 }

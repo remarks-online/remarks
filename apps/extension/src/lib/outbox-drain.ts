@@ -105,6 +105,11 @@ async function processOne(
         : {}),
       capture: record.payload.capture,
       commentText: record.payload.commentText,
+      // Optional classifiers (ADR-0016 / G1, G2). Older records enqueued
+      // before these were added are missing the keys entirely; spread them
+      // only when present so we don't ship literal `undefined`.
+      ...(record.payload.intent !== undefined ? { intent: record.payload.intent } : {}),
+      ...(record.payload.severity !== undefined ? { severity: record.payload.severity } : {}),
     });
     await removeRecord(record.id);
     return { id: record.id, kind: "ok", annotation };

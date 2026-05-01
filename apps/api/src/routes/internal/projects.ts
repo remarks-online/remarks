@@ -1,4 +1,9 @@
-import { ANNOTATION_STATUSES, ValidationError } from "@remarks/shared";
+import {
+  ANNOTATION_INTENTS,
+  ANNOTATION_SEVERITIES,
+  ANNOTATION_STATUSES,
+  ValidationError,
+} from "@remarks/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { listAnnotations } from "../../services/annotation.service.js";
@@ -27,12 +32,41 @@ export const mcpListQueryStatusesSchema = z
   })
   .pipe(z.array(z.enum(ANNOTATION_STATUSES)).optional());
 
+export const mcpListQueryIntentsSchema = z
+  .string()
+  .optional()
+  .transform((value) => {
+    if (value === undefined || value === "") return undefined;
+    return value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  })
+  .pipe(z.array(z.enum(ANNOTATION_INTENTS)).optional());
+
+export const mcpListQuerySeveritiesSchema = z
+  .string()
+  .optional()
+  .transform((value) => {
+    if (value === undefined || value === "") return undefined;
+    return value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  })
+  .pipe(z.array(z.enum(ANNOTATION_SEVERITIES)).optional());
+
 export const mcpListQueryBaseSchema = z.object({
   // CSV of statuses (e.g., `to_do,doing`). Empty string parses as no filter.
   // The MCP server defaults to ["to_do","doing"] when the agent omits it; the
   // server-side default lives there, not here, so this query is purely
   // pass-through.
   statuses: mcpListQueryStatusesSchema,
+  // CSV of intents (G1) and severities (G2). Same parsing rules as `statuses`;
+  // omitted / empty means no filter on that axis. Lets agents triage by axis
+  // server-side rather than fetching everything and filtering client-side.
+  intents: mcpListQueryIntentsSchema,
+  severities: mcpListQuerySeveritiesSchema,
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });
@@ -78,6 +112,8 @@ export async function projectInternalRoutes(fastify: FastifyInstance): Promise<v
       projectId: paramsResult.data.projectId,
       query: {
         statuses: queryResult.data.statuses,
+        intents: queryResult.data.intents,
+        severities: queryResult.data.severities,
         branch: queryResult.data.branch,
         limit: queryResult.data.limit,
         cursor: queryResult.data.cursor,

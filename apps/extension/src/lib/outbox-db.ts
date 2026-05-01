@@ -1,3 +1,4 @@
+import type { AnnotationIntent, AnnotationSeverity } from "@remarks/shared";
 import type { Capture } from "./picker-store";
 import type { UploadStep } from "./upload-annotation";
 
@@ -12,11 +13,18 @@ export interface OutboxRecordError {
 // Exactly the data needed to reconstruct an `UploadAnnotationInput` at drain
 // time — `token` and `apiUrl` are resolved fresh so expired bearers don't
 // get persisted and so a re-deployed API URL is picked up.
+//
+// `intent` / `severity` are optional because (a) most captures don't classify
+// at create time (uncategorized is the default) and (b) records enqueued
+// before this field was added drain fine without them — `CreateAnnotationRequest`
+// accepts both as optional.
 export interface OutboxPayload {
   // Null when the enqueued record is a personal (URL-keyed) annotation.
   branch: string | null;
   capture: Capture;
   commentText: string;
+  intent?: AnnotationIntent | null;
+  severity?: AnnotationSeverity | null;
 }
 
 export interface OutboxRecord {

@@ -1,6 +1,15 @@
 import { annotationStore, useAnnotationUi } from "@/lib/annotation-store";
 import { useSidebar } from "@/lib/sidebar-store";
-import { STATUS_DOT_CLASS, STATUS_LABEL, authorInitials, safeHostname } from "@/lib/status-ui";
+import {
+  INTENT_DOT_CLASS,
+  INTENT_LABEL,
+  SEVERITY_DOT_CLASS,
+  SEVERITY_LABEL,
+  STATUS_DOT_CLASS,
+  STATUS_LABEL,
+  authorInitials,
+  safeHostname,
+} from "@/lib/status-ui";
 import { trpc } from "@/lib/trpc";
 import { useCurrentUrl } from "@/lib/use-current-url";
 import type { AnnotationResponse } from "@remarks/shared";
@@ -19,7 +28,11 @@ interface Props {
 export function SidebarThreadList({ projectId, branch }: Props) {
   const url = useCurrentUrl();
   const statusFilter = useSidebar((s) => s.statusFilter);
+  const intentFilter = useSidebar((s) => s.intentFilter);
+  const severityFilter = useSidebar((s) => s.severityFilter);
   const status = statusFilter === "all" ? undefined : statusFilter;
+  const intent = intentFilter === "all" ? undefined : intentFilter;
+  const severity = severityFilter === "all" ? undefined : severityFilter;
 
   const projectQuery = trpc.annotations.list.useInfiniteQuery(
     {
@@ -27,6 +40,8 @@ export function SidebarThreadList({ projectId, branch }: Props) {
       branch: branch ?? "",
       url,
       status,
+      intent,
+      severity,
       limit: PAGE_SIZE,
     },
     {
@@ -37,7 +52,7 @@ export function SidebarThreadList({ projectId, branch }: Props) {
   );
 
   const userQuery = trpc.annotations.listForUser.useInfiniteQuery(
-    { url, status, limit: PAGE_SIZE, scope: "all" },
+    { url, status, intent, severity, limit: PAGE_SIZE, scope: "all" },
     {
       enabled: projectId === null,
       getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
@@ -66,7 +81,8 @@ export function SidebarThreadList({ projectId, branch }: Props) {
   const items = query.data.pages.flatMap((p) => p.items);
 
   if (items.length === 0) {
-    return <SidebarThreadListEmpty filtered={status !== undefined} />;
+    const anyFilter = status !== undefined || intent !== undefined || severity !== undefined;
+    return <SidebarThreadListEmpty filtered={anyFilter} />;
   }
 
   return (
@@ -190,6 +206,31 @@ function ThreadItem({ annotation }: ThreadItemProps) {
             {date.toLocaleDateString()}
           </time>
         </div>
+        {annotation.intent || annotation.severity ? (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            {annotation.severity ? (
+              <span className="inline-flex items-center gap-1">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    SEVERITY_DOT_CLASS[annotation.severity]
+                  )}
+                />
+                <span>{SEVERITY_LABEL[annotation.severity]}</span>
+              </span>
+            ) : null}
+            {annotation.intent ? (
+              <span className="inline-flex items-center gap-1">
+                <span
+                  aria-hidden="true"
+                  className={cn("h-1.5 w-1.5 rounded-full", INTENT_DOT_CLASS[annotation.intent])}
+                />
+                <span>{INTENT_LABEL[annotation.intent]}</span>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <p className="mt-1 line-clamp-3 text-xs text-foreground">{annotation.commentText}</p>
         {hostname ? (
           <p className="mt-1 truncate text-[11px] text-muted-foreground">{hostname}</p>

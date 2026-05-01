@@ -1,6 +1,8 @@
 import {
   ForbiddenError,
   ValidationError,
+  annotationIntentSchema,
+  annotationSeveritySchema,
   annotationStatusSchema,
   createAnnotationRequestSchema,
   listAnnotationsQuerySchema,
@@ -47,14 +49,19 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
       throw new ValidationError("Invalid query params", queryResult.error.issues);
     }
 
-    // The shared REST query schema exposes a single-status filter (back-compat
+    // The shared REST query schema exposes single-value filters (back-compat
     // with existing dashboard / extension callers). The service signature
-    // accepts an array so the internal MCP route can multi-filter; wrap once
+    // accepts arrays so the internal MCP route can multi-filter; wrap once
     // here.
-    const { status, ...rest } = queryResult.data;
+    const { status, intent, severity, ...rest } = queryResult.data;
     const result = await listAnnotations(request.server.db, {
       projectId,
-      query: { ...rest, statuses: status ? [status] : undefined },
+      query: {
+        ...rest,
+        statuses: status ? [status] : undefined,
+        intents: intent ? [intent] : undefined,
+        severities: severity ? [severity] : undefined,
+      },
       r2: request.server.r2,
     });
     return reply.send(result);
@@ -219,10 +226,15 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
     if (!queryResult.success) {
       throw new ValidationError("Invalid query params", queryResult.error.issues);
     }
-    const { status, ...rest } = queryResult.data;
+    const { status, intent, severity, ...rest } = queryResult.data;
     const result = await listAnnotationsForUser(request.server.db, {
       userId: request.auth.user.id,
-      query: { ...rest, statuses: status ? [status] : undefined },
+      query: {
+        ...rest,
+        statuses: status ? [status] : undefined,
+        intents: intent ? [intent] : undefined,
+        severities: severity ? [severity] : undefined,
+      },
       r2: request.server.r2,
     });
     return reply.send(result);
@@ -233,6 +245,8 @@ const userAnnotationsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   status: annotationStatusSchema.optional(),
+  intent: annotationIntentSchema.optional(),
+  severity: annotationSeveritySchema.optional(),
   url: z.string().url().optional(),
   scope: z.enum(["personal", "all"]).optional(),
 });

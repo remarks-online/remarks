@@ -3,8 +3,10 @@ import {
   NotFoundError,
   RemarksError,
   annotationEventListResponseSchema,
+  annotationIntentSchema,
   annotationListResponseSchema,
   annotationResponseSchema,
+  annotationSeveritySchema,
   annotationStatusSchema,
   listAnnotationsQuerySchema,
   updateAnnotationRequestSchema,
@@ -56,6 +58,8 @@ const listForUserInputSchema = z.object({
   cursor: z.string().optional(),
   limit: z.number().int().min(1).max(100).default(50),
   status: annotationStatusSchema.optional(),
+  intent: annotationIntentSchema.optional(),
+  severity: annotationSeveritySchema.optional(),
   url: z.string().url().optional(),
   scope: z.enum(["personal", "all"]).optional(),
 });
@@ -68,12 +72,17 @@ export const annotationsRouter = router({
       mapError(err);
     }
 
-    const { projectId, status, ...rest } = input;
-    // listInputSchema mirrors the REST query (single-status); the service
-    // takes a multi-status array for the internal MCP path. Wrap to one-element.
+    const { projectId, status, intent, severity, ...rest } = input;
+    // listInputSchema mirrors the REST query (single-value filters); the
+    // service takes multi-value arrays for the internal MCP path. Wrap once.
     const result = await listAnnotations(ctx.db, {
       projectId,
-      query: { ...rest, statuses: status ? [status] : undefined },
+      query: {
+        ...rest,
+        statuses: status ? [status] : undefined,
+        intents: intent ? [intent] : undefined,
+        severities: severity ? [severity] : undefined,
+      },
       r2: ctx.r2,
     });
     return annotationListResponseSchema.parse(result);
@@ -107,10 +116,15 @@ export const annotationsRouter = router({
   // feed. Personal-only via scope: "personal".
   listForUser: protectedProcedure.input(listForUserInputSchema).query(async ({ ctx, input }) => {
     try {
-      const { status, ...rest } = input;
+      const { status, intent, severity, ...rest } = input;
       const result = await listAnnotationsForUser(ctx.db, {
         userId: ctx.user.id,
-        query: { ...rest, statuses: status ? [status] : undefined },
+        query: {
+          ...rest,
+          statuses: status ? [status] : undefined,
+          intents: intent ? [intent] : undefined,
+          severities: severity ? [severity] : undefined,
+        },
         r2: ctx.r2,
       });
       return annotationListResponseSchema.parse(result);

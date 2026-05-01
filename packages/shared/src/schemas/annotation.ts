@@ -172,11 +172,22 @@ export const updateAnnotationRequestSchema = z
   .object({
     status: annotationStatusSchema.optional(),
     commentText: z.string().min(1).max(MAX_COMMENT_LENGTH).optional(),
+    // G4: required when transitioning status to "rejected"; refused on any
+    // other status. Lands on the `status_changed` event payload.
     reason: rejectionReasonSchema.optional(),
+    // ADR-0018: intent / severity are editable post-create. `undefined` means
+    // "no change"; `null` clears back to "uncategorized"; an enum value sets it.
+    intent: annotationIntentSchema.nullable().optional(),
+    severity: annotationSeveritySchema.nullable().optional(),
   })
-  .refine((data) => data.status !== undefined || data.commentText !== undefined, {
-    message: "At least one field must be provided",
-  })
+  .refine(
+    (data) =>
+      data.status !== undefined ||
+      data.commentText !== undefined ||
+      data.intent !== undefined ||
+      data.severity !== undefined,
+    { message: "At least one field must be provided" }
+  )
   .refine((data) => !(data.status === "rejected") || data.reason !== undefined, {
     message: "reason is required when status is rejected",
     path: ["reason"],
@@ -193,6 +204,11 @@ export const listAnnotationsQuerySchema = z.object({
   // Fastify surfaces query params as strings; coerce before the int/range checks.
   limit: z.coerce.number().int().min(1).max(100).default(50),
   status: annotationStatusSchema.optional(),
+  // G1/G2 single-value filters. The service signature accepts arrays so the
+  // internal MCP route can multi-filter; REST/tRPC wraps the value into a
+  // one-element array (mirrors how `status` is handled).
+  intent: annotationIntentSchema.optional(),
+  severity: annotationSeveritySchema.optional(),
   branch: z.string().min(1).max(MAX_BRANCH_NAME_LENGTH).optional(),
   url: z.string().url().optional(),
 });

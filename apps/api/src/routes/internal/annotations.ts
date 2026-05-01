@@ -121,6 +121,8 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
       query: {
         scope: "personal",
         statuses: queryResult.data.statuses,
+        intents: queryResult.data.intents,
+        severities: queryResult.data.severities,
         limit: queryResult.data.limit,
         cursor: queryResult.data.cursor,
       },
@@ -189,6 +191,8 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
           scope: "org",
           orgId: paramsResult.data.orgId,
           statuses: queryResult.data.statuses,
+          intents: queryResult.data.intents,
+          severities: queryResult.data.severities,
           limit: queryResult.data.limit,
           cursor: queryResult.data.cursor,
         },

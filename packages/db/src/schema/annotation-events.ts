@@ -19,6 +19,10 @@ export const annotationEventTypeEnum = pgEnum("annotation_event_type", [
   // G3: emitted by `agentUpdateAnnotationStatus` when the new status is
   // `acknowledged`. Other status transitions still emit `agent_updated_status`.
   "agent_acknowledged",
+  // ADR-0018: emitted when a user reclassifies intent or severity. Payload is
+  // `{ from, to }` where each is the classifier value or null for cleared.
+  "intent_changed",
+  "severity_changed",
 ]);
 
 export const eventActorTypeEnum = pgEnum("event_actor_type", ["user", "agent", "system"]);
