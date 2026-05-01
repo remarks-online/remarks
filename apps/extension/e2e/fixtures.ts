@@ -119,11 +119,12 @@ export const test = base.extend<Fixtures>({
       // route forces ClerkProvider to fully hydrate a session before
       // setActive runs (otherwise it throws "setActive should either be
       // called with a session param or there should be already an active
-      // session").
+      // session"). `Clerk.loaded` flips true before the session resolves on a
+      // cold dev-browser handshake, so gate on `Clerk.session` directly.
       await redeemPage.goto(`${dashboardUrl}/app/projects`);
       await redeemPage.waitForFunction(
         // @ts-expect-error - window.Clerk injected by the dashboard's ClerkProvider
-        () => typeof window.Clerk?.setActive === "function" && window.Clerk?.loaded,
+        () => typeof window.Clerk?.setActive === "function" && Boolean(window.Clerk?.session),
         null,
         { timeout: 15_000 }
       );

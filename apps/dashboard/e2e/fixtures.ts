@@ -13,10 +13,14 @@ interface Fixtures {
 // state. Specs that exercise org switching (e.g. org-switcher.spec.ts) drive
 // the change themselves from this baseline.
 async function pinActiveOrg(page: Page, orgId: string): Promise<void> {
+  // `Clerk.loaded` flips true before the session resolves on a cold
+  // dev-browser handshake; gating on `Clerk.session` avoids the "setActive
+  // should either be called with a session param or there should be already
+  // an active session" race.
   await page.goto("/app/projects");
   await page.waitForFunction(
     // @ts-expect-error - window.Clerk is injected by ClerkProvider on the client
-    () => typeof window.Clerk?.setActive === "function" && window.Clerk?.loaded,
+    () => typeof window.Clerk?.setActive === "function" && Boolean(window.Clerk?.session),
     null,
     { timeout: 15_000 }
   );
