@@ -849,7 +849,7 @@ Estimated ~6 weeks total for a solo developer with Claude Code.
 | 2.27 | Docs: full MCP tool reference generated from Zod schemas | Hosted on docs.remarks.dev |
 | 2.28 | Manual E2E with each supported agent (Claude Code, Cursor, Windsurf) | All three process a real task end-to-end |
 | 2.29 | Announcement: launch Phase 2 to existing Phase 1 beta users | Email sent, docs linked |
-| 2.30 | Inngest worker `asset-cleanup`: deletes the R2 objects backing `annotation_assets` rows. Triggered on demand by `DELETE /annotations/:id` and the (Phase 3) org-deletion flow; nightly sweep reconciles R2 against the `annotation_assets` table to clean up Phase 1 orphans. First production use of Inngest per phase 0-1 spec §10. | Worker deployed; deleting an annotation removes its R2 objects within 60s; sweep removes a manually-orphaned R2 key on the next run. |
+| 2.30 | Inngest workers for R2 lifecycle: `r2-cleanup` (event-driven on `remarks/r2.cleanup.requested`, deletes the R2 objects backing `annotation_assets` rows on demand from `DELETE /annotations/:id`, project-delete, and the Phase 3 org-deletion flow) and `r2-orphan-sweep` (daily cron at 03:00 UTC, reaps keys not referenced by `annotation_assets` to backstop Phase 1 orphans and best-effort `publishR2Cleanup` failures). Grace window is on R2 `LastModified` (skip keys younger than 24h), not the DB row's `createdAt` — orphans by definition have no DB row, and the leak window is "object exists in R2 before its row is written." First production use of Inngest per phase 0-1 spec §10. | Both workers deployed; deleting an annotation removes its R2 objects within 60s; sweep removes a manually-orphaned R2 key on the next run. |
 
 ---
 
