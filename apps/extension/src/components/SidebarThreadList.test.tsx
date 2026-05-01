@@ -44,6 +44,7 @@ function makeAnnotation(overrides: Partial<AnnotationResponse> = {}): Annotation
     targetSelector: "#hero",
     targetCoords: null,
     viewport: { width: 1920, height: 1080, dpr: 2 },
+    domContext: null,
     commentText: "This button should be green.",
     author: {
       id: "cccccccc-cccc-cccc-cccc-cccccccccccc",

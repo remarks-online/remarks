@@ -5,6 +5,8 @@ import {
   type AnnotationResponse,
   type AnnotationStatus,
   type CreateAnnotationRequest,
+  type DomContextResponse,
+  type DomContextValue,
   NotFoundError,
   type UpdateAnnotationRequest,
   ValidationError,
@@ -718,6 +720,20 @@ interface ResolvedAsset {
   url: string;
 }
 
+function toDomContextResponse(
+  value: DomContextValue | null | undefined
+): DomContextResponse | null {
+  if (!value) return null;
+  return {
+    tagName: value.tagName ?? null,
+    classes: value.classes ?? null,
+    textContent: value.textContent ?? null,
+    computedStyles: value.computedStyles ?? null,
+    ancestors:
+      value.ancestors?.map((a) => ({ tagName: a.tagName, classes: a.classes ?? null })) ?? null,
+  };
+}
+
 function toAnnotationResponse(args: {
   annotationRow: AnnotationRow;
   branchName: string | null;
@@ -740,6 +756,7 @@ function toAnnotationResponse(args: {
     targetSelector: row.targetSelector,
     targetCoords: row.targetCoords ?? null,
     viewport: row.viewport,
+    domContext: toDomContextResponse(row.domContext),
     commentText: row.commentText,
     author,
     assets: assets.map((a) => ({

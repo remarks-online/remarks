@@ -20,6 +20,7 @@ import {
 } from "@remarks/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { DomContextHeader } from "./DomContextHeader";
 
 const POPOVER_WIDTH = 320;
 const POPOVER_FALLBACK_HEIGHT = 240;
@@ -68,8 +69,15 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
     }
     const measured = popoverRef.current?.getBoundingClientRect();
     const popoverHeight = measured?.height ?? POPOVER_FALLBACK_HEIGHT;
+    // Anchor to the pin tip (rect center), not the rect's bottom edge — for
+    // tall elements (hero sections, banners) the rect can be hundreds of
+    // pixels tall, and placing below the bottom drops the popover far below
+    // the pin. A zero-size rect at the center keeps the popover snug to the
+    // pin regardless of element size.
+    const { x, y, width, height } = annotation.targetCoords;
+    const pinTipRect = { x: x + width / 2, y: y + height / 2, width: 0, height: 0 };
     const placement = computePopoverPlacement({
-      target: annotation.targetCoords,
+      target: pinTipRect,
       scroll: { x: viewport.scrollX, y: viewport.scrollY },
       viewport: { width: viewport.innerWidth, height: viewport.innerHeight },
       popover: { width: POPOVER_WIDTH, height: popoverHeight },
@@ -157,6 +165,9 @@ export function AnnotationEditPopover({ items, viewport }: Props) {
         zIndex: 2147483647,
       }}
     >
+      {annotation.targetType === "element" && annotation.targetSelector ? (
+        <DomContextHeader selector={annotation.targetSelector} domContext={annotation.domContext} />
+      ) : null}
       {screenshot ? (
         <img
           src={screenshot.url}

@@ -47,6 +47,32 @@ export const domContextSchema = z.object({
     .optional(),
 });
 
+export type DomContextValue = z.infer<typeof domContextSchema>;
+
+// Response-side variant: inner fields are `nullable()` instead of `optional()`
+// so the inferred type avoids `| undefined`. tRPC v11's client-side type
+// pipeline strips `| undefined` from JSON-serialized responses (JSON can't
+// represent undefined), and `exactOptionalPropertyTypes: true` then treats the
+// stripped and unstripped shapes as incompatible — `domContextSchema` (used
+// for write inputs) is fine because requests roundtrip through zod parsing,
+// but the response shape needs every leaf to be `T | null`.
+export const domContextResponseSchema = z.object({
+  tagName: z.string().nullable(),
+  classes: z.array(z.string()).nullable(),
+  textContent: z.string().max(MAX_TEXT_CONTENT_LENGTH).nullable(),
+  computedStyles: z.record(z.string(), z.string()).nullable(),
+  ancestors: z
+    .array(
+      z.object({
+        tagName: z.string(),
+        classes: z.array(z.string()).nullable(),
+      })
+    )
+    .nullable(),
+});
+
+export type DomContextResponse = z.infer<typeof domContextResponseSchema>;
+
 export const createAnnotationRequestSchema = z
   .object({
     // Both omitted → personal (URL-keyed, owner-private) annotation. Both
@@ -100,6 +126,11 @@ export const annotationResponseSchema = z.object({
   targetSelector: z.string().nullable(),
   targetCoords: rectSchema.nullable(),
   viewport: viewportSchema,
+  // Captured DOM snapshot (tagName, classes, ancestors, computedStyles) for
+  // element annotations. Null when the picker captured a region instead, or
+  // when the row predates dom-context capture. Inner fields are nullable
+  // instead of optional — see domContextResponseSchema for why.
+  domContext: domContextResponseSchema.nullable(),
   commentText: z.string(),
   author: z.object({
     id: z.string().uuid(),

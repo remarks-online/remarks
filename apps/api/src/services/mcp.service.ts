@@ -205,23 +205,10 @@ export interface RelatedTaskRow {
   commentText: string;
 }
 
-// Subset of `annotations.dom_context` jsonb that the MCP `get_task` schema
-// surfaces back to the agent. Keeps the camelCase keys here; the MCP server
-// projects to snake_case at the wire boundary.
-export interface McpDomContextRow {
-  tagName?: string;
-  classes?: string[];
-  textContent?: string;
-  computedStyles?: Record<string, string>;
-  ancestors?: Array<{ tagName: string; classes?: string[] }>;
-}
-
-// Phase 2 spec §3.2 get_task carries domContext + frameworkHint; the public
-// AnnotationResponse used by the dashboard does not (those fields are
-// agent-only signals). So the MCP endpoint returns an extended shape rather
-// than reusing AnnotationResponse verbatim.
+// Phase 2 spec §3.2 get_task carries domContext + frameworkHint. domContext is
+// already part of AnnotationResponse; frameworkHint is the only MCP-only
+// extension here.
 export interface McpAnnotationRow extends AnnotationResponse {
-  domContext: McpDomContextRow | null;
   frameworkHint: string | null;
 }
 
@@ -333,7 +320,6 @@ export async function getMcpAnnotationById(
 
   const annotationWithExtras: McpAnnotationRow = {
     ...annotation,
-    domContext: row.domContext as McpDomContextRow | null,
     frameworkHint: row.frameworkHint,
   };
 
