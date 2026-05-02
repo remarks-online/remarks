@@ -107,6 +107,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
       input: bodyResult.data,
       r2: request.server.r2,
       publisher: request.server.annotationEventBus,
+      inngest: request.server.inngest,
     });
 
     return reply.code(201).send(response);
@@ -167,6 +168,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
       input: bodyResult.data,
       r2: request.server.r2,
       publisher: request.server.annotationEventBus,
+      inngest: request.server.inngest,
     });
     return reply.send(response);
   });

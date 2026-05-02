@@ -1,6 +1,7 @@
 import { type DB, schema } from "@remarks/db";
 import { type AnnotationResponse, type AnnotationStatus, NotFoundError } from "@remarks/shared";
 import { and, asc, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import type { AppInngest } from "../inngest/client.js";
 import {
   type AnnotationEventPublisher,
   buildAnnotationStreamEvent,
@@ -8,6 +9,7 @@ import {
 import { capture as captureAnalytics } from "../lib/posthog.js";
 import type { R2Client } from "../lib/r2.js";
 import { getAnnotationById } from "./annotation.service.js";
+import { fanOutAnnotationEvent } from "./webhook-fanout.service.js";
 
 // Subset of statuses agents may set (Phase 2 spec §3.2 update_task_status,
 // extended by G3 / ADR-0016 with `acknowledged`). Agents cannot reset to
@@ -362,6 +364,8 @@ export interface AgentUpdateAnnotationStatusArgs {
   // on the resulting event payload as `payload.reason`.
   reason?: string;
   publisher?: AnnotationEventPublisher;
+  // G11: outbound webhook fan-out. Optional; tests omit.
+  inngest?: AppInngest;
 }
 
 export interface AgentUpdateAnnotationStatusResult {
@@ -374,7 +378,8 @@ export async function agentUpdateAnnotationStatus(
   db: DB,
   args: AgentUpdateAnnotationStatusArgs
 ): Promise<AgentUpdateAnnotationStatusResult> {
-  const { annotationId, clerkUserId, oauthClientName, status, note, reason, publisher } = args;
+  const { annotationId, clerkUserId, oauthClientName, status, note, reason, publisher, inngest } =
+    args;
   const actorId = await resolveUserIdByClerkId(db, clerkUserId);
 
   type StatusTransition = {
@@ -483,6 +488,20 @@ export async function agentUpdateAnnotationStatus(
         })
       );
     }
+
+    // G11: fan out to project webhooks. The internal `agent_acknowledged`
+    // event has no webhook mapping (intentional v1 omission); the fan-out
+    // service no-ops on it.
+    if (inngest) {
+      void fanOutAnnotationEvent(db, inngest, {
+        annotationEventType: transition.eventType,
+        projectId: transition.projectId,
+        annotationId,
+        payload: transition.payload,
+        occurredAt: transition.eventCreatedAt,
+        newStatus: transition.to,
+      });
+    }
   }
 
   return {
@@ -499,6 +518,8 @@ export interface AgentAddAnnotationCommentArgs {
   comment: string;
   kind?: AgentCommentKind;
   publisher?: AnnotationEventPublisher;
+  // G11: outbound webhook fan-out. Optional; tests omit.
+  inngest?: AppInngest;
 }
 
 export interface AgentAddAnnotationCommentResult {
@@ -510,7 +531,7 @@ export async function agentAddAnnotationComment(
   db: DB,
   args: AgentAddAnnotationCommentArgs
 ): Promise<AgentAddAnnotationCommentResult> {
-  const { annotationId, clerkUserId, oauthClientName, comment, kind, publisher } = args;
+  const { annotationId, clerkUserId, oauthClientName, comment, kind, publisher, inngest } = args;
   const actorId = await resolveUserIdByClerkId(db, clerkUserId);
 
   const result = await db.transaction(async (tx) => {
@@ -564,6 +585,17 @@ export async function agentAddAnnotationComment(
         authorId: result.authorId,
       })
     );
+  }
+
+  // G11: fan out to project webhooks subscribed to comment events.
+  if (inngest) {
+    void fanOutAnnotationEvent(db, inngest, {
+      annotationEventType: "agent_commented",
+      projectId: result.projectId,
+      annotationId,
+      payload: result.payload,
+      occurredAt: result.createdAt,
+    });
   }
 
   return { eventId: result.eventId, createdAt: result.createdAt.toISOString() };

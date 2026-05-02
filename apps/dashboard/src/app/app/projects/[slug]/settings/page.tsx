@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { DeleteProjectForm } from "./_components/delete-project-form";
 import { EditProjectForm } from "./_components/edit-project-form";
 import { MoveToOrgForm } from "./_components/move-to-org-form";
+import { WebhooksForm } from "./_components/webhooks-form";
 
 type Params = Promise<{ slug: string }>;
 
@@ -69,6 +70,8 @@ export default async function ProjectSettingsPage({ params }: { params: Params }
           Open the install guide →
         </Link>
       </div>
+
+      <WebhooksForm projectId={project.id} canManage={project.myRole === "admin"} />
 
       {project.myRole === "admin" ? (
         <DeleteProjectForm projectId={project.id} projectSlug={project.slug} />
