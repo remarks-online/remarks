@@ -8,6 +8,9 @@ import {
   type SeverityFilter,
   type StatusFilter,
 } from "@/components/annotations/annotation-filters";
+import { LiveIndicator } from "@/components/annotations/live-indicator";
+import { useAnnotationStream } from "@/hooks/use-annotation-stream";
+import { applyStreamEventToCache } from "@/lib/annotation-stream-cache";
 import { trpc } from "@/lib/trpc-client";
 import {
   ANNOTATION_INTENTS,
@@ -17,11 +20,13 @@ import {
   type AnnotationListResponse,
   type AnnotationResponse,
   type AnnotationSeverity,
+  type AnnotationStreamEvent,
 } from "@remarks/shared";
 import { Button } from "@remarks/ui";
 import { MessageSquarePlus } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
+import { toast } from "sonner";
 
 export const ANNOTATION_LIST_PAGE_SIZE = 50;
 
@@ -65,9 +70,47 @@ export function AnnotationsBrowser({
   const intent = parseIntent(searchParams.get("intent"));
   const severity = parseSeverity(searchParams.get("severity"));
 
+  const utils = trpc.useUtils();
+  const currentUserQuery = trpc.me.getCurrentUser.useQuery(undefined, {
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const currentUserId = currentUserQuery.data?.user.id ?? null;
+
+  const stream = useAnnotationStream({
+    projectId,
+    onEvent: useCallback(
+      (event: AnnotationStreamEvent) => {
+        void applyStreamEventToCache(event, {
+          invalidateList: () => utils.annotations.list.invalidate(),
+          invalidateAnnotation: (id) => utils.annotations.get.invalidate({ id }),
+          invalidateAnnotationEvents: (id) => utils.annotations.listEvents.invalidate({ id }),
+        });
+
+        if (event.type === "created" && event.actorId !== currentUserId) {
+          toast.info("New annotation", {
+            description: "Someone just left feedback on this project.",
+            action: {
+              label: "View",
+              onClick: () => {
+                const params = new URLSearchParams(window.location.search);
+                params.set("a", event.annotationId);
+                router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+              },
+            },
+          });
+        }
+      },
+      [utils, currentUserId, router, pathname]
+    ),
+    onTruncated: useCallback(() => {
+      void utils.annotations.list.invalidate();
+    }, [utils]),
+  });
+
   // refetchInterval on useInfiniteQuery refetches every loaded page in order;
   // safe under (createdAt DESC, id DESC) keyset cursors — already-loaded pages
-  // stay stable, new top items appear at the top.
+  // stay stable, new top items appear at the top. We only poll when the SSE
+  // stream is not connected; otherwise the live feed handles updates.
   const { data, hasNextPage, fetchNextPage, isFetchingNextPage, isError } =
     trpc.annotations.list.useInfiniteQuery(
       {
@@ -87,7 +130,7 @@ export function AnnotationsBrowser({
           : {}),
         initialCursor: undefined,
         getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-        refetchInterval: 5000,
+        refetchInterval: stream.status === "open" ? false : 5000,
         refetchIntervalInBackground: false,
       }
     );
@@ -129,7 +172,7 @@ export function AnnotationsBrowser({
   ) : null;
 
   const filtersBar = (
-    <div className="mt-6">
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
       <AnnotationFilters
         status={status}
         intent={intent}
@@ -138,6 +181,7 @@ export function AnnotationsBrowser({
         onIntentChange={(v) => setFilter("intent", v)}
         onSeverityChange={(v) => setFilter("severity", v)}
       />
+      <LiveIndicator status={stream.status} />
     </div>
   );
 

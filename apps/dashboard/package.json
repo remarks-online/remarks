@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.0",
+    "@microsoft/fetch-event-source": "^2.0.1",
     "@remarks/shared": "workspace:*",
     "@remarks/ui": "workspace:*",
     "@tanstack/react-query": "^5.62.0",
@@ -26,6 +27,7 @@
     "posthog-js": "^1.372.1",
     "react": "19.2.5",
     "react-dom": "19.2.5",
+    "sonner": "^2.0.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
