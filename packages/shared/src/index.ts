@@ -10,3 +10,4 @@ export * from "./schemas/extension.js";
 export * from "./schemas/inngest-events.js";
 export * from "./schemas/me.js";
 export * from "./schemas/project.js";
+export * from "./schemas/webhook.js";

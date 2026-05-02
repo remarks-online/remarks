@@ -37,30 +37,23 @@ export function StepFirstAnnotation({ onAnnotationCaptured, onSkip }: Props) {
 
   return (
     <div className="space-y-6 rounded-md border border-border p-6">
-      <div>
-        <h2 className="text-lg font-semibold">Capture your first annotation</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Open any page you want to annotate, click the Remarks icon, and pick a target. Your first
-          capture lands in your private space — no team setup needed.
-        </p>
-        <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-          <li>
-            Press{" "}
-            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-              C
-            </kbd>{" "}
-            to enter element-pick mode and click any element.
-          </li>
-          <li>
-            Press{" "}
-            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
-              R
-            </kbd>{" "}
-            to draw a rectangle around a region.
-          </li>
-          <li>Add a comment and submit — it lands here within a few seconds.</li>
-        </ul>
-      </div>
+      <ul className="space-y-2 text-sm text-muted-foreground">
+        <li>
+          Press{" "}
+          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+            C
+          </kbd>{" "}
+          to enter element-pick mode and click any element.
+        </li>
+        <li>
+          Press{" "}
+          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+            R
+          </kbd>{" "}
+          to draw a rectangle around a region.
+        </li>
+        <li>Add a comment and submit — it lands here within a few seconds.</li>
+      </ul>
 
       <div
         aria-live="polite"

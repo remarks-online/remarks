@@ -5,6 +5,7 @@ import { annotations } from "./annotations.js";
 import { branches } from "./branches.js";
 import { organizations } from "./organizations.js";
 import { projectMembers } from "./project-members.js";
+import { projectWebhookDeliveries, projectWebhooks } from "./project-webhooks.js";
 import { projects } from "./projects.js";
 import { users } from "./users.js";
 
@@ -24,6 +25,23 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   branches: many(branches),
   annotations: many(annotations),
   members: many(projectMembers),
+  webhooks: many(projectWebhooks),
+}));
+
+export const projectWebhooksRelations = relations(projectWebhooks, ({ one, many }) => ({
+  project: one(projects, { fields: [projectWebhooks.projectId], references: [projects.id] }),
+  deliveries: many(projectWebhookDeliveries),
+}));
+
+export const projectWebhookDeliveriesRelations = relations(projectWebhookDeliveries, ({ one }) => ({
+  webhook: one(projectWebhooks, {
+    fields: [projectWebhookDeliveries.webhookId],
+    references: [projectWebhooks.id],
+  }),
+  annotation: one(annotations, {
+    fields: [projectWebhookDeliveries.annotationId],
+    references: [annotations.id],
+  }),
 }));
 
 export const branchesRelations = relations(branches, ({ one, many }) => ({

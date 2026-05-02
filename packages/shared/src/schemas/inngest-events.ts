@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { webhookEventTypeSchema } from "./webhook.js";
 
 // Inngest event names use the `remarks/` prefix to keep them namespaced from
 // any third-party events that may show up in shared environments.
-export const INNGEST_EVENT_NAMES = ["remarks/r2.cleanup.requested"] as const;
+export const INNGEST_EVENT_NAMES = [
+  "remarks/r2.cleanup.requested",
+  "remarks/webhook.deliver",
+] as const;
 export type InngestEventName = (typeof INNGEST_EVENT_NAMES)[number];
 
 // Each `keys` array maps to one S3 DeleteObjects call. The handler will not
@@ -17,6 +21,23 @@ export const r2CleanupRequestedDataSchema = z.object({
 });
 export type R2CleanupRequestedData = z.infer<typeof r2CleanupRequestedDataSchema>;
 
+// One event published per (webhook × annotation event) pair. Inngest handles
+// retries via its own exponential backoff; the handler records one row per
+// attempt so the audit trail captures the full retry history.
+export const webhookDeliverDataSchema = z.object({
+  webhookId: z.string().uuid(),
+  projectId: z.string().uuid(),
+  annotationId: z.string().uuid(),
+  eventType: webhookEventTypeSchema,
+  // The annotation-event payload (e.g., status transitions, comment text).
+  // Embedded as the `data` field of the outbound webhook envelope.
+  payload: z.record(z.string(), z.unknown()),
+  // ISO 8601 timestamp of the source annotation event — included verbatim in
+  // the outbound envelope so receivers can dedupe across retries.
+  occurredAt: z.string().datetime(),
+});
+export type WebhookDeliverData = z.infer<typeof webhookDeliverDataSchema>;
+
 // Single typed map consumed by `new EventSchemas().fromRecord(...)` in the
 // Inngest client. Declared as a `type` (not `interface`) so it satisfies
 // Inngest's `Record<string, ...>` constraint — interfaces don't pick up an
@@ -26,5 +47,8 @@ export type R2CleanupRequestedData = z.infer<typeof r2CleanupRequestedDataSchema
 export type InngestEvents = {
   "remarks/r2.cleanup.requested": {
     data: R2CleanupRequestedData;
+  };
+  "remarks/webhook.deliver": {
+    data: WebhookDeliverData;
   };
 };

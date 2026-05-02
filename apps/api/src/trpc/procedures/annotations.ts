@@ -146,6 +146,7 @@ export const annotationsRouter = router({
         input: input.input,
         r2: ctx.r2,
         publisher: ctx.annotationEventBus,
+        inngest: ctx.inngest,
       });
       return annotationResponseSchema.parse(response);
     } catch (err) {

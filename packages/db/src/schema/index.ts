@@ -5,5 +5,6 @@ export * from "./annotations.js";
 export * from "./branches.js";
 export * from "./organizations.js";
 export * from "./project-members.js";
+export * from "./project-webhooks.js";
 export * from "./projects.js";
 export * from "./users.js";

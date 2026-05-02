@@ -102,6 +102,7 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
       ...(bodyResult.data.note !== undefined ? { note: bodyResult.data.note } : {}),
       ...(bodyResult.data.reason !== undefined ? { reason: bodyResult.data.reason } : {}),
       publisher: fastify.annotationEventBus,
+      inngest: fastify.inngest,
     });
     return reply.code(200).send(result);
   });
@@ -221,6 +222,7 @@ export async function annotationInternalRoutes(fastify: FastifyInstance): Promis
       comment: bodyResult.data.comment,
       ...(bodyResult.data.kind !== undefined ? { kind: bodyResult.data.kind } : {}),
       publisher: fastify.annotationEventBus,
+      inngest: fastify.inngest,
     });
     return reply.code(201).send(result);
   });

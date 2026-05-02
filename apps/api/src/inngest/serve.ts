@@ -4,6 +4,7 @@ import { env } from "../env.js";
 import { inngest } from "./client.js";
 import { createR2CleanupFunction } from "./functions/r2-cleanup.js";
 import { createR2OrphanSweepFunction } from "./functions/r2-orphan-sweep.js";
+import { createWebhookDeliverFunction } from "./functions/webhook-deliver.js";
 
 // Mounted at POST/PUT/GET /inngest. Inngest signs each request with
 // INNGEST_SIGNING_KEY; the serve adapter rejects unsigned requests, so this
@@ -14,6 +15,7 @@ export const inngestServeRoutes: FastifyPluginAsync = async (fastify) => {
     functions: [
       createR2CleanupFunction(fastify.r2),
       createR2OrphanSweepFunction(fastify.r2, fastify.db),
+      createWebhookDeliverFunction(fastify.db),
     ],
     signingKey: env.INNGEST_SIGNING_KEY,
   });

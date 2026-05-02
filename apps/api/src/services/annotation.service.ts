@@ -29,6 +29,7 @@ import { isUniqueViolation } from "../lib/db-errors.js";
 import { capture as captureAnalytics } from "../lib/posthog.js";
 import { type R2Client, getPresignedGetUrl, headObject } from "../lib/r2.js";
 import { buildAssetR2Key } from "./upload.service.js";
+import { fanOutAnnotationEvent } from "./webhook-fanout.service.js";
 
 export const ANNOTATION_ASSET_GET_TTL_SECONDS = 60 * 60 * 24;
 
@@ -40,6 +41,10 @@ export interface CreateAnnotationArgs {
   // tRPC procedures called outside of HTTP) may omit it; live HTTP routes
   // pass `request.server.annotationEventBus`.
   publisher?: AnnotationEventPublisher;
+  // G11: optional Inngest client used for outbound webhook fan-out. Same
+  // omission pattern as `publisher` — tests can leave it off, live routes
+  // pass `request.server.inngest`.
+  inngest?: AppInngest;
 }
 
 type AnnotationRow = typeof schema.annotations.$inferSelect;
@@ -79,7 +84,7 @@ export async function createAnnotation(
   db: DB,
   args: CreateAnnotationArgs
 ): Promise<AnnotationResponse> {
-  const { author, input, r2, publisher } = args;
+  const { author, input, r2, publisher, inngest } = args;
 
   // The shared schema's refine guarantees these are paired; assert the invariant
   // here so the rest of the function can branch cleanly.
@@ -252,6 +257,18 @@ export async function createAnnotation(
         authorId: annotationRow.authorId,
       })
     );
+  }
+
+  // G11: fan out to project webhooks. Same fire-and-forget posture; the
+  // service catches publish errors internally.
+  if (inngest) {
+    void fanOutAnnotationEvent(db, inngest, {
+      annotationEventType: "created",
+      projectId: annotationRow.projectId,
+      annotationId: annotationRow.id,
+      payload: {},
+      occurredAt: createdEvent.createdAt,
+    });
   }
 
   return toAnnotationResponse({
@@ -633,13 +650,15 @@ export interface UpdateAnnotationArgs {
   input: UpdateAnnotationRequest;
   r2: R2Client;
   publisher?: AnnotationEventPublisher;
+  // G11: see CreateAnnotationArgs.
+  inngest?: AppInngest;
 }
 
 export async function updateAnnotation(
   db: DB,
   args: UpdateAnnotationArgs
 ): Promise<AnnotationResponse> {
-  const { annotationId, actorId, input, r2, publisher } = args;
+  const { annotationId, actorId, input, r2, publisher, inngest } = args;
 
   type StatusTransition = { from: string; to: string; projectId: string | null };
   type EmittedEvent = {
@@ -793,6 +812,27 @@ export async function updateAnnotation(
           authorId: txResult.authorId,
         })
       );
+    }
+  }
+
+  // G11: fan out each emitted event to subscribed project webhooks. The
+  // resolved-status synthesis is encoded inside the fan-out service via
+  // `newStatus`; pass it for status_changed events so a single transition can
+  // trigger both `annotation.status_changed` and `annotation.resolved`.
+  if (inngest && txResult) {
+    for (const ev of txResult.emittedEvents) {
+      const newStatus =
+        ev.type === "status_changed" && txResult.statusTransition
+          ? txResult.statusTransition.to
+          : null;
+      void fanOutAnnotationEvent(db, inngest, {
+        annotationEventType: ev.type,
+        projectId: txResult.projectId,
+        annotationId,
+        payload: ev.payload,
+        occurredAt: ev.createdAt,
+        newStatus,
+      });
     }
   }
 

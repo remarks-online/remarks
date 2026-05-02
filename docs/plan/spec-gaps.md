@@ -19,6 +19,35 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 
 ---
 
+## A26 — Outbound webhooks (G11)
+
+| # | Done when | Complete |
+|---|---|---|
+| A26 | Project admins can configure HTTPS webhooks from `app/projects/<slug>/settings`; annotation events fan out via Inngest with HMAC-SHA256 signatures; deliveries land in `project_webhook_deliveries` per attempt; integration tests cover happy path, retry, and inactive/unsubscribed short-circuits | [x] |
+
+- **Spec reference**: `docs/analysis/2026-04-30-agentation-vs-remarks.md` G11. Phase 0/1 spec did not specify outbound integrations.
+- **Problem**: Customers integrating Remarks into Linear / Jira / Slack today have no path. Every external hookup is a custom build.
+- **Proposed deliverable**:
+  - `packages/db/src/schema/project-webhooks.ts` + `packages/db/drizzle/0009_project_webhooks.sql` — `project_webhooks` and `project_webhook_deliveries` tables with cascade FKs to `projects` and `annotations`.
+  - `packages/shared/src/schemas/webhook.ts` — Zod enum (`annotation.created`, `annotation.status_changed`, `annotation.comment_added`, `annotation.resolved`) + request/response schemas.
+  - `apps/api/src/inngest/functions/webhook-deliver.ts` — pure-handler + factory mirroring `r2-cleanup.ts`. Stripe-style HMAC signing (`t=<unix>,v1=<hex>`), one `project_webhook_deliveries` row per attempt, Inngest `retries: 4`.
+  - `apps/api/src/services/webhook-fanout.service.ts` — best-effort fan-out called from the four `annotationEvents`-insertion sites already wired for SSE (G9). Maps source event types → webhook event types; synthesizes `annotation.resolved` on `status → done`.
+  - `apps/api/src/trpc/procedures/webhooks.ts` + register in `router.ts` — admin-only `list`, `create`, `update`, `rotateSecret`, `delete`, `listDeliveries`, `test`. Secret returned only on create / rotate.
+  - `apps/dashboard/src/app/app/projects/[slug]/settings/_components/webhooks-form.tsx` — settings card with add/edit/delete/rotate/test affordances and one-time secret reveal.
+  - `docs/adr/0020-outbound-webhooks.md` — Inngest-backed delivery, plaintext-once secret storage, HMAC signing scheme, taxonomy decisions.
+  - `docs/runbooks/webhook-receivers.md` — receiver-side signature verification + replay window guidance.
+- **Done when**:
+  - All seven test suites in `pnpm turbo {typecheck,lint,test,build} --filter="*"` pass plus the API integration suite.
+  - Webhook deliver handler unit-tests cover 2xx success, non-2xx retry, transport-error retry, signature shape, inactive / unsubscribed short-circuit.
+  - Integration test creates a webhook, posts an annotation, asserts an Inngest event was published with the right shape.
+- **Conflicts / overlaps with spec**: none — additive.
+- **Affected tasks / components**: `packages/db`, `packages/shared`, `apps/api`, `apps/dashboard`, `docs/adr`, `docs/runbooks`. Touches the same four chokepoints as G9 / ADR-0019.
+- **Dependencies**: independent. ADR-0019 (G9) ships the chokepoint shape but is not a hard dependency — fan-out runs in parallel with the SSE publisher, not after.
+- **Estimated size**: `m`. Shipped 2026-05-02.
+- **Status**: `done — folded into ADR-0020; entry kept until cleanup sweep`.
+
+---
+
 ## A25 — Live SSE event stream for annotations (G9)
 
 | # | Done when | Complete |
