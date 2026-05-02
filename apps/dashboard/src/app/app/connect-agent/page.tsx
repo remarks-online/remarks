@@ -3,6 +3,7 @@ import { buildAgentPresets } from "@/lib/agent-presets";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@remarks/ui";
 import Link from "next/link";
 import { AgentPicker } from "./_components/agent-picker";
+import { ToolsReference } from "./_components/tools-reference";
 
 // User-level "Connect Agent" install guide. Grants are per-user (ADR-0015) and
 // one OAuth login covers every Remarks project the user is a member of, so the
@@ -63,6 +64,17 @@ export default function ConnectAgentPage() {
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Pick your agent</h2>
         <AgentPicker presets={presets} />
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">What you can ask your agent</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Once your agent is connected it can call any of the Remarks MCP tools below. Here are a
+            few prompts to try first.
+          </p>
+        </div>
+        <ToolsReference />
       </div>
 
       <Card>

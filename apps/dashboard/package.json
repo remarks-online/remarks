@@ -17,6 +17,7 @@
   "dependencies": {
     "@clerk/nextjs": "^6.9.0",
     "@microsoft/fetch-event-source": "^2.0.1",
+    "@remarks/mcp-schema": "workspace:*",
     "@remarks/shared": "workspace:*",
     "@remarks/ui": "workspace:*",
     "@tanstack/react-query": "^5.62.0",
