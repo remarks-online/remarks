@@ -1,7 +1,7 @@
 # Agentation vs. Remarks — gap analysis
 
 Date: 2026-04-30
-Status: Analysis — P0 (G1/G2/G3/X1) shipped via ADR-0016 + migration 0007; P1 agent-loop (G4/G6/G7/G8) shipped via ADR-0018 on 2026-05-01; remaining specs are pull-from-this-list
+Status: Analysis — P0 (G1/G2/G3/X1) shipped via ADR-0016 + migration 0007; P1 agent-loop (G4/G6/G7/G8) shipped via ADR-0018 on 2026-05-01; P1 dashboard (D2) shipped 2026-05-02; remaining specs are pull-from-this-list
 
 ## Context
 
@@ -178,9 +178,15 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 *What:* Add EventSource listener in `annotations-browser.tsx`; on event, optimistically merge into the React Query cache. Toast on new annotation.
 *Where:* `apps/dashboard/src/app/app/projects/[slug]/_components/annotations-browser.tsx`.
 
-**D2. Intent + severity badges and filters** — *S, depends on G1 + G2*
+**D2. Intent + severity badges and filters** — *S, depends on G1 + G2* — **DONE 2026-05-02 (the bulk shipped alongside G1/G2 under ADR-0016; this entry marks the audit + e2e pin)**
 *Why:* Schema gain is wasted without UI affordance.
-*What:* Extend `annotation-card.tsx` and `annotation-detail-sheet.tsx` with badges; extend status-tabs with intent/severity filters. New primitives: probably reuse `Badge` from `@remarks/ui`.
+*What shipped:*
+- Card + detail sheet badges in `apps/dashboard/src/components/annotations/annotation-card.tsx` and `annotation-detail-sheet.tsx` via `INTENT_VARIANT` / `SEVERITY_VARIANT` from `status-ui.ts`, mapped to `@remarks/ui` `Badge` variants.
+- Three-axis filter toolbar in `annotation-filters.tsx` (status / intent / severity), URL-param-driven, used by both the project browser (`annotations-browser.tsx`) and the personal browser (`personal-annotations-browser.tsx`).
+- Activity timeline renders `intent_changed` / `severity_changed` events with from→to labels (`event-row.tsx`).
+- Extension mirror in `apps/extension/src/components/SidebarStatusTabs.tsx` (three stacked Selects with semantic dot indicators) backed by `intentFilter` / `severityFilter` in `apps/extension/src/lib/sidebar-store.ts`.
+- Server-side coverage via `apps/api/src/routes/annotations/list.integration.test.ts` (`?intent=fix` and `?severity=blocking`); UI coverage added 2026-05-02 in `apps/dashboard/e2e/project-detail.spec.ts` (describe "annotation list filters (D2)").
+*Deliberate divergence from spec letter:* The extension's `SidebarThreadList` ThreadItem keeps the inline dot+label rendering for intent/severity instead of swapping to `Badge` primitives. Reasoning: the sidebar panel is ≤520 px wide, and the extension's semantic palette (rose/amber/emerald via `INTENT_DOT_CLASS` / `SEVERITY_DOT_CLASS` in `apps/extension/src/lib/status-ui.ts`) doesn't map onto the four Badge variants; switching would regress density and lose the hue distinctions between `fix`/`change`/`question`/`approve`.
 *Where:* `apps/dashboard/src/components/annotations/*`, `apps/extension/src/components/SidebarStatusTabs.tsx` (mirror).
 
 **D3. "Pending" / "Awaiting agent" view** — *S, depends on G3*
@@ -210,7 +216,7 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 
 **P0 — schema foundations (week 1).** G1 (intent), G2 (severity), G3 (acknowledged), G4 (dismiss reason), X1 (Zod schema doc). All small, all unblock multiple downstream specs. Single migration. **G1 + G2 + G3 + X1 shipped 2026-04-30 (migration 0007 + ADR-0016); G4 still pending.**
 
-**P1 — agent loop wins (weeks 1–2).** G6 (acknowledge), G7 (dismiss with reason), G8 (get_pending), D2 (badges), D3 (pending view), D4 (threaded UI). High user-visible delta with low risk.
+**P1 — agent loop wins (weeks 1–2).** G6 (acknowledge), G7 (dismiss with reason), G8 (get_pending), D2 (badges, **shipped 2026-05-02 — audit + e2e pin**), D3 (pending view), D4 (threaded UI). High user-visible delta with low risk.
 
 **P2 — real-time + integrations (weeks 2–4).** G9 (SSE), G10 (watch_annotations), G11 (webhooks), D1 (live feed), D5 (webhook UI). Bigger lift; biggest "feels modern" gain.
 

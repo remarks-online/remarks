@@ -371,6 +371,177 @@ test.describe("annotation detail drawer", () => {
   });
 });
 
+test.describe("annotation list filters (D2)", () => {
+  const SPEC_PROJECT_NAME = "D2 Filters";
+  const SPEC_PROJECT_SLUG = "e2e-d2-filters";
+  const COMMENT_PREFIX = "d2-filter-";
+
+  // Fix + Blocking is the most-narrowed pair; the other rows exercise each
+  // axis independently so we can assert correct narrowing on either axis
+  // alone, then on both combined.
+  const SEED = [
+    { key: "alpha", intent: "fix", severity: "blocking" },
+    { key: "beta", intent: "fix", severity: "suggestion" },
+    { key: "gamma", intent: "change", severity: "important" },
+    { key: "delta", intent: null, severity: null },
+  ] as const;
+
+  function commentFor(key: string): string {
+    return `${COMMENT_PREFIX}${key}`;
+  }
+
+  async function withDb<T>(
+    fn: (client: ReturnType<typeof createClient>) => Promise<T>
+  ): Promise<T> {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) throw new Error("DATABASE_URL missing for e2e seed");
+    const client = createClient(databaseUrl);
+    try {
+      return await fn(client);
+    } finally {
+      await client.sql.end({ timeout: 5 });
+    }
+  }
+
+  async function deleteProjectBySlug(
+    db: DB,
+    sql: ReturnType<typeof createClient>["sql"],
+    orgId: string,
+    slug: string
+  ): Promise<void> {
+    const existing = await db.query.projects.findFirst({
+      where: (p, { and, eq }) => and(eq(p.orgId, orgId), eq(p.slug, slug)),
+      columns: { id: true },
+    });
+    if (!existing) return;
+    await sql`DELETE FROM projects WHERE id = ${existing.id}`;
+  }
+
+  test.beforeAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      const clerkUserId = process.env.E2E_CLERK_USER_ID;
+      if (!clerkOrgId || !clerkUserId) {
+        throw new Error("E2E_CLERK_ORG_ID and E2E_CLERK_USER_ID must be set by global-setup");
+      }
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      const user = await db.query.users.findFirst({
+        where: (u, { eq }) => eq(u.clerkUserId, clerkUserId),
+      });
+      if (!org || !user) throw new Error("global-setup did not seed the expected org/user");
+
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+
+      const [project] = await db
+        .insert(schema.projects)
+        .values({
+          orgId: org.id,
+          creatorUserId: user.id,
+          name: SPEC_PROJECT_NAME,
+          slug: SPEC_PROJECT_SLUG,
+          primaryBranch: "main",
+        })
+        .returning();
+      if (!project) throw new Error("project insert returned no rows");
+
+      await db.insert(schema.projectMembers).values({
+        projectId: project.id,
+        userId: user.id,
+        role: "admin",
+      });
+
+      const [branch] = await db
+        .insert(schema.branches)
+        .values({ projectId: project.id, name: "main" })
+        .returning();
+      if (!branch) throw new Error("branch insert returned no rows");
+
+      await db.insert(schema.annotations).values(
+        SEED.map((row) => ({
+          projectId: project.id,
+          branchId: branch.id,
+          authorId: user.id,
+          targetType: "element" as const,
+          url: "https://acme.example.com/home",
+          targetSelector: `[data-d2="${row.key}"]`,
+          viewport: { width: 1440, height: 900, dpr: 2 },
+          commentText: commentFor(row.key),
+          intent: row.intent,
+          severity: row.severity,
+        }))
+      );
+    });
+  });
+
+  test.afterAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      if (!clerkOrgId) return;
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      if (!org) return;
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+    });
+  });
+
+  test("intent + severity filters narrow the annotation list", async ({ signedInPage }) => {
+    await signedInPage.goto(`/app/projects/${SPEC_PROJECT_SLUG}`);
+
+    const cardFor = (key: string) =>
+      signedInPage.getByRole("button", {
+        name: new RegExp(`Open annotation: ${commentFor(key)}`),
+      });
+
+    // 1. No filter → all four cards.
+    for (const row of SEED) {
+      await expect(cardFor(row.key)).toBeVisible();
+    }
+
+    // 2. Intent = Fix → alpha + beta visible, gamma + delta hidden.
+    const intentSelect = signedInPage.getByRole("combobox", { name: "Filter by intent" });
+    await intentSelect.click();
+    await signedInPage.getByRole("option", { name: "Fix" }).click();
+
+    await expect(signedInPage).toHaveURL(/[?&]intent=fix(?:&|$)/);
+    await expect(cardFor("alpha")).toBeVisible();
+    await expect(cardFor("beta")).toBeVisible();
+    await expect(cardFor("gamma")).toHaveCount(0);
+    await expect(cardFor("delta")).toHaveCount(0);
+
+    // 3. Add Severity = Blocking → only alpha.
+    const severitySelect = signedInPage.getByRole("combobox", { name: "Filter by severity" });
+    await severitySelect.click();
+    await signedInPage.getByRole("option", { name: "Blocking" }).click();
+
+    await expect(signedInPage).toHaveURL(/[?&]intent=fix(?:&|$)/);
+    await expect(signedInPage).toHaveURL(/[?&]severity=blocking(?:&|$)/);
+    await expect(cardFor("alpha")).toBeVisible();
+    await expect(cardFor("beta")).toHaveCount(0);
+    await expect(cardFor("gamma")).toHaveCount(0);
+    await expect(cardFor("delta")).toHaveCount(0);
+
+    // The badge rendering contract from ADR-0016: alpha shows both Fix and
+    // Blocking badges. Scope to the card so we don't match the filter labels.
+    const alphaCard = cardFor("alpha");
+    await expect(alphaCard.getByText("Fix", { exact: true })).toBeVisible();
+    await expect(alphaCard.getByText("Blocking", { exact: true })).toBeVisible();
+
+    // 4. Reset both filters → all four cards return; URL params cleared.
+    await intentSelect.click();
+    await signedInPage.getByRole("option", { name: "All intents" }).click();
+    await severitySelect.click();
+    await signedInPage.getByRole("option", { name: "All severities" }).click();
+
+    await expect(signedInPage).toHaveURL(`/app/projects/${SPEC_PROJECT_SLUG}`);
+    for (const row of SEED) {
+      await expect(cardFor(row.key)).toBeVisible();
+    }
+  });
+});
+
 test.describe("annotation list pagination (A1)", () => {
   // PAGE_SIZE + 1 so exactly one row spills onto page 2 when "Load more" fires.
   const PAGE_SIZE = 50;
