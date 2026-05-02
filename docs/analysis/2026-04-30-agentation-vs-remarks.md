@@ -1,7 +1,7 @@
 # Agentation vs. Remarks — gap analysis
 
 Date: 2026-04-30
-Status: Analysis — P0 (G1/G2/G3/X1) shipped via ADR-0016 + migration 0007; P1 agent-loop (G4/G6/G7/G8) shipped via ADR-0018 on 2026-05-01; P1 dashboard (D2) shipped 2026-05-02; remaining specs are pull-from-this-list
+Status: Analysis — P0 (G1/G2/G3/X1) shipped via ADR-0016 + migration 0007; P1 agent-loop (G4/G6/G7/G8) shipped via ADR-0018 on 2026-05-01; P1 dashboard (D2) shipped 2026-05-02; P2 real-time foundation (G9 SSE 2026-05-01, D1 live feed 2026-05-02); P3 capture richness (G12 2026-05-01, G13/G14 2026-05-01); remaining specs are pull-from-this-list
 
 ## Context
 
@@ -106,11 +106,10 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 *What:* Two thin wrappers over existing list endpoints with `status=to_do` (and post-G3, possibly `to_do OR acknowledged-but-not-doing`).
 *Where:* `apps/mcp/src/tools/get-pending.ts`, `apps/mcp/src/tools/get-all-pending.ts`, new aggregator route in `apps/api/src/routes/internal/annotations.ts`.
 
-**G9. SSE event stream — per-project and per-user** — *M*
+**G9. SSE event stream — per-project and per-user** — *M* — **DONE 2026-05-01 (commit 2a6b453, PR #117; Postgres LISTEN/NOTIFY broadcast on annotation_events insert with a 256-event in-process ring buffer; DB-backed replay for older Last-Event-ID cursors capped at 200 with `replay_truncated`; Clerk + internal-MCP route variants)**
 *Why:* Powers `watch_annotations`-style agent loops, live dashboard activity feeds, and is required infrastructure for any "real-time" UX. Without it, agents poll.
-*What:* `GET /projects/:projectId/events?since=...` and `GET /users/:userId/events?since=...` (internal-auth + Clerk variants). Events: annotation.created, annotation.updated, status.changed, comment.added, asset.attached. Use Postgres LISTEN/NOTIFY or Redis pub/sub from the existing `annotationEvents` insert path. Include `Last-Event-ID` resume support. Cap connection time, document keep-alive.
-*Where:* `apps/api/src/routes/events/*` (new), wire into `annotationEvents` write path. Likely needs Upstash Redis (already in env per CLAUDE.md §1.8 — confirm).
-*Risks:* Fly.io + Fastify SSE behavior under HTTP/2; load shape of long-lived connections; Redis vs PG-NOTIFY tradeoff.
+*What shipped:* `GET /projects/:projectId/events` and `GET /users/:userId/events` (Clerk-auth) plus `/internal/projects/:projectId/events` + `/internal/users/:clerkUserId/events` (MCP-auth). Hand-rolled SSE channel — no new runtime dep, no Redis (PG-NOTIFY beat the Upstash option). `MAX_SSE_CONNECTIONS` (default 200) bounds RAM on the 512 MB Fly VM; `MAX_SSE_CONNECTION_MS` (default 5 min) rotates connections so membership snapshots refresh without an explicit invalidation channel. Listener attaches lazily on first subscribe.
+*Where:* `apps/api/src/routes/events/{handler,index}.ts`, `apps/api/src/routes/internal/events.ts`, `apps/api/src/lib/sse.ts`, `apps/api/src/lib/annotation-event-bus.ts`, `apps/api/src/plugins/annotation-event-bus.ts`, `apps/api/src/services/event-stream.service.ts`.
 
 **G10. MCP tool: `watch_annotations`** — *M, depends on G9*
 *Why:* The hands-free loop. Agent calls this once and gets streamed annotations to act on.
@@ -129,10 +128,10 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 
 ### Extension (`apps/extension`)
 
-**G12. Computed-styles overlay on hover** — *S* — *partially shipped per recent commit `27e1e6c`*
-*Why:* "show selected element + path + computed CSS in capture popover" landed last week — verify it covers hover, not just post-pick. Agentation surfaces computed styles inline on hover before commit.
-*What:* If hover-mode is missing, extend `picker-controller.ts` to render a transient computed-styles tooltip while picking (font / color / spacing). Keep behind a setting; could be noisy.
-*Where:* `apps/extension/src/lib/picker-controller.ts`, `apps/extension/src/components/CapturePromptPopover.tsx`.
+**G12. Computed-styles overlay on hover** — *S* — **DONE 2026-05-01 (commit aa74c7c; post-pick popover panel originally landed in 27e1e6c, hover-tooltip + "Show computed styles on hover" toggle finished the spec)**
+*Why:* Agents/humans want computed CSS visible inline before commit, not just after.
+*What shipped:* Hover-mode tooltip renders alongside the picker overlay via `renderStylesTooltipContent(stylesTooltip, compactHoverStyles(el))` — font / color / padding / margin / background-color per `HOVER_STYLE_PROPS`. Gated by a "Show computed styles on hover" toggle in the sidebar More menu, persisted as `showHoverStyles` (default off, per spec request to keep noise behind a setting). Post-pick popover surfaces the full computed-styles dict in a collapsible panel.
+*Where:* `apps/extension/src/lib/picker-controller.ts:283-317`, `apps/extension/src/lib/sidebar-store.ts`, `apps/extension/src/components/SidebarMoreMenu.tsx:70-77`, `apps/extension/src/components/DomContextHeader.tsx:117-130`.
 
 **G13. React component-tree detection (Fiber traversal)** — *M, **DONE 2026-05-01 (ADR-0019)***
 *Why:* For React apps, "this annotation is on `<Dashboard><SubmitButton />>`" is more agent-actionable than a CSS selector. Closes most of the "where in code" gap.
@@ -173,10 +172,10 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 
 ### Dashboard (`apps/dashboard`)
 
-**D1. Live activity feed (annotations panel) backed by SSE** — *S, depends on G9*
+**D1. Live activity feed (annotations panel) backed by SSE** — *S, depends on G9* — **DONE 2026-05-02 (commit 1973443, PR #120; replaces 5s polling with authenticated SSE; Live indicator pill + Sonner toast on new annotation; also fixed a CORS-on-hijack bug in `apps/api/src/lib/sse.ts` tracked as A26)**
 *Why:* Today annotation lists are static-until-refresh. With G9 in place, this is a thin client.
-*What:* Add EventSource listener in `annotations-browser.tsx`; on event, optimistically merge into the React Query cache. Toast on new annotation.
-*Where:* `apps/dashboard/src/app/app/projects/[slug]/_components/annotations-browser.tsx`.
+*What shipped:* `useAnnotationStream` hook wraps `@microsoft/fetch-event-source` (native EventSource can't send Authorization), feeds events through a pure cache-mapping function over tRPC utils, disables polling while connected. New deps: `@microsoft/fetch-event-source` and `sonner` (shadcn-canonical toast — also reused by D2/D3/D4 going forward).
+*Where:* `apps/dashboard/src/app/app/projects/[slug]/_components/annotations-browser.tsx`, `apps/dashboard/src/hooks/use-annotation-stream.ts`, `apps/dashboard/src/lib/annotation-stream-cache.ts`, `apps/dashboard/src/components/annotations/live-indicator.tsx`, `apps/dashboard/src/components/toaster.tsx`.
 
 **D2. Intent + severity badges and filters** — *S, depends on G1 + G2* — **DONE 2026-05-02 (the bulk shipped alongside G1/G2 under ADR-0016; this entry marks the audit + e2e pin)**
 *Why:* Schema gain is wasted without UI affordance.
@@ -218,9 +217,9 @@ Specs are grouped by surface, ordered roughly by leverage. Each entry: ID, name,
 
 **P1 — agent loop wins (weeks 1–2).** G6 (acknowledge), G7 (dismiss with reason), G8 (get_pending), D2 (badges, **shipped 2026-05-02 — audit + e2e pin**), D3 (pending view), D4 (threaded UI). High user-visible delta with low risk.
 
-**P2 — real-time + integrations (weeks 2–4).** G9 (SSE), G10 (watch_annotations), G11 (webhooks), D1 (live feed), D5 (webhook UI). Bigger lift; biggest "feels modern" gain.
+**P2 — real-time + integrations (weeks 2–4).** G9 (SSE, **shipped 2026-05-01 — commit 2a6b453**), G10 (watch_annotations), G11 (webhooks), D1 (live feed, **shipped 2026-05-02 — commit 1973443**), D5 (webhook UI). Bigger lift; biggest "feels modern" gain.
 
-**P3 — capture richness (weeks 3–5, parallelizable).** G12 (computed styles confirm), G13 (Fiber tree, **shipped 2026-05-01 — ADR-0019**), G14 (source location, **shipped 2026-05-01 — folded into G13's per-component schema + dashboard Source row**), G15 (animation pause), G16 (text mode), G17 (multi-select), G18 (markdown export). Independent of P2; can be split across people.
+**P3 — capture richness (weeks 3–5, parallelizable).** G12 (computed styles, **shipped 2026-05-01 — commit aa74c7c**), G13 (Fiber tree, **shipped 2026-05-01 — ADR-0019**), G14 (source location, **shipped 2026-05-01 — folded into G13's per-component schema + dashboard Source row**), G15 (animation pause), G16 (text mode), G17 (multi-select), G18 (markdown export). Independent of P2; can be split across people.
 
 **P4 — defer.** G5 (kind enum) + G19 (layout mode). Only if customer-pull appears.
 
