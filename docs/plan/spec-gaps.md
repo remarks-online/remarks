@@ -168,3 +168,29 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
 - **Dependencies**: After **G13** lands (done in ADR-0019). Independent of A24 — works on dev-captured annotations even before sourcemap resolution exists.
 - **Estimated size**: `s`.
 - **Status**: `open`.
+
+## A26 — SSE response loses CORS headers when the handler hijacks the reply
+
+| # | Done when | Complete |
+|---|---|---|
+| A26 | The G9 SSE endpoints return CORS response headers on the streaming 200 path so cross-origin browsers (dashboard / extension) can consume the stream | [x] |
+
+- **Spec reference**: surfaced while implementing **D1** (live activity feed) in `docs/analysis/2026-04-30-agentation-vs-remarks.md`. G9 (`apps/api/src/routes/events/*`) shipped in PR #117 but was only smoke-tested with curl; no cross-origin browser ever consumed it.
+- **Problem**: `apps/api/src/lib/sse.ts` calls `reply.hijack()` and writes raw HTTP headers via `res.writeHead`. `@fastify/cors` sets the `Access-Control-Allow-Origin` headers on the reply object during its onRequest hook, but its onSend hook never fires for hijacked responses, so the streaming 200 went out with no CORS headers. The browser blocked the response with `No 'Access-Control-Allow-Origin' header is present`. Preflight (OPTIONS) and 4xx error paths were unaffected because they go through Fastify's normal reply pipeline.
+- **Resolution**: snapshot CORS headers from `reply.getHeaders()` before `reply.hijack()`, then merge them into the `res.writeHead(200, …)` call. Forwards anything `@fastify/cors` already populated (`Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials`, `Vary`) without coupling sse.ts to the cors plugin's internals.
+- **Affected files**: `apps/api/src/lib/sse.ts`.
+- **Status**: `done` (shipped alongside D1).
+
+## A27 — Onboarding step-2 heading collision breaks the wizard e2e on main
+
+| # | Done when | Complete |
+|---|---|---|
+| A27 | `apps/dashboard/e2e/onboarding.spec.ts` "walks install → personal annotation → MCP → success" passes again | [ ] |
+
+- **Spec reference**: not specified. Surfaced while running the full e2e suite during D1 verification, but reproduces on `main` (commit `1194220`) without any D1 changes — pre-existing.
+- **Problem**: After clicking "I've installed it" on step 1, the onboarding wizard renders both an `<h1>Capture your first annotation</h1>` (step page title) and an `<h2>Capture your first annotation</h2>` (panel title) with the exact same text. The spec's `getByRole("heading", { name: "...", exact: true })` then fails Playwright's strict-mode check ("resolved to 2 elements").
+- **Resolution candidates**:
+  - Differentiate the H1 vs H2 copy in `apps/dashboard/src/app/app/onboarding/_components/onboarding-wizard.tsx` (e.g. step subtitle "What to do" / "Your first capture") so the page-title and panel-title roles are distinct.
+  - Or scope the spec's locator to `getByRole("heading", { level: 2, name: "..." })` to disambiguate.
+- **Affected files**: `apps/dashboard/src/app/app/onboarding/_components/onboarding-wizard.tsx`, `apps/dashboard/e2e/onboarding.spec.ts`.
+- **Status**: `open`.

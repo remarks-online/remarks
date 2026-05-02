@@ -101,15 +101,19 @@ test.describe("error boundaries and loading states", () => {
   test("client-side tRPC failure renders the stale-data banner without crashing", async ({
     signedInPage,
   }) => {
-    // Initial load uses RSC fetch (not interceptable from the browser); the
-    // project + annotation render normally.
+    // Poison client-side tRPC + SSE before navigation. RSC fetches happen
+    // server-side in Next.js and aren't routed through the browser, so the
+    // initial page render still gets real data — only client-side fetches
+    // (tRPC poll, SSE) hit the 500. SSE must fail too: when it succeeds the
+    // browser stops polling, so a tRPC outage would never surface as a banner.
+    await signedInPage.route("**/trpc/**", (route) => route.fulfill({ status: 500, body: "" }));
+    await signedInPage.route("**/projects/*/events", (route) =>
+      route.fulfill({ status: 500, body: "" })
+    );
+
     await signedInPage.goto(`/app/projects/${SPEC_PROJECT_SLUG}`);
     await expect(signedInPage.getByRole("heading", { name: SPEC_PROJECT_NAME })).toBeVisible();
     await expect(signedInPage.getByText(ANNOTATION_COMMENT)).toBeVisible();
-
-    // Now poison every client-side tRPC call. The 5s poll on annotations.list
-    // (annotations-browser.tsx) will hit this route and fail.
-    await signedInPage.route("**/trpc/**", (route) => route.fulfill({ status: 500, body: "" }));
 
     // Wait for refetchInterval (5s) + the QueryClient retry (1) to flip isError.
     await expect(signedInPage.getByText(/Couldn['’]t refresh annotations/i)).toBeVisible({

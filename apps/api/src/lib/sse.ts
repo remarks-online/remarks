@@ -38,12 +38,28 @@ export function startSseResponse(
   const keepaliveMs = opts.keepaliveMs ?? DEFAULT_KEEPALIVE_MS;
   const maxConnectionMs = opts.maxConnectionMs ?? DEFAULT_MAX_CONNECTION_MS;
 
+  // @fastify/cors sets the Access-Control-* headers on the reply object during
+  // its onRequest hook, so they're already present by the time the route
+  // handler runs. Snapshot them before hijacking — once we go raw, the cors
+  // plugin's onSend hook can't reach the response, so cross-origin SSE
+  // consumers (the dashboard at a different origin from the API) would see
+  // their connection blocked at the browser security layer.
+  const corsHeaders: Record<string, string | number | string[]> = {};
+  for (const [name, value] of Object.entries(reply.getHeaders())) {
+    if (value === undefined) continue;
+    const lower = name.toLowerCase();
+    if (lower.startsWith("access-control-") || lower === "vary") {
+      corsHeaders[name] = value;
+    }
+  }
+
   // Tell Fastify we're taking over the response — otherwise its serializer
   // tries to JSON.stringify whatever the handler returns.
   reply.hijack();
 
   const res = reply.raw;
   res.writeHead(200, {
+    ...corsHeaders,
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",

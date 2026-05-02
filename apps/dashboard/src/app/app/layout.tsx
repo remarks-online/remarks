@@ -1,4 +1,5 @@
 import { PostHogProvider } from "@/components/posthog-provider";
+import { Toaster } from "@/components/toaster";
 import { TRPCProvider } from "@/lib/trpc-provider";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
@@ -10,6 +11,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <TRPCProvider>
       <PostHogProvider>
+        <Toaster />
         <div className="flex min-h-screen flex-col bg-background text-foreground">
           <header className="flex items-center justify-between border-b border-border px-6 py-3">
             <Link href="/app/projects" className="text-lg font-semibold">
