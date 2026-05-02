@@ -85,7 +85,11 @@ export default async function ProjectDetailPage({ params }: { params: Params }) 
       </div>
 
       <Suspense fallback={<AnnotationsPanelSkeleton />}>
-        <AnnotationsPanel projectId={project.id} primaryBranch={project.primaryBranch} />
+        <AnnotationsPanel
+          projectId={project.id}
+          projectName={project.name}
+          primaryBranch={project.primaryBranch}
+        />
       </Suspense>
     </section>
   );

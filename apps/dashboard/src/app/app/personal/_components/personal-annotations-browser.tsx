@@ -8,6 +8,7 @@ import {
   type SeverityFilter,
   type StatusFilter,
 } from "@/components/annotations/annotation-filters";
+import { ExportAnnotationsMenu } from "@/components/annotations/export-annotations-menu";
 import { safeHostname } from "@/components/annotations/status-ui";
 import { trpc } from "@/lib/trpc-client";
 import {
@@ -117,7 +118,7 @@ export function PersonalAnnotationsBrowser({ initialData }: PersonalAnnotationsB
   ) : null;
 
   const filtersBar = (
-    <div className="mt-6">
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
       <AnnotationFilters
         status={status}
         intent={intent}
@@ -125,6 +126,12 @@ export function PersonalAnnotationsBrowser({ initialData }: PersonalAnnotationsB
         onStatusChange={(v) => setFilter("status", v)}
         onIntentChange={(v) => setFilter("intent", v)}
         onSeverityChange={(v) => setFilter("severity", v)}
+      />
+      <ExportAnnotationsMenu
+        items={items}
+        hasNextPage={hasNextPage}
+        scope={{ kind: "personal" }}
+        filters={{ status, intent, severity }}
       />
     </div>
   );

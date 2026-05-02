@@ -16,6 +16,7 @@ import {
 } from "@/lib/status-ui";
 import { ANNOTATION_INTENTS, ANNOTATION_SEVERITIES } from "@remarks/shared";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, cn } from "@remarks/ui";
+import type { ReactNode } from "react";
 
 interface OptionDef<TValue extends string> {
   value: TValue;
@@ -128,9 +129,11 @@ function SeveritySelect({ options }: DotItemProps<SeverityFilter>) {
 /**
  * Status / Intent / Severity filter trio for the sidebar. Stacked vertically
  * because the panel is ≤520 px wide; cramming three selects into one row
- * truncates labels too aggressively.
+ * truncates labels too aggressively. The optional `trailing` slot lets the
+ * caller render list-scoped actions (e.g. the export menu) flush-right of the
+ * intent/severity row, keeping all list-affecting affordances grouped.
  */
-export function SidebarStatusTabs() {
+export function SidebarStatusTabs({ trailing }: { trailing?: ReactNode }) {
   return (
     <div className="flex flex-col gap-1 border-b border-border px-1.5 py-1">
       <StatusSelect options={STATUS_OPTIONS} />
@@ -141,6 +144,7 @@ export function SidebarStatusTabs() {
         <div className="flex-1">
           <SeveritySelect options={SEVERITY_OPTIONS} />
         </div>
+        {trailing ? <div className="shrink-0">{trailing}</div> : null}
       </div>
     </div>
   );
