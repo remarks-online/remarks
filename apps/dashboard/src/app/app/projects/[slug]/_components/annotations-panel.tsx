@@ -3,9 +3,11 @@ import { ANNOTATION_LIST_PAGE_SIZE, AnnotationsBrowser } from "./annotations-bro
 
 export async function AnnotationsPanel({
   projectId,
+  projectName,
   primaryBranch,
 }: {
   projectId: string;
+  projectName: string;
   primaryBranch: string;
 }) {
   const trpc = await getTrpcServer();
@@ -17,6 +19,7 @@ export async function AnnotationsPanel({
   return (
     <AnnotationsBrowser
       projectId={projectId}
+      projectName={projectName}
       initialData={initialList}
       primaryBranch={primaryBranch}
     />

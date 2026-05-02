@@ -8,6 +8,7 @@ import {
   type SeverityFilter,
   type StatusFilter,
 } from "@/components/annotations/annotation-filters";
+import { ExportAnnotationsMenu } from "@/components/annotations/export-annotations-menu";
 import { LiveIndicator } from "@/components/annotations/live-indicator";
 import { useAnnotationStream } from "@/hooks/use-annotation-stream";
 import { applyStreamEventToCache } from "@/lib/annotation-stream-cache";
@@ -32,6 +33,7 @@ export const ANNOTATION_LIST_PAGE_SIZE = 50;
 
 interface AnnotationsBrowserProps {
   projectId: string;
+  projectName: string;
   initialData: AnnotationListResponse;
   primaryBranch: string;
 }
@@ -59,6 +61,7 @@ function parseSeverity(raw: string | null): SeverityFilter {
 
 export function AnnotationsBrowser({
   projectId,
+  projectName,
   initialData,
   primaryBranch,
 }: AnnotationsBrowserProps) {
@@ -181,7 +184,15 @@ export function AnnotationsBrowser({
         onIntentChange={(v) => setFilter("intent", v)}
         onSeverityChange={(v) => setFilter("severity", v)}
       />
-      <LiveIndicator status={stream.status} />
+      <div className="flex items-center gap-3">
+        <ExportAnnotationsMenu
+          items={items}
+          hasNextPage={hasNextPage}
+          scope={{ kind: "project", projectName, branchName: primaryBranch }}
+          filters={{ status, intent, severity }}
+        />
+        <LiveIndicator status={stream.status} />
+      </div>
     </div>
   );
 

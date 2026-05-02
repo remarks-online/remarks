@@ -542,6 +542,148 @@ test.describe("annotation list filters (D2)", () => {
   });
 });
 
+test.describe("annotation export (G18)", () => {
+  const SPEC_PROJECT_NAME = "G18 Export";
+  const SPEC_PROJECT_SLUG = "e2e-g18-export";
+  const COMMENT_ALPHA = "g18-export-alpha-comment";
+  const COMMENT_BETA = "g18-export-beta-comment";
+
+  async function withDb<T>(
+    fn: (client: ReturnType<typeof createClient>) => Promise<T>
+  ): Promise<T> {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) throw new Error("DATABASE_URL missing for e2e seed");
+    const client = createClient(databaseUrl);
+    try {
+      return await fn(client);
+    } finally {
+      await client.sql.end({ timeout: 5 });
+    }
+  }
+
+  async function deleteProjectBySlug(
+    db: DB,
+    sql: ReturnType<typeof createClient>["sql"],
+    orgId: string,
+    slug: string
+  ): Promise<void> {
+    const existing = await db.query.projects.findFirst({
+      where: (p, { and, eq }) => and(eq(p.orgId, orgId), eq(p.slug, slug)),
+      columns: { id: true },
+    });
+    if (!existing) return;
+    await sql`DELETE FROM projects WHERE id = ${existing.id}`;
+  }
+
+  test.beforeAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      const clerkUserId = process.env.E2E_CLERK_USER_ID;
+      if (!clerkOrgId || !clerkUserId) {
+        throw new Error("E2E_CLERK_ORG_ID and E2E_CLERK_USER_ID must be set by global-setup");
+      }
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      const user = await db.query.users.findFirst({
+        where: (u, { eq }) => eq(u.clerkUserId, clerkUserId),
+      });
+      if (!org || !user) throw new Error("global-setup did not seed the expected org/user");
+
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+
+      const [project] = await db
+        .insert(schema.projects)
+        .values({
+          orgId: org.id,
+          creatorUserId: user.id,
+          name: SPEC_PROJECT_NAME,
+          slug: SPEC_PROJECT_SLUG,
+          primaryBranch: "main",
+        })
+        .returning();
+      if (!project) throw new Error("project insert returned no rows");
+
+      await db.insert(schema.projectMembers).values({
+        projectId: project.id,
+        userId: user.id,
+        role: "admin",
+      });
+
+      const [branch] = await db
+        .insert(schema.branches)
+        .values({ projectId: project.id, name: "main" })
+        .returning();
+      if (!branch) throw new Error("branch insert returned no rows");
+
+      await db.insert(schema.annotations).values([
+        {
+          projectId: project.id,
+          branchId: branch.id,
+          authorId: user.id,
+          targetType: "element",
+          url: "https://acme.example.com/checkout",
+          targetSelector: "button.submit",
+          viewport: { width: 1440, height: 900, dpr: 2 },
+          commentText: COMMENT_ALPHA,
+          intent: "fix",
+          severity: "blocking",
+        },
+        {
+          projectId: project.id,
+          branchId: branch.id,
+          authorId: user.id,
+          targetType: "element",
+          url: "https://acme.example.com/profile",
+          targetSelector: "input[name=email]",
+          viewport: { width: 1440, height: 900, dpr: 2 },
+          commentText: COMMENT_BETA,
+          intent: "question",
+          severity: null,
+        },
+      ]);
+    });
+  });
+
+  test.afterAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      if (!clerkOrgId) return;
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      if (!org) return;
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+    });
+  });
+
+  test("Copy as markdown writes a rendered list to the clipboard", async ({ signedInPage }) => {
+    // Chromium gates clipboard reads behind a per-origin permission. Granting
+    // both read+write keeps the test free of permission prompts; the runtime
+    // path the user takes only needs write, but read is required for the
+    // Playwright readback assertion.
+    await signedInPage.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+
+    await signedInPage.goto(`/app/projects/${SPEC_PROJECT_SLUG}`);
+    await expect(signedInPage.getByText(COMMENT_ALPHA)).toBeVisible();
+    await expect(signedInPage.getByText(COMMENT_BETA)).toBeVisible();
+
+    await signedInPage.getByRole("button", { name: "Export annotations as markdown" }).click();
+    await signedInPage.getByRole("menuitem", { name: "Copy as markdown" }).click();
+
+    await expect(signedInPage.getByText(/Copied 2 annotations as markdown/)).toBeVisible();
+
+    const clipboard = await signedInPage.evaluate(() => navigator.clipboard.readText());
+    expect(clipboard).toContain(`# Remarks export — ${SPEC_PROJECT_NAME}`);
+    expect(clipboard).toContain("Branch: `main`");
+    expect(clipboard).toContain(COMMENT_ALPHA);
+    expect(clipboard).toContain(COMMENT_BETA);
+    expect(clipboard).toContain("[to_do] [fix] [blocking]");
+    expect(clipboard).toContain("[to_do] [question]");
+    expect(clipboard).toContain("- **Target:** element — `button.submit`");
+  });
+});
+
 test.describe("annotation list pagination (A1)", () => {
   // PAGE_SIZE + 1 so exactly one row spills onto page 2 when "Load more" fires.
   const PAGE_SIZE = 50;

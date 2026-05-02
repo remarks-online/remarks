@@ -2,6 +2,7 @@ import { AnnotationPinLayer } from "@/components/AnnotationPinLayer";
 import { CapturePromptPopover, type DraftClassifiers } from "@/components/CapturePromptPopover";
 import { SidebarBranchSelector } from "@/components/SidebarBranchSelector";
 import { SidebarCapturePanel } from "@/components/SidebarCapturePanel";
+import { SidebarExportMenu } from "@/components/SidebarExportMenu";
 import { SidebarHeader } from "@/components/SidebarHeader";
 import { SidebarLauncher } from "@/components/SidebarLauncher";
 import { SidebarOutboxBanner } from "@/components/SidebarOutboxBanner";
@@ -257,7 +258,9 @@ function SidebarBody({ projectId, token, clerkOrgId }: SidebarBodyProps) {
     <>
       <AnnotationPinLayer projectId={projectId} branch={projectId ? branch : null} />
       {projectId ? <SidebarBranchSelector value={branch} onChange={onBranchChange} /> : null}
-      <SidebarStatusTabs />
+      <SidebarStatusTabs
+        trailing={<SidebarExportMenu projectId={projectId} branch={projectId ? branch : null} />}
+      />
       <div className="flex-1 overflow-y-auto">
         <SidebarThreadList projectId={projectId} branch={projectId ? branch : null} />
       </div>
