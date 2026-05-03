@@ -53,7 +53,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
     // with existing dashboard / extension callers). The service signature
     // accepts arrays so the internal MCP route can multi-filter; wrap once
     // here.
-    const { status, intent, severity, ...rest } = queryResult.data;
+    const { status, intent, severity, groupId, ...rest } = queryResult.data;
     const result = await listAnnotations(request.server.db, {
       projectId,
       query: {
@@ -61,6 +61,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
         statuses: status ? [status] : undefined,
         intents: intent ? [intent] : undefined,
         severities: severity ? [severity] : undefined,
+        groupIds: groupId ? [groupId] : undefined,
       },
       r2: request.server.r2,
     });
@@ -231,7 +232,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
     if (!queryResult.success) {
       throw new ValidationError("Invalid query params", queryResult.error.issues);
     }
-    const { status, intent, severity, ...rest } = queryResult.data;
+    const { status, intent, severity, groupId, ...rest } = queryResult.data;
     const result = await listAnnotationsForUser(request.server.db, {
       userId: request.auth.user.id,
       query: {
@@ -239,6 +240,7 @@ export async function annotationRoutes(fastify: FastifyInstance): Promise<void> 
         statuses: status ? [status] : undefined,
         intents: intent ? [intent] : undefined,
         severities: severity ? [severity] : undefined,
+        groupIds: groupId ? [groupId] : undefined,
       },
       r2: request.server.r2,
     });
@@ -254,4 +256,9 @@ const userAnnotationsQuerySchema = z.object({
   severity: annotationSeveritySchema.optional(),
   url: z.string().url().optional(),
   scope: z.enum(["personal", "all"]).optional(),
+  // G17: lets the dashboard detail-sheet "Linked annotations" row fetch
+  // siblings with one query. Personal scope is enforced by the route's auth
+  // (the user can only see their own), so a groupId from someone else's
+  // batch returns an empty page.
+  groupId: z.string().uuid().optional(),
 });

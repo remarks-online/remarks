@@ -1,6 +1,14 @@
 import { isContextInvalidatedError } from "@/lib/extension-context";
-import { type Capture, pickerStore } from "@/lib/picker-store";
+import { type Capture, type CaptureScreenshot, pickerStore } from "@/lib/picker-store";
 import type { BackgroundRequest, BackgroundResponse, ViewportRect } from "@/types";
+
+export interface RequestScreenshotOptions {
+  // G17: when supplied, screenshot results land via this callback instead of
+  // `pickerStore.setScreenshot`. The picker controller passes it for
+  // multi-select appends so each capture in `pendingSelections` gets its own
+  // screenshot keyed to its index.
+  onResult?: (screenshot: CaptureScreenshot | null) => void;
+}
 
 /**
  * Ask the background service worker to take a `chrome.tabs.captureVisibleTab`
@@ -12,11 +20,19 @@ import type { BackgroundRequest, BackgroundResponse, ViewportRect } from "@/type
  * viewport coords happens here, at the moment of capture, so a scroll between
  * commit and screenshot doesn't corrupt the crop.
  */
-export async function requestScreenshot(capture: Capture): Promise<void> {
+export async function requestScreenshot(
+  capture: Capture,
+  options: RequestScreenshotOptions = {}
+): Promise<void> {
+  const apply = (screenshot: CaptureScreenshot | null): void => {
+    if (options.onResult) options.onResult(screenshot);
+    else pickerStore.getState().setScreenshot(screenshot);
+  };
+
   const viewportRect = clampToViewport(rectFor(capture), capture.viewport);
   if (!viewportRect) {
     // Off-screen / zero-area — nothing to capture.
-    pickerStore.getState().setScreenshot(null);
+    apply(null);
     return;
   }
 
@@ -34,14 +50,14 @@ export async function requestScreenshot(capture: Capture): Promise<void> {
     const response = (await chrome.runtime.sendMessage(request)) as BackgroundResponse;
     if (!response.ok) {
       console.warn("[remarks] screenshot request failed:", response.error);
-      pickerStore.getState().setScreenshot(null);
+      apply(null);
       return;
     }
     if (response.kind !== "capture-screenshot") {
-      pickerStore.getState().setScreenshot(null);
+      apply(null);
       return;
     }
-    pickerStore.getState().setScreenshot({
+    apply({
       dataUrl: response.dataUrl,
       width: response.width,
       height: response.height,
@@ -52,7 +68,7 @@ export async function requestScreenshot(capture: Capture): Promise<void> {
     } else {
       console.warn("[remarks] screenshot message failed:", err);
     }
-    pickerStore.getState().setScreenshot(null);
+    apply(null);
   }
 }
 

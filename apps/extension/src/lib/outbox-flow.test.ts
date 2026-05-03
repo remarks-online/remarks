@@ -45,6 +45,8 @@ function validAnnotation(): AnnotationResponse {
       avatarUrl: null,
     },
     assets: [],
+    groupId: null,
+    groupSize: null,
     createdAt: "2026-04-24T00:00:00.000Z",
     updatedAt: "2026-04-24T00:00:00.000Z",
   };
@@ -162,5 +164,87 @@ describe("offline → online flow", () => {
     const persisted = await getOne("offline-1");
     expect(persisted?.state).toBe("error");
     expect(persisted?.lastError?.status).toBe(503);
+  });
+
+  test("G17: three records sharing groupId all forward it to uploadAnnotation", async () => {
+    const groupId = "11111111-2222-3333-4444-555555555555";
+    for (let i = 1; i <= 3; i++) {
+      await enqueue({
+        id: `group-${i}`,
+        clerkOrgId: ORG,
+        projectId: PROJECT,
+        payload: {
+          branch: "main",
+          capture: makeCapture(),
+          commentText: "match these buttons",
+          groupId,
+        },
+        now: 1_000 + i,
+      });
+    }
+    const upload = vi.fn().mockResolvedValue(validAnnotation());
+
+    const outcomes = await drainOutbox({
+      apiUrl: API,
+      token: TOKEN,
+      clerkOrgId: ORG,
+      upload,
+      now: () => 2_000,
+    });
+    expect(outcomes.every((o) => o.kind === "ok")).toBe(true);
+    // Every uploadAnnotation call carries the shared groupId.
+    expect(upload).toHaveBeenCalledTimes(3);
+    for (const call of upload.mock.calls) {
+      expect(call[0]).toMatchObject({ groupId });
+    }
+    expect(await listAll()).toEqual([]);
+  });
+
+  test("G17: one record's permanent failure leaves siblings retryable", async () => {
+    const groupId = "22222222-2222-3333-4444-555555555555";
+    await enqueue({
+      id: "g1",
+      clerkOrgId: ORG,
+      projectId: PROJECT,
+      payload: { branch: "main", capture: makeCapture(), commentText: "ok", groupId },
+      now: 1_000,
+    });
+    await enqueue({
+      id: "g2",
+      clerkOrgId: ORG,
+      projectId: PROJECT,
+      payload: { branch: "main", capture: makeCapture(), commentText: "bad", groupId },
+      now: 1_001,
+    });
+
+    // First sibling succeeds; second fails with a non-retryable 400. The drain
+    // returns ok + error in the same tick — sibling state doesn't bleed across
+    // records.
+    const upload = vi
+      .fn<typeof import("./upload-annotation").uploadAnnotation>()
+      .mockImplementationOnce(async () => validAnnotation())
+      .mockImplementationOnce(async () => {
+        throw new UploadAnnotationError("create", "Bad request", 400);
+      });
+
+    const outcomes = await drainOutbox({
+      apiUrl: API,
+      token: TOKEN,
+      clerkOrgId: ORG,
+      upload,
+      now: () => 2_000,
+    });
+
+    const byId = new Map(outcomes.map((o) => [o.id, o] as const));
+    expect(byId.get("g1")?.kind).toBe("ok");
+    // Single non-retryable failure flips that record to error after MAX_ATTEMPTS,
+    // but a 400 returns kind: "error" on the first attempt because it isn't
+    // retryable. Either way, it doesn't lose the ok record.
+    expect(byId.get("g2")?.kind).toBe("error");
+    // The successful record is gone; the bad one persists in error state.
+    expect(await getOne("g1")).toBeNull();
+    const stuck = await getOne("g2");
+    expect(stuck?.state).toBe("error");
+    expect(stuck?.payload.groupId).toBe(groupId);
   });
 });

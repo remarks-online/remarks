@@ -61,6 +61,8 @@ const SAMPLE_PAYLOAD = {
         contentType: "image/png",
       },
     ],
+    groupId: null,
+    groupSize: null,
     createdAt: "2026-04-26T10:00:00.000Z",
     updatedAt: "2026-04-26T10:00:00.000Z",
     domContext: {

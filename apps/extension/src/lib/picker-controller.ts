@@ -179,10 +179,13 @@ function renderStylesTooltipContent(
   return true;
 }
 
-function formatElementLabelText(preview: HoveredPreview): string {
+function formatElementLabelText(preview: HoveredPreview, pendingCount = 0): string {
   const parts = [preview.tag.toUpperCase()];
   if (preview.classes[0]) parts.push(`.${preview.classes[0]}`);
   parts.push(`${Math.round(preview.dims.w)}×${Math.round(preview.dims.h)}`);
+  // G17: append a running count once the user has accumulated selections so
+  // the floating label gives feedback even without looking at the sidebar.
+  if (pendingCount > 0) parts.push(`${pendingCount} selected`);
   return parts.join(" · ");
 }
 
@@ -233,6 +236,40 @@ function buildElementCapture(el: Element, preview: HoveredPreview): ElementCaptu
 function scheduleScreenshot(capture: Capture) {
   requestAnimationFrame(() => {
     void requestScreenshot(capture);
+  });
+}
+
+/**
+ * G17: per-element screenshot for a multi-select append. The picker session
+ * is still active when this fires, so the blue outline / label chip / styles
+ * tooltip are still in the painted frame. Hide them via `visibility: hidden`
+ * across the rAF + capture, then restore on the result callback so the
+ * captured image only contains the page itself.
+ *
+ * `pendingScreenshotsActive` lets back-to-back Alt+clicks share one hide/
+ * restore window — the chrome stays hidden while ANY capture is in flight.
+ */
+let pendingScreenshotsActive = 0;
+
+function setPickerChromeHidden(hidden: boolean): void {
+  // Look up by id so this works even if the session's closure has been torn
+  // down between the request and the callback (e.g., user pressed Esc).
+  for (const id of [ELEMENT_OVERLAY_ID, ELEMENT_LABEL_ID, ELEMENT_STYLES_ID]) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.style.visibility = hidden ? "hidden" : "";
+  }
+}
+
+function schedulePendingScreenshot(capture: ElementCapture, index: number) {
+  if (pendingScreenshotsActive++ === 0) setPickerChromeHidden(true);
+  requestAnimationFrame(() => {
+    void requestScreenshot(capture, {
+      onResult: (screenshot) => {
+        if (--pendingScreenshotsActive === 0) setPickerChromeHidden(false);
+        pickerStore.getState().setScreenshotForPending(index, screenshot);
+      },
+    });
   });
 }
 
@@ -307,7 +344,10 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
 
     hoveredElement = el;
     const preview = previewFromElement(el);
-    label.textContent = formatElementLabelText(preview);
+    label.textContent = formatElementLabelText(
+      preview,
+      pickerStore.getState().pendingSelections.length
+    );
 
     if (sidebarStore.getState().showHoverStyles) {
       stylesVisible = renderStylesTooltipContent(stylesTooltip, compactHoverStyles(el));
@@ -364,14 +404,86 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
     if (!hoveredElement) return;
     const preview = previewFromElement(hoveredElement);
     const capture = buildElementCapture(hoveredElement, preview);
-    pickerStore.getState().commit(capture);
-    scheduleScreenshot(capture);
-    // G13: enrichment is fire-and-forget. The popover already renders the
-    // sync domContext above; the React component chain lands ~tens of ms
-    // later when the MAIN-world bridge replies, and the popover re-renders.
-    void requestReactComponents(hoveredElement).then((result) => {
+    const target = hoveredElement;
+
+    const state = pickerStore.getState();
+    // G17: Alt/Option+click and the explicit toggle pill share the same
+    // append behavior. The toggle stays active across clicks; Alt is per-click.
+    const shouldAppend = state.multiSelectMode || event.altKey;
+
+    if (shouldAppend) {
+      // Stash the capture in `pendingSelections`. The session stays alive so
+      // the user can keep picking; the floating label updates on next hover.
+      state.appendSelection(capture);
+      // Read post-append from the live store — `state` was captured before
+      // the mutation and points at the old array, so `state.pendingSelections.length`
+      // is the *old* length (which happens to equal the just-appended index,
+      // hence why this used to work for the screenshot dispatch and not for
+      // the React-info patch below).
+      const appendedIndex = pickerStore.getState().pendingSelections.length - 1;
+      schedulePendingScreenshot(capture, appendedIndex);
+      // Refresh label with the updated count; hovered element is still the
+      // same so we don't need to reposition.
+      label.textContent = formatElementLabelText(preview, appendedIndex + 1);
+      void requestReactComponents(target).then((result) => {
+        if (!result) return;
+        // Merge React info into the just-appended pending entry. We close
+        // over `appendedIndex` so out-of-order arrivals (or removed
+        // selections) land on the right slot without race conditions.
+        const current = pickerStore.getState().pendingSelections[appendedIndex];
+        if (!current) return;
+        const next: ElementCapture = {
+          ...current,
+          domContext: {
+            ...current.domContext,
+            ...(result.components.length > 0 ? { reactComponents: result.components } : {}),
+          },
+          ...(result.frameworkDetected ? { frameworkHint: "react" as const } : {}),
+        };
+        // Splice the patched entry back; treat the array as immutable. The
+        // `current.screenshot` field round-trips via the spread, so a screenshot
+        // that landed before the React result is preserved.
+        const list = [...pickerStore.getState().pendingSelections];
+        if (list[appendedIndex]) {
+          list[appendedIndex] = next;
+          pickerStore.setState({ pendingSelections: list });
+        }
+      });
+      return;
+    }
+
+    // Plain click with no pending selections → today's single-pick path.
+    if (state.pendingSelections.length === 0) {
+      pickerStore.getState().commit(capture);
+      scheduleScreenshot(capture);
+      void requestReactComponents(target).then((result) => {
+        if (!result) return;
+        pickerStore.getState().attachReactInfo(result);
+      });
+      return;
+    }
+
+    // Plain click with pending selections → finalize: append this last one
+    // and open the popover anchored to the clicked element. The popover
+    // renders the full stack from `pendingSelections`.
+    state.appendSelection(capture);
+    const finalIndex = pickerStore.getState().pendingSelections.length - 1;
+    schedulePendingScreenshot(capture, finalIndex);
+    pickerStore.getState().commitGroup(capture);
+    void requestReactComponents(target).then((result) => {
       if (!result) return;
-      pickerStore.getState().attachReactInfo(result);
+      const list = [...pickerStore.getState().pendingSelections];
+      const current = list[finalIndex];
+      if (!current) return;
+      list[finalIndex] = {
+        ...current,
+        domContext: {
+          ...current.domContext,
+          ...(result.components.length > 0 ? { reactComponents: result.components } : {}),
+        },
+        ...(result.frameworkDetected ? { frameworkHint: "react" as const } : {}),
+      };
+      pickerStore.setState({ pendingSelections: list });
     });
   };
 
@@ -395,7 +507,49 @@ function startElementSession(sidebarRoot: Node | null): ActiveSession {
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      pickerStore.getState().cancel();
+      const state = pickerStore.getState();
+      // G17: two-stage Esc. With pending selections, the first Esc clears the
+      // batch and turns off multi-select but keeps the picker session alive
+      // so the user can re-pick. A second Esc (no selections) cancels the
+      // session — today's behavior preserved.
+      if (state.pendingSelections.length > 0) {
+        state.clearSelections();
+        state.setMultiSelectMode(false);
+        // Refresh the label so the count disappears immediately.
+        if (hoveredElement) {
+          label.textContent = formatElementLabelText(previewFromElement(hoveredElement), 0);
+        }
+        return;
+      }
+      state.cancel();
+      return;
+    }
+    // G17: Enter (or ⌘/Ctrl+Enter) finalizes the batch using the most-recent
+    // pending entry as the popover anchor. No-op when there's nothing pending
+    // — single-pick uses Enter inside the popover, not here.
+    if (event.key === "Enter") {
+      const state = pickerStore.getState();
+      const last = state.pendingSelections[state.pendingSelections.length - 1];
+      if (!last) return;
+      event.preventDefault();
+      pickerStore.getState().commitGroup(last);
+      return;
+    }
+    // G17: Backspace pops the last pending selection. Skipped when focus is
+    // in a text input — `isTypingEvent` guard isn't needed here because the
+    // picker session disables typical text input by `preventDefault`-ing
+    // clicks, but keep the Backspace bound only when there's something to pop.
+    if (event.key === "Backspace") {
+      const state = pickerStore.getState();
+      if (state.pendingSelections.length === 0) return;
+      event.preventDefault();
+      state.removeSelection(state.pendingSelections.length - 1);
+      if (hoveredElement) {
+        label.textContent = formatElementLabelText(
+          previewFromElement(hoveredElement),
+          pickerStore.getState().pendingSelections.length
+        );
+      }
       return;
     }
     if (event.key === "ArrowUp") {

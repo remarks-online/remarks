@@ -110,6 +110,12 @@ export function SidebarMoreMenu() {
             <dd className="font-mono">⌘⏎</dd>
             <dt>Cancel picker</dt>
             <dd className="font-mono">Esc</dd>
+            <dt>Multi-select extra element</dt>
+            <dd className="font-mono">⌥+click</dd>
+            <dt>Finish multi-select</dt>
+            <dd className="font-mono">⏎</dd>
+            <dt>Drop last selection</dt>
+            <dd className="font-mono">⌫</dd>
           </dl>
         </div>
 

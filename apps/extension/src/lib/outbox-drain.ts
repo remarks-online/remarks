@@ -110,6 +110,9 @@ async function processOne(
       // only when present so we don't ship literal `undefined`.
       ...(record.payload.intent !== undefined ? { intent: record.payload.intent } : {}),
       ...(record.payload.severity !== undefined ? { severity: record.payload.severity } : {}),
+      // G17: present on records enqueued from a multi-element batch. Older
+      // records and single-pick records omit it; spread only when defined.
+      ...(record.payload.groupId !== undefined ? { groupId: record.payload.groupId } : {}),
     });
     await removeRecord(record.id);
     return { id: record.id, kind: "ok", annotation };

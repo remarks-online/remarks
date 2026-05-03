@@ -80,6 +80,12 @@ export const getTaskHandler: ToolHandler = async (args, ctx) => {
       status: r.status,
       comment_preview: commentPreview(r.commentText),
     })),
+    // G17: surface the multi-element batch ids alongside the read shape.
+    // `related_tasks` already includes group siblings (mcp.service ORs in
+    // groupId); these fields let agents tell at a glance whether the task
+    // is part of a batch without scanning the related list.
+    group_id: annotation.groupId,
+    group_size: annotation.groupSize,
     created_at: annotation.createdAt,
     updated_at: annotation.updatedAt,
   });

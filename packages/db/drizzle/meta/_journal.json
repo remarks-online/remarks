@@ -71,6 +71,13 @@
       "when": 1777723311020,
       "tag": "0009_project_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777806933545,
+      "tag": "0010_annotation_group_id",
+      "breakpoints": true
     }
   ]
 }

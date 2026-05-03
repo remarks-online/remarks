@@ -445,6 +445,55 @@ function frameworkLabel(hint: string): string {
   return overrides[hint] ?? hint.charAt(0).toUpperCase() + hint.slice(1);
 }
 
+function LinkedAnnotationsRow({
+  groupId,
+  currentId,
+}: {
+  groupId: string;
+  currentId: string;
+}) {
+  const router = useRouter();
+  // Cap the fetch — multi-element batches above ~50 are vanishingly rare and
+  // would be unusable in this rendering anyway.
+  const siblingsQuery = trpc.annotations.listForUser.useQuery({ groupId, limit: 50 });
+  const siblings = siblingsQuery.data?.items.filter((item) => item.id !== currentId) ?? null;
+  if (siblingsQuery.isPending) {
+    return (
+      <>
+        <dt className="text-muted-foreground">Linked</dt>
+        <dd className="text-muted-foreground">Loading…</dd>
+      </>
+    );
+  }
+  if (!siblings || siblings.length === 0) return null;
+  return (
+    <>
+      <dt className="text-muted-foreground">Linked</dt>
+      <dd className="flex flex-wrap items-center gap-1">
+        {siblings.map((s, i) => {
+          const label = s.targetSelector ?? s.targetType;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.set("selectedId", s.id);
+                router.replace(`${url.pathname}${url.search}`, { scroll: false });
+              }}
+              className="rounded-full border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground transition-colors hover:bg-muted/70"
+              title={`Open: ${s.commentText.slice(0, 80)}`}
+              data-testid={`linked-annotation-${i}`}
+            >
+              {label.length > 24 ? `${label.slice(0, 23)}…` : label}
+            </button>
+          );
+        })}
+      </dd>
+    </>
+  );
+}
+
 function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
   const authorLabel = annotation.author.name ?? annotation.author.email ?? "Unknown";
   const reactComponents = annotation.domContext?.reactComponents ?? null;
@@ -530,6 +579,9 @@ function MetadataPanel({ annotation }: { annotation: AnnotationResponse }) {
       <dd>
         {annotation.viewport.width}×{annotation.viewport.height} @ {annotation.viewport.dpr}×
       </dd>
+      {annotation.groupId ? (
+        <LinkedAnnotationsRow groupId={annotation.groupId} currentId={annotation.id} />
+      ) : null}
       <dt className="text-muted-foreground">Author</dt>
       <dd>{authorLabel}</dd>
       <dt className="text-muted-foreground">Created</dt>

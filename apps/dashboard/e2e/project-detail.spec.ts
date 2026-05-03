@@ -814,3 +814,135 @@ test.describe("annotation list pagination (A1)", () => {
     await expect(loadMore).toHaveCount(0);
   });
 });
+
+test.describe("annotation grouping (G17)", () => {
+  const SPEC_PROJECT_NAME = "G17 Grouping";
+  const SPEC_PROJECT_SLUG = "e2e-g17-grouping";
+  const COMMENT = "g17-batch-comment";
+  const GROUP_ID = "11111111-2222-4333-8444-555555555555";
+
+  async function withDb<T>(
+    fn: (client: ReturnType<typeof createClient>) => Promise<T>
+  ): Promise<T> {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) throw new Error("DATABASE_URL missing for e2e seed");
+    const client = createClient(databaseUrl);
+    try {
+      return await fn(client);
+    } finally {
+      await client.sql.end({ timeout: 5 });
+    }
+  }
+
+  async function deleteProjectBySlug(
+    db: DB,
+    sql: ReturnType<typeof createClient>["sql"],
+    orgId: string,
+    slug: string
+  ): Promise<void> {
+    const existing = await db.query.projects.findFirst({
+      where: (p, { and, eq }) => and(eq(p.orgId, orgId), eq(p.slug, slug)),
+      columns: { id: true },
+    });
+    if (!existing) return;
+    await sql`DELETE FROM projects WHERE id = ${existing.id}`;
+  }
+
+  test.beforeAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      const clerkUserId = process.env.E2E_CLERK_USER_ID;
+      if (!clerkOrgId || !clerkUserId) {
+        throw new Error("E2E_CLERK_ORG_ID and E2E_CLERK_USER_ID must be set by global-setup");
+      }
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      const user = await db.query.users.findFirst({
+        where: (u, { eq }) => eq(u.clerkUserId, clerkUserId),
+      });
+      if (!org || !user) throw new Error("global-setup did not seed the expected org/user");
+
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+
+      const [project] = await db
+        .insert(schema.projects)
+        .values({
+          orgId: org.id,
+          creatorUserId: user.id,
+          name: SPEC_PROJECT_NAME,
+          slug: SPEC_PROJECT_SLUG,
+          primaryBranch: "main",
+        })
+        .returning();
+      if (!project) throw new Error("project insert returned no rows");
+
+      await db.insert(schema.projectMembers).values({
+        projectId: project.id,
+        userId: user.id,
+        role: "admin",
+      });
+
+      const [branch] = await db
+        .insert(schema.branches)
+        .values({ projectId: project.id, name: "main" })
+        .returning();
+      if (!branch) throw new Error("branch insert returned no rows");
+
+      // Seed two annotations sharing a groupId. Different selectors so the
+      // sibling chip shows distinguishable text.
+      await db.insert(schema.annotations).values([
+        {
+          projectId: project.id,
+          branchId: branch.id,
+          authorId: user.id,
+          targetType: "element",
+          url: "https://acme.example.com/home",
+          targetSelector: "button.checkout",
+          viewport: { width: 1440, height: 900, dpr: 2 },
+          commentText: COMMENT,
+          groupId: GROUP_ID,
+        },
+        {
+          projectId: project.id,
+          branchId: branch.id,
+          authorId: user.id,
+          targetType: "element",
+          url: "https://acme.example.com/home",
+          targetSelector: "button.cancel",
+          viewport: { width: 1440, height: 900, dpr: 2 },
+          commentText: COMMENT,
+          groupId: GROUP_ID,
+        },
+      ]);
+    });
+  });
+
+  test.afterAll(async () => {
+    await withDb(async ({ db, sql }) => {
+      const clerkOrgId = process.env.E2E_CLERK_ORG_ID;
+      if (!clerkOrgId) return;
+      const org = await db.query.organizations.findFirst({
+        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+      });
+      if (!org) return;
+      await deleteProjectBySlug(db, sql, org.id, SPEC_PROJECT_SLUG);
+    });
+  });
+
+  test("card shows '· N in group' tag and detail sheet lists the sibling", async ({
+    signedInPage,
+  }) => {
+    await signedInPage.goto(`/app/projects/${SPEC_PROJECT_SLUG}`);
+
+    // Both cards render the group tag (groupSize: 2 each).
+    const groupTags = signedInPage.getByTestId("annotation-group-tag");
+    await expect(groupTags).toHaveCount(2);
+    await expect(groupTags.first()).toContainText("2 in group");
+
+    // Open the first card → detail sheet shows a sibling chip linking to the
+    // other annotation in the group.
+    await signedInPage.getByText(COMMENT).first().click();
+    await expect(signedInPage.getByTestId("linked-annotation-0")).toBeVisible();
+  });
+});

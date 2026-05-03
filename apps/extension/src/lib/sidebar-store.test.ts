@@ -125,6 +125,7 @@ describe("sidebarStore actions", () => {
       height: 300,
       theme: "dark",
       showHoverStyles: true,
+      seenMultiSelectHint: false,
     });
     const state = sidebarStore.getState();
     expect(state.visible).toBe(false);
@@ -146,6 +147,7 @@ describe("sidebarStore actions", () => {
       height: 50,
       theme: "auto",
       showHoverStyles: false,
+      seenMultiSelectHint: false,
     });
     expect(sidebarStore.getState().width).toBe(WIDTH_MAX);
     expect(sidebarStore.getState().height).toBe(HEIGHT_MIN);

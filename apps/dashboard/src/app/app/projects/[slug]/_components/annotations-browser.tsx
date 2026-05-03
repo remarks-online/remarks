@@ -26,7 +26,7 @@ import {
 import { Button } from "@remarks/ui";
 import { MessageSquarePlus } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 export const ANNOTATION_LIST_PAGE_SIZE = 50;
@@ -79,6 +79,11 @@ export function AnnotationsBrowser({
   });
   const currentUserId = currentUserQuery.data?.user.id ?? null;
 
+  // G17: when a multi-element batch lands as N parallel `created` events, fire
+  // one toast per groupId per 5s window instead of N. Tracking is in-memory
+  // and per browser tab — fine, since the toast is throwaway UX.
+  const recentGroupToasts = useRef<Map<string, number>>(new Map());
+
   const stream = useAnnotationStream({
     projectId,
     onEvent: useCallback(
@@ -90,8 +95,26 @@ export function AnnotationsBrowser({
         });
 
         if (event.type === "created" && event.actorId !== currentUserId) {
-          toast.info("New annotation", {
-            description: "Someone just left feedback on this project.",
+          // G17: dedupe toasts when N events share a groupId in a 5s window.
+          const groupId = typeof event.payload?.groupId === "string" ? event.payload.groupId : null;
+          if (groupId) {
+            const now = Date.now();
+            const last = recentGroupToasts.current.get(groupId);
+            if (last && now - last < 5_000) return;
+            recentGroupToasts.current.set(groupId, now);
+            // Cap the map; in steady state we wipe the oldest after 60s so it
+            // doesn't grow unbounded across a long-lived tab.
+            if (recentGroupToasts.current.size > 64) {
+              const cutoff = now - 60_000;
+              for (const [k, v] of recentGroupToasts.current) {
+                if (v < cutoff) recentGroupToasts.current.delete(k);
+              }
+            }
+          }
+          toast.info(groupId ? "New batch of annotations" : "New annotation", {
+            description: groupId
+              ? "Someone left a multi-element batch of feedback."
+              : "Someone just left feedback on this project.",
             action: {
               label: "View",
               onClick: () => {

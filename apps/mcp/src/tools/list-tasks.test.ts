@@ -65,6 +65,8 @@ const SAMPLE_ROW = {
       contentType: "image/png",
     },
   ],
+  groupId: null,
+  groupSize: null,
   createdAt: "2026-04-26T10:00:00.000Z",
   updatedAt: "2026-04-26T10:00:00.000Z",
 };
@@ -114,6 +116,8 @@ describe("listTasksHandler", () => {
       author: { name: "Alice", email: "alice@example.test" },
       created_at: "2026-04-26T10:00:00.000Z",
       has_screenshot: true,
+      group_id: null,
+      group_size: null,
     });
     expect(parsed.next_cursor).toBeNull();
   });
