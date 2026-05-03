@@ -62,6 +62,8 @@ const listForUserInputSchema = z.object({
   severity: annotationSeveritySchema.optional(),
   url: z.string().url().optional(),
   scope: z.enum(["personal", "all"]).optional(),
+  // G17: detail-sheet "Linked annotations" fetch.
+  groupId: z.string().uuid().optional(),
 });
 
 export const annotationsRouter = router({
@@ -72,7 +74,7 @@ export const annotationsRouter = router({
       mapError(err);
     }
 
-    const { projectId, status, intent, severity, ...rest } = input;
+    const { projectId, status, intent, severity, groupId, ...rest } = input;
     // listInputSchema mirrors the REST query (single-value filters); the
     // service takes multi-value arrays for the internal MCP path. Wrap once.
     const result = await listAnnotations(ctx.db, {
@@ -82,6 +84,7 @@ export const annotationsRouter = router({
         statuses: status ? [status] : undefined,
         intents: intent ? [intent] : undefined,
         severities: severity ? [severity] : undefined,
+        groupIds: groupId ? [groupId] : undefined,
       },
       r2: ctx.r2,
     });
@@ -116,7 +119,7 @@ export const annotationsRouter = router({
   // feed. Personal-only via scope: "personal".
   listForUser: protectedProcedure.input(listForUserInputSchema).query(async ({ ctx, input }) => {
     try {
-      const { status, intent, severity, ...rest } = input;
+      const { status, intent, severity, groupId, ...rest } = input;
       const result = await listAnnotationsForUser(ctx.db, {
         userId: ctx.user.id,
         query: {
@@ -124,6 +127,7 @@ export const annotationsRouter = router({
           statuses: status ? [status] : undefined,
           intents: intent ? [intent] : undefined,
           severities: severity ? [severity] : undefined,
+          groupIds: groupId ? [groupId] : undefined,
         },
         r2: ctx.r2,
       });

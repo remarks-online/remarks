@@ -167,6 +167,8 @@ describe("mcpTaskSummarySchema", () => {
     author: { name: "Ada", email: "ada@example.com" },
     created_at: validIso,
     has_screenshot: true,
+    group_id: null,
+    group_size: null,
   };
 
   test("accepts a complete summary", () => {

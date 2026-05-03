@@ -93,6 +93,8 @@ function validAnnotationResponse(overrides: Record<string, unknown> = {}): Recor
         contentType: "image/png",
       },
     ],
+    groupId: null,
+    groupSize: null,
     createdAt: "2026-04-24T12:00:00.000Z",
     updatedAt: "2026-04-24T12:00:00.000Z",
     ...overrides,
@@ -251,6 +253,48 @@ describe("uploadAnnotation", () => {
     const createBody = parseJsonBody(calls[2]?.init ?? {});
     expect(createBody.intent).toBe("fix");
     expect(createBody.severity).toBe("blocking");
+  });
+
+  test("G17: groupId flows through buildCreateBody when supplied", async () => {
+    const { calls } = installFetchSequence([
+      jsonResponse({ status: 201, body: validPresignResponse() }),
+      emptyResponse(200),
+      jsonResponse({ status: 201, body: validAnnotationResponse() }),
+    ]);
+
+    const groupId = "11111111-2222-3333-4444-555555555555";
+    await uploadAnnotation({
+      token: TOKEN,
+      apiUrl: API_URL,
+      projectId: PROJECT_ID,
+      branch: "main",
+      capture: makeElementCapture(),
+      commentText: "match these",
+      groupId,
+    });
+
+    const createBody = parseJsonBody(calls[2]?.init ?? {});
+    expect(createBody.groupId).toBe(groupId);
+  });
+
+  test("G17: omitted groupId stays out of the create body", async () => {
+    const { calls } = installFetchSequence([
+      jsonResponse({ status: 201, body: validPresignResponse() }),
+      emptyResponse(200),
+      jsonResponse({ status: 201, body: validAnnotationResponse() }),
+    ]);
+
+    await uploadAnnotation({
+      token: TOKEN,
+      apiUrl: API_URL,
+      projectId: PROJECT_ID,
+      branch: "main",
+      capture: makeElementCapture(),
+      commentText: "single pick",
+    });
+
+    const createBody = parseJsonBody(calls[2]?.init ?? {});
+    expect("groupId" in createBody).toBe(false);
   });
 
   test("null intent/severity are omitted from the create body", async () => {

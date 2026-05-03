@@ -75,6 +75,10 @@ export const annotations = pgTable(
 
     commentText: text("comment_text").notNull(),
 
+    // G17: when N annotations are created from one multi-select capture, they
+    // share a client-generated UUID here. Null on every single-pick annotation.
+    groupId: uuid("group_id"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -84,6 +88,7 @@ export const annotations = pgTable(
     authorIdx: index("annotations_author_idx").on(table.authorId),
     createdAtIdx: index("annotations_created_at_idx").on(table.createdAt),
     authorUrlIdx: index("annotations_author_url_idx").on(table.authorId, table.url),
+    groupIdIdx: index("annotations_group_id_idx").on(table.groupId),
     projectBranchConsistency: check(
       "annotations_project_branch_consistency",
       sql`(${table.projectId} IS NULL AND ${table.branchId} IS NULL) OR (${table.projectId} IS NOT NULL AND ${table.branchId} IS NOT NULL)`

@@ -119,6 +119,11 @@ export const mcpTaskSummarySchema = z.object({
   author: mcpTaskAuthorSchema,
   created_at: z.string().datetime(),
   has_screenshot: z.boolean(),
+  // G17: shared id across rows that were created from the same multi-select
+  // capture. Null on every single-pick task. `group_size` lets agents tell at
+  // a glance whether a task has siblings without a follow-up call.
+  group_id: z.string().uuid().nullable(),
+  group_size: z.number().int().positive().nullable(),
 });
 
 export type McpTaskSummary = z.infer<typeof mcpTaskSummarySchema>;

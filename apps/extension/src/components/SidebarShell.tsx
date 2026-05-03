@@ -220,22 +220,32 @@ function SidebarBody({ projectId, token, clerkOrgId }: SidebarBodyProps) {
   });
 
   const onSubmit = useCallback(
-    async (text: string, cap: Capture | null, classifiers: DraftClassifiers) => {
-      if (!cap) return;
-      await enqueueOutbox({
-        id: crypto.randomUUID(),
-        clerkOrgId,
-        projectId,
-        payload: {
-          branch: projectId ? branch : null,
-          capture: cap,
-          commentText: text,
-          intent: classifiers.intent,
-          severity: classifiers.severity,
-        },
-      });
+    async (text: string, captures: Capture[], classifiers: DraftClassifiers) => {
+      if (captures.length === 0) return;
+      // G17: only mint a groupId when the batch has more than one element. A
+      // single-element batch behaves identically to today — the outbox record
+      // omits the field, which keeps the response shape unchanged for the
+      // common path.
+      const groupId = captures.length > 1 ? crypto.randomUUID() : undefined;
+      await Promise.all(
+        captures.map((cap) =>
+          enqueueOutbox({
+            id: crypto.randomUUID(),
+            clerkOrgId,
+            projectId,
+            payload: {
+              branch: projectId ? branch : null,
+              capture: cap,
+              commentText: text,
+              intent: classifiers.intent,
+              severity: classifiers.severity,
+              ...(groupId !== undefined ? { groupId } : {}),
+            },
+          })
+        )
+      );
       // Clear the draft + capture immediately so the user can move on; the
-      // outbox now owns the item.
+      // outbox now owns the items.
       const store = sidebarStore.getState();
       store.setDraftComment("");
       store.setDraftIntent(null);

@@ -63,6 +63,17 @@ export function AnnotationCard({ annotation, isSelected, onSelect }: AnnotationC
                 </Badge>
               ) : null}
               <span className="text-xs text-muted-foreground">{annotation.targetType}</span>
+              {/* G17: when this row is one of N in a multi-element batch, surface
+                  the count next to the type so triage doesn't need a click-through. */}
+              {annotation.groupSize !== null && annotation.groupSize > 1 ? (
+                <span
+                  className="text-xs text-muted-foreground"
+                  title="Created together as a multi-element batch"
+                  data-testid="annotation-group-tag"
+                >
+                  · {annotation.groupSize} in group
+                </span>
+              ) : null}
               <span className="text-xs text-muted-foreground">·</span>
               <time className="text-xs text-muted-foreground">
                 {new Date(annotation.createdAt).toLocaleDateString()}

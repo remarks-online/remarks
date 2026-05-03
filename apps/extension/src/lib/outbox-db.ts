@@ -25,6 +25,10 @@ export interface OutboxPayload {
   commentText: string;
   intent?: AnnotationIntent | null;
   severity?: AnnotationSeverity | null;
+  // G17: shared by every record in a multi-element batch. Single-pick records
+  // omit it. Generated client-side so partial drains still join existing
+  // siblings on the server side.
+  groupId?: string;
 }
 
 export interface OutboxRecord {

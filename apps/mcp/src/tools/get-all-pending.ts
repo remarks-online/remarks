@@ -51,6 +51,9 @@ export const getAllPendingHandler: ToolHandler = async (args, ctx) => {
     author: projectAuthor(row.author),
     created_at: row.createdAt,
     has_screenshot: row.assets.some((a) => a.kind === "screenshot"),
+    // G17: surface group membership so agents can spot batched feedback.
+    group_id: row.groupId,
+    group_size: row.groupSize,
   }));
 
   const output = getAllPendingOutputSchema.parse({

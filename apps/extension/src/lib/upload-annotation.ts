@@ -64,6 +64,9 @@ export interface UploadAnnotationInput {
   // (rendered as "uncategorized" everywhere).
   intent?: AnnotationIntent | null;
   severity?: AnnotationSeverity | null;
+  // G17: shared by every record in a multi-element batch. Server stores it on
+  // the row so the dashboard / MCP can surface group-aware reads.
+  groupId?: string | undefined;
 }
 
 export async function uploadAnnotation(input: UploadAnnotationInput): Promise<AnnotationResponse> {
@@ -228,6 +231,8 @@ function buildCreateBody(
     // G13: framework detection (currently "react" or absent). Set by
     // attachReactInfo when the MAIN-world fiber bridge confirms a tree.
     ...(input.capture.frameworkHint ? { frameworkHint: input.capture.frameworkHint } : {}),
+    // G17: shared multi-select id; absent on single-pick records.
+    ...(input.groupId ? { groupId: input.groupId } : {}),
   };
   if (input.capture.kind === "element") {
     return {

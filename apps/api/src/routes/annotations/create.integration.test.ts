@@ -370,6 +370,68 @@ describe("POST /projects/:projectId/annotations (integration)", () => {
     expect(Array.isArray(res.json().error.issues)).toBe(true);
   });
 
+  test("G17: two POSTs sharing a groupId list together with groupSize: 2", async () => {
+    const { orgClerkId, userClerkId, projectId } = await seedProjectWithMember({
+      role: "editor",
+    });
+    const groupId = randomUUID();
+
+    // First POST in the batch.
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const first = await server.inject({
+      method: "POST",
+      url: `/projects/${projectId}/annotations`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: baseAnnotationPayload({ groupId, commentText: "match these buttons" }),
+    });
+    expect(first.statusCode).toBe(201);
+    const firstBody = first.json();
+    expect(firstBody.groupId).toBe(groupId);
+    // The second member hasn't been written yet, so the size reflects "self".
+    expect(firstBody.groupSize).toBe(1);
+
+    // Second POST shares the groupId; targets a different selector to mirror
+    // a real multi-element capture.
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const second = await server.inject({
+      method: "POST",
+      url: `/projects/${projectId}/annotations`,
+      headers: { authorization: BEARER, "content-type": "application/json" },
+      payload: baseAnnotationPayload({
+        groupId,
+        commentText: "match these buttons",
+        targetSelector: "body > main > button.cancel",
+      }),
+    });
+    expect(second.statusCode).toBe(201);
+    expect(second.json().groupId).toBe(groupId);
+    expect(second.json().groupSize).toBe(2);
+
+    // List by groupId returns both members; both report groupSize: 2.
+    mockAuth({
+      clerkUserId: userClerkId,
+      memberships: [{ clerkOrgId: orgClerkId, role: "org:member" }],
+    });
+    const listRes = await server.inject({
+      method: "GET",
+      url: `/projects/${projectId}/annotations?groupId=${groupId}`,
+      headers: { authorization: BEARER },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listBody = listRes.json();
+    expect(listBody.items).toHaveLength(2);
+    for (const item of listBody.items) {
+      expect(item.groupId).toBe(groupId);
+      expect(item.groupSize).toBe(2);
+    }
+  });
+
   test("screenshotAssetId with no uploaded object → 400 VALIDATION_ERROR", async () => {
     const { orgClerkId, userClerkId, projectId } = await seedProjectWithMember({
       role: "editor",

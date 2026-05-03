@@ -146,6 +146,10 @@ export const createAnnotationRequestSchema = z
     // and MCP read paths render a missing value as "uncategorized".
     intent: annotationIntentSchema.optional(),
     severity: annotationSeveritySchema.optional(),
+    // G17: shared between every annotation in a multi-element batch. The
+    // extension generates the UUID once on submit and threads it through every
+    // member of the group. Single-pick annotations omit the field.
+    groupId: z.string().uuid().optional(),
   })
   .refine(
     (data) => {
@@ -207,6 +211,12 @@ export const annotationResponseSchema = z.object({
       contentType: z.string(),
     })
   ),
+  // G17: null on every single-pick annotation. When set, identifies the
+  // multi-element batch this row belongs to. `groupSize` is denormalized at
+  // list/get time (one COUNT(*) GROUP BY group_id) so the card can render
+  // "· N in group" without a sibling fetch.
+  groupId: z.string().uuid().nullable(),
+  groupSize: z.number().int().positive().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -267,6 +277,9 @@ export const listAnnotationsQuerySchema = z.object({
   severity: annotationSeveritySchema.optional(),
   branch: z.string().min(1).max(MAX_BRANCH_NAME_LENGTH).optional(),
   url: z.string().url().optional(),
+  // G17: filter the listing to a single multi-select group. Used by the
+  // dashboard detail-sheet "Linked annotations" fetch.
+  groupId: z.string().uuid().optional(),
 });
 
 export type ListAnnotationsQuery = z.infer<typeof listAnnotationsQuerySchema>;

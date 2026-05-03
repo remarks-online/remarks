@@ -101,6 +101,10 @@ export const listTasksHandler: ToolHandler = async (args, ctx) => {
     author: projectAuthor(row.author),
     created_at: row.createdAt,
     has_screenshot: row.assets.some((a) => a.kind === "screenshot"),
+    // G17: agents see "this row is part of an N-element batch" without an
+    // extra hop. Single-pick rows surface both fields as null.
+    group_id: row.groupId,
+    group_size: row.groupSize,
   }));
 
   const output = listTasksOutputSchema.parse({

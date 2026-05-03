@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { schema } from "@remarks/db";
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -75,6 +76,7 @@ async function seedAnnotation(
     status?: typeof schema.annotations.$inferSelect.status;
     domContext?: typeof schema.annotations.$inferInsert.domContext;
     frameworkHint?: string | null;
+    groupId?: string | null;
   }
 ): Promise<typeof schema.annotations.$inferSelect> {
   const [row] = await db
@@ -92,6 +94,7 @@ async function seedAnnotation(
       domContext: args.domContext ?? null,
       frameworkHint: args.frameworkHint ?? null,
       commentText: args.commentText ?? "Make this blue",
+      groupId: args.groupId ?? null,
       ...(args.createdAt ? { createdAt: args.createdAt } : {}),
     })
     .returning();
@@ -247,6 +250,64 @@ describe("GET /internal/mcp/annotations/:annotationId (integration)", () => {
     const ids: string[] = res.json().relatedTasks.map((r: { id: string }) => r.id);
     expect(ids).toContain(sameUrl.id);
     expect(ids).not.toContain(otherNull.id);
+  });
+
+  test("G17: same groupId pulls in related tasks even when URL/selector differ", async () => {
+    const db = await getIntegrationDb();
+    const { project, user, branch } = await seedProjectMember(db);
+    const groupId = randomUUID();
+
+    // Three group members spread across different URLs and selectors. Without
+    // the groupId OR clause, only the URL- and selector-matchers would surface.
+    const target = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+      url: "https://example.test/cart",
+      targetSelector: "button.checkout",
+      commentText: "match these buttons",
+      groupId,
+    });
+    const sibling1 = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+      url: "https://example.test/profile",
+      targetSelector: "button.save",
+      commentText: "match these buttons",
+      groupId,
+    });
+    const sibling2 = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+      url: "https://example.test/settings",
+      targetSelector: "button.delete",
+      commentText: "match these buttons",
+      groupId,
+    });
+    // Different group, different URL, different selector — must NOT show up.
+    const unrelated = await seedAnnotation(db, {
+      projectId: project.id,
+      branchId: branch.id,
+      authorId: user.id,
+      url: "https://example.test/other",
+      targetSelector: "a.link",
+      groupId: randomUUID(),
+    });
+
+    const res = await server.inject({
+      method: "GET",
+      url: `/internal/mcp/annotations/${target.id}?clerkUserId=${encodeURIComponent(user.clerkUserId)}`,
+      headers: { "x-internal-auth": INTERNAL_TOKEN },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const relatedIds: string[] = res.json().relatedTasks.map((r: { id: string }) => r.id);
+    expect(relatedIds).toContain(sibling1.id);
+    expect(relatedIds).toContain(sibling2.id);
+    expect(relatedIds).not.toContain(unrelated.id);
+    expect(relatedIds).not.toContain(target.id);
   });
 
   test("missing x-internal-auth → 401", async () => {

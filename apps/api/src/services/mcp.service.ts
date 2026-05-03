@@ -276,6 +276,7 @@ export async function getMcpAnnotationById(
       targetSelector: true,
       domContext: true,
       frameworkHint: true,
+      groupId: true,
     },
   });
   if (!row) throw new NotFoundError("Annotation");
@@ -289,7 +290,9 @@ export async function getMcpAnnotationById(
   // "Other tasks on the same URL or targeting the same element" (§3.2).
   // OR-of-equalities so a rectangle annotation (no selector) still pulls
   // co-located URL siblings, and an element annotation pulls both URL +
-  // selector matches.
+  // selector matches. G17: also union in members of the same multi-select
+  // group so a captured batch shows up as a single related-tasks set even
+  // when the siblings live on different URLs/selectors.
   const targetSelectorMatch =
     row.targetSelector !== null
       ? and(
@@ -297,6 +300,8 @@ export async function getMcpAnnotationById(
           eq(schema.annotations.targetSelector, row.targetSelector)
         )
       : undefined;
+  const groupIdMatch =
+    row.groupId !== null ? eq(schema.annotations.groupId, row.groupId) : undefined;
 
   // Scope siblings to the same visibility bucket as the source annotation:
   // project peers if the source is project-scoped, the author's other personal
@@ -318,7 +323,7 @@ export async function getMcpAnnotationById(
       and(
         scopePredicate,
         ne(schema.annotations.id, annotationId),
-        or(eq(schema.annotations.url, row.url), targetSelectorMatch)
+        or(eq(schema.annotations.url, row.url), targetSelectorMatch, groupIdMatch)
       )
     )
     .orderBy(asc(schema.annotations.createdAt), asc(schema.annotations.id))

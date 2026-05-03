@@ -100,6 +100,12 @@ export const getTaskOutputSchema = z.object({
   screenshot_url: z.string().url().nullable(),
   author: mcpTaskAuthorSchema,
   related_tasks: z.array(mcpRelatedTaskSchema),
+  // G17: shared id across rows that were created from the same multi-select
+  // capture. Null on every single-pick task. `group_size` is denormalized so
+  // agents can tell at a glance whether siblings exist without a follow-up
+  // call; siblings already surface in `related_tasks`.
+  group_id: z.string().uuid().nullable(),
+  group_size: z.number().int().positive().nullable(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });

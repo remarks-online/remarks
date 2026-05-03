@@ -223,3 +223,28 @@ Each entry uses this shape, deliberately task-like so it mirrors §13/§14 and c
   - Or scope the spec's locator to `getByRole("heading", { level: 2, name: "..." })` to disambiguate.
 - **Affected files**: `apps/dashboard/src/app/app/onboarding/_components/onboarding-wizard.tsx`, `apps/dashboard/e2e/onboarding.spec.ts`.
 - **Status**: `open`.
+
+
+## A28 — On-page pin markers don't reflect multi-element group membership
+
+| # | Done when | Complete |
+|---|---|---|
+| A28 | A user looking at the live page can tell at a glance which on-page pins were captured together as a multi-element batch (G17) | [ ] |
+
+- **Spec reference**: `docs/analysis/2026-04-30-agentation-vs-remarks.md` G17 + ADR-0021. Surfaced while implementing G17: the dashboard card surfaces "· N in group" and the detail sheet adds a "Linked" row, but the extension's on-page pin layer renders grouped and ungrouped annotations identically.
+- **Problem**: `apps/extension/src/components/AnnotationPinLayer.tsx` builds `PinDescriptor` from `id + docX + docY` only and `apps/extension/src/components/AnnotationPin.tsx` receives just `annotationId, cx, cy, size`. `groupId` is on `AnnotationResponse` but never threaded into the pin layer, so three batched buttons render as three indistinguishable pins on the page itself. Group-awareness only surfaces in the dashboard and via MCP `related_tasks`.
+- **Proposed deliverable** (pick one; smallest to largest):
+  1. **Hover-link pins** (preferred V2 default). Thread `groupId` through `PinDescriptor` and `AnnotationPin`. Extend `apps/extension/src/lib/annotation-store.ts` to track `hoveredGroupId` alongside `hoveredAnnotationId`. When any pin in a group is hovered or selected, every sibling applies the hovered style. No new visual chrome; reuses the existing hover-store plumbing.
+  2. **Group badge on the pin**. When `groupSize > 1`, overlay a small "+N" indicator on the pin glyph (mirrors the dashboard card's "· N in group" tag). More immediately discoverable than (1) but adds visual density to the page overlay.
+  3. **Connecting overlay**. When a grouped pin is hovered or selected, draw a faint chord/line between siblings on the page. Most discoverable but biggest implementation cost (SVG layer, edge cases for off-screen siblings, performance under many groups).
+- **Done when**:
+  - Pick one option above; document the choice in this entry before implementing.
+  - For (1): hovering pin A with `groupId = G` highlights pins B and C with the same `groupId`. Single-pick pins (`groupId === null`) are unaffected.
+  - For (2): pins where `groupSize > 1` render a "+N" badge; ungrouped pins render unchanged.
+  - For (3): selecting a grouped pin overlays a chord layer connecting siblings; deselecting removes it.
+  - Playwright extension test pins the chosen option's behavior on a seeded page with two grouped + one ungrouped annotation.
+- **Conflicts / overlaps with spec**: None. Strictly additive to G17 (which deliberately scoped on-page UX out of V1).
+- **Affected tasks / components**: `apps/extension/src/components/AnnotationPinLayer.tsx` (PinDescriptor shape), `apps/extension/src/components/AnnotationPin.tsx` (props + render), `apps/extension/src/lib/annotation-store.ts` (hover/select state, for option 1). Option 3 also adds a new SVG overlay component.
+- **Dependencies**: After **G17** lands (ADR-0021).
+- **Estimated size**: `s` for option 1; `s` for option 2; `m` for option 3.
+- **Status**: `open`.

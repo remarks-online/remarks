@@ -34,6 +34,10 @@ export interface PersistedSidebarPrefs {
   height: number;
   theme: Theme;
   showHoverStyles: boolean;
+  // G17: persisted so the first-run tooltip pointing at the multi-select pill
+  // only fires once. Records weren't enqueued before this flag existed; old
+  // installs see the tooltip on the first picker session post-upgrade.
+  seenMultiSelectHint: boolean;
 }
 
 export interface SidebarState extends PersistedSidebarPrefs {
@@ -56,6 +60,7 @@ export interface SidebarState extends PersistedSidebarPrefs {
   setTheme: (theme: Theme) => void;
   setShowHoverStyles: (show: boolean) => void;
   setFreezeAnimations: (freeze: boolean) => void;
+  setSeenMultiSelectHint: (seen: boolean) => void;
   setStatusFilter: (filter: StatusFilter) => void;
   setIntentFilter: (filter: IntentFilter) => void;
   setSeverityFilter: (filter: SeverityFilter) => void;
@@ -73,6 +78,7 @@ export const SIDEBAR_DEFAULTS: PersistedSidebarPrefs = {
   height: 280,
   theme: "auto",
   showHoverStyles: false,
+  seenMultiSelectHint: false,
 };
 
 export const sidebarStore = createStore<SidebarState>((set, get) => ({
@@ -92,6 +98,7 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
   setTheme: (theme) => set({ theme }),
   setShowHoverStyles: (showHoverStyles) => set({ showHoverStyles }),
   setFreezeAnimations: (freezeAnimations) => set({ freezeAnimations }),
+  setSeenMultiSelectHint: (seenMultiSelectHint) => set({ seenMultiSelectHint }),
   setStatusFilter: (statusFilter) => set({ statusFilter }),
   setIntentFilter: (intentFilter) => set({ intentFilter }),
   setSeverityFilter: (severityFilter) => set({ severityFilter }),
@@ -106,6 +113,7 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
       height: clampHeight(prefs.height),
       theme: prefs.theme,
       showHoverStyles: prefs.showHoverStyles ?? SIDEBAR_DEFAULTS.showHoverStyles,
+      seenMultiSelectHint: prefs.seenMultiSelectHint ?? SIDEBAR_DEFAULTS.seenMultiSelectHint,
     }),
   reset: () =>
     set({
@@ -132,5 +140,6 @@ export function getPersistablePrefs(state: SidebarState): PersistedSidebarPrefs 
     height: state.height,
     theme: state.theme,
     showHoverStyles: state.showHoverStyles,
+    seenMultiSelectHint: state.seenMultiSelectHint,
   };
 }

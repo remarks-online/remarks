@@ -1,8 +1,26 @@
+import type { ReactComponentNode } from "@remarks/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computeAutoScrollDelta, initPickerController } from "./picker-controller";
 import { pickerStore } from "./picker-store";
 import { sidebarStore } from "./sidebar-store";
 import { byId, q } from "./test-utils";
+
+// Mock the fiber bridge so tests can deterministically control React enrichment
+// without spinning up a MAIN-world content script. Default is a no-op (resolves
+// null) so existing tests that don't care about React stay green; G17 cases
+// override per-call.
+const requestReactComponentsMock = vi.fn(
+  async (
+    _el: Element
+  ): Promise<{
+    components: ReactComponentNode[];
+    frameworkDetected: boolean;
+  } | null> => null
+);
+vi.mock("./fiber-bridge", () => ({
+  requestReactComponents: (el: Element) => requestReactComponentsMock(el),
+}));
+
+const { computeAutoScrollDelta, initPickerController } = await import("./picker-controller");
 
 function resetStore() {
   pickerStore.setState({
@@ -10,6 +28,8 @@ function resetStore() {
     hovered: null,
     capture: null,
     popoverDismissed: false,
+    multiSelectMode: false,
+    pendingSelections: [],
   });
 }
 
@@ -52,6 +72,9 @@ beforeEach(() => {
   setScroll(0, 0);
   resetStore();
   sidebarStore.getState().reset();
+  // Default: bridge resolves null (no React detected). Per-test cases override.
+  requestReactComponentsMock.mockReset();
+  requestReactComponentsMock.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -503,6 +526,257 @@ describe("initPickerController — auth gate", () => {
     pressElement();
     expect(pickerStore.getState().mode).toBe("element");
     expect(onActivateBlocked).not.toHaveBeenCalled();
+  });
+});
+
+describe("initPickerController — multi-select (G17)", () => {
+  function clickElement(target: Element, init: MouseEventInit = {}) {
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
+  }
+
+  // Tick the microtask queue so a Promise.resolve(...) chain (the await/then
+  // in `void requestReactComponents(...).then(...)`) flushes before assertions.
+  async function flushMicrotasks(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  it("Alt+click appends to pendingSelections without committing", () => {
+    document.body.innerHTML = '<button id="a">A</button><button id="b">B</button>';
+    const a = byId("a");
+    const b = byId("b");
+    vi.spyOn(document, "elementFromPoint").mockReturnValueOnce(a).mockReturnValueOnce(b);
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a, { altKey: true });
+
+    let state = pickerStore.getState();
+    expect(state.mode).toBe("element"); // session still active
+    expect(state.capture).toBeNull();
+    expect(state.pendingSelections).toHaveLength(1);
+    expect(state.pendingSelections[0]?.selector).toBe("#a");
+
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 50, clientY: 5 }));
+    clickElement(b, { altKey: true });
+
+    state = pickerStore.getState();
+    expect(state.mode).toBe("element");
+    expect(state.pendingSelections).toHaveLength(2);
+    expect(state.pendingSelections.map((c) => c.selector)).toEqual(["#a", "#b"]);
+  });
+
+  it("plain click after pending selections commits the group", () => {
+    document.body.innerHTML = '<button id="a">A</button><button id="b">B</button>';
+    const a = byId("a");
+    const b = byId("b");
+    vi.spyOn(document, "elementFromPoint").mockReturnValueOnce(a).mockReturnValueOnce(b);
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a, { altKey: true });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 50, clientY: 5 }));
+    clickElement(b);
+
+    const state = pickerStore.getState();
+    expect(state.mode).toBe("idle");
+    // Both elements end up in pendingSelections (popover renders the stack).
+    expect(state.pendingSelections).toHaveLength(2);
+    // The popover anchor is the last-clicked element.
+    if (state.capture?.kind === "element") {
+      expect(state.capture.selector).toBe("#b");
+    }
+  });
+
+  it("multiSelectMode toggle treats plain click as append", () => {
+    document.body.innerHTML = '<button id="a">A</button>';
+    const a = byId("a");
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(a);
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    pickerStore.getState().setMultiSelectMode(true);
+
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a); // plain click, no Alt — append because toggle is on
+    expect(pickerStore.getState().pendingSelections).toHaveLength(1);
+    expect(pickerStore.getState().mode).toBe("element");
+  });
+
+  it("Backspace pops the last pending selection", () => {
+    document.body.innerHTML = '<button id="a">A</button><button id="b">B</button>';
+    const a = byId("a");
+    const b = byId("b");
+    vi.spyOn(document, "elementFromPoint").mockReturnValueOnce(a).mockReturnValueOnce(b);
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a, { altKey: true });
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 50, clientY: 5 }));
+    clickElement(b, { altKey: true });
+    expect(pickerStore.getState().pendingSelections).toHaveLength(2);
+
+    press("Backspace");
+    expect(pickerStore.getState().pendingSelections).toHaveLength(1);
+    expect(pickerStore.getState().pendingSelections[0]?.selector).toBe("#a");
+  });
+
+  it("Enter commits the group with the last pending entry as anchor", () => {
+    document.body.innerHTML = '<button id="a">A</button>';
+    const a = byId("a");
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(a);
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a, { altKey: true });
+    expect(pickerStore.getState().pendingSelections).toHaveLength(1);
+
+    press("Enter");
+    const state = pickerStore.getState();
+    expect(state.mode).toBe("idle");
+    expect(state.pendingSelections).toHaveLength(1);
+    if (state.capture?.kind === "element") {
+      expect(state.capture.selector).toBe("#a");
+    }
+  });
+
+  it("Escape with pending selections clears them but keeps the session", () => {
+    document.body.innerHTML = '<button id="a">A</button>';
+    const a = byId("a");
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(a);
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    pickerStore.getState().setMultiSelectMode(true);
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a);
+    expect(pickerStore.getState().pendingSelections).toHaveLength(1);
+
+    press("Escape");
+    const state = pickerStore.getState();
+    expect(state.mode).toBe("element"); // session still alive
+    expect(state.pendingSelections).toHaveLength(0);
+    expect(state.multiSelectMode).toBe(false);
+  });
+
+  it("React enrichment lands on the just-appended slot, not the previous one", async () => {
+    document.body.innerHTML = '<button id="a">A</button><button id="b">B</button>';
+    const a = byId("a");
+    const b = byId("b");
+    vi.spyOn(document, "elementFromPoint").mockReturnValueOnce(a).mockReturnValueOnce(b);
+
+    // First Alt+click: bridge resolves with #a's component chain.
+    requestReactComponentsMock.mockResolvedValueOnce({
+      components: [{ name: "ButtonA", kind: "function" }],
+      frameworkDetected: true,
+    });
+    // Second Alt+click: bridge resolves with #b's chain.
+    requestReactComponentsMock.mockResolvedValueOnce({
+      components: [{ name: "ButtonB", kind: "function" }],
+      frameworkDetected: true,
+    });
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a, { altKey: true });
+    await flushMicrotasks();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 50, clientY: 5 }));
+    clickElement(b, { altKey: true });
+    await flushMicrotasks();
+
+    const list = pickerStore.getState().pendingSelections;
+    expect(list).toHaveLength(2);
+    // The bug had #b's React result splice onto list[0] (#a's slot). After the
+    // fix, #a's result lands on list[0] and #b's on list[1].
+    expect(list[0]?.selector).toBe("#a");
+    expect(list[0]?.domContext.reactComponents?.[0]?.name).toBe("ButtonA");
+    expect(list[0]?.frameworkHint).toBe("react");
+    expect(list[1]?.selector).toBe("#b");
+    expect(list[1]?.domContext.reactComponents?.[0]?.name).toBe("ButtonB");
+    expect(list[1]?.frameworkHint).toBe("react");
+  });
+
+  it("hides picker chrome while a per-element capture is in flight", () => {
+    document.body.innerHTML = '<button id="a">A</button>';
+    const a = byId("a");
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(a);
+    // jsdom returns a 0-area rect for `<button>`; force a positive one so
+    // `requestScreenshot` reaches the chrome.runtime path instead of bailing
+    // out via the clampToViewport(null) early-return.
+    vi.spyOn(a, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      width: 50,
+      height: 20,
+      bottom: 20,
+      right: 50,
+      toJSON: () => ({}),
+    } as DOMRect);
+    // Stub chrome with a never-resolving sendMessage — onResult never fires,
+    // so the in-flight counter stays at 1 and the chrome hide stays in effect
+    // for us to assert against.
+    vi.stubGlobal("chrome", {
+      runtime: { sendMessage: vi.fn().mockReturnValue(new Promise(() => {})) },
+    });
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a, { altKey: true });
+
+    // After Alt+click, the picker chrome should be hidden — the rAF inside
+    // schedulePendingScreenshot has fired (rAF is stubbed synchronously),
+    // sendMessage was sent but never resolved, and the counter is 1.
+    const overlay = document.getElementById("rmk-picker-overlay");
+    const label = document.getElementById("rmk-picker-label");
+    const styles = document.getElementById("rmk-picker-styles");
+    expect(overlay?.style.visibility).toBe("hidden");
+    expect(label?.style.visibility).toBe("hidden");
+    expect(styles?.style.visibility).toBe("hidden");
+  });
+
+  it("restores picker chrome after the screenshot result lands", async () => {
+    document.body.innerHTML = '<button id="a">A</button>';
+    const a = byId("a");
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(a);
+    vi.spyOn(a, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      width: 50,
+      height: 20,
+      bottom: 20,
+      right: 50,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    // Stub chrome.runtime.sendMessage to resolve with a successful capture
+    // result so requestScreenshot fires its onResult.
+    const sendMessage = vi.fn().mockResolvedValue({
+      ok: true,
+      kind: "capture-screenshot",
+      dataUrl: "data:image/png;base64,xx",
+      width: 10,
+      height: 5,
+    });
+    vi.stubGlobal("chrome", { runtime: { sendMessage } });
+
+    setupController({ sidebarRoot: null });
+    pressElement();
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5 }));
+    clickElement(a, { altKey: true });
+    await flushMicrotasks();
+
+    const overlay = document.getElementById("rmk-picker-overlay");
+    expect(overlay?.style.visibility).toBe("");
   });
 });
 

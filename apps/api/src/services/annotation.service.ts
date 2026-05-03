@@ -13,7 +13,7 @@ import {
   type UpdateAnnotationRequest,
   ValidationError,
 } from "@remarks/shared";
-import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import type { AppInngest } from "../inngest/client.js";
 import { publishR2Cleanup } from "../inngest/publish.js";
 import {
@@ -165,6 +165,9 @@ export async function createAnnotation(
             null) as typeof schema.annotations.$inferInsert.domContext,
           frameworkHint: input.frameworkHint ?? null,
           commentText: input.commentText,
+          // G17: extension generates one UUID per multi-select submit; every
+          // member of the batch carries it. Single-pick rows omit the field.
+          groupId: input.groupId ?? null,
         })
         .returning();
       if (!insertedAnnotation) throw new Error("annotation insert returned no rows");
@@ -224,6 +227,12 @@ export async function createAnnotation(
       ]
     : [];
 
+  // G17: if this row joined an existing group, surface the up-to-date size in
+  // the response. Single-pick rows skip the lookup and report null.
+  const groupSizes = annotationRow.groupId
+    ? await getGroupSizes(db, [annotationRow.groupId])
+    : new Map<string, number>();
+
   // Spec §7.5 — emitted after the transaction commits so we never report
   // events for rolled-back writes. Best-effort; PostHog outages don't fail
   // the request.
@@ -247,7 +256,9 @@ export async function createAnnotation(
       buildAnnotationStreamEvent({
         eventId: createdEvent.id,
         type: "created",
-        payload: {},
+        // G17: surface groupId on the stream so live-feed consumers can
+        // debounce per-batch toasts without a follow-up fetch.
+        payload: annotationRow.groupId ? { groupId: annotationRow.groupId } : {},
         createdAt: createdEvent.createdAt,
         actorType: "user",
         actorId: author.id,
@@ -277,7 +288,28 @@ export async function createAnnotation(
     projectSlug,
     author,
     assets: resolvedAssets,
+    groupSize: annotationRow.groupId ? (groupSizes.get(annotationRow.groupId) ?? null) : null,
   });
+}
+
+// G17: one COUNT(*) ... GROUP BY query covering the page. Returns the number
+// of annotations sharing each groupId — including the row(s) we're rendering.
+// Empty groupIds short-circuits to skip the round-trip entirely.
+async function getGroupSizes(db: DB, groupIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (groupIds.length === 0) return map;
+  const rows = await db
+    .select({
+      groupId: schema.annotations.groupId,
+      count: count(schema.annotations.id),
+    })
+    .from(schema.annotations)
+    .where(inArray(schema.annotations.groupId, groupIds))
+    .groupBy(schema.annotations.groupId);
+  for (const row of rows) {
+    if (row.groupId) map.set(row.groupId, row.count);
+  }
+  return map;
 }
 
 export interface ListAnnotationsServiceQuery {
@@ -292,6 +324,10 @@ export interface ListAnnotationsServiceQuery {
   // G1/G2 multi-value filters. Same wrapping convention as `statuses`.
   intents?: AnnotationIntent[] | undefined;
   severities?: AnnotationSeverity[] | undefined;
+  // G17: filter to a single multi-select group. Used by the dashboard
+  // detail-sheet sibling fetch; agents reach the same data through
+  // `related_tasks`.
+  groupIds?: string[] | undefined;
   branch?: string | undefined;
   url?: string | undefined;
 }
@@ -353,12 +389,17 @@ export async function listAnnotations(
     query.severities && query.severities.length > 0
       ? inArray(schema.annotations.severity, query.severities)
       : undefined;
+  const groupIdPredicate =
+    query.groupIds && query.groupIds.length > 0
+      ? inArray(schema.annotations.groupId, query.groupIds)
+      : undefined;
 
   const where = and(
     eq(schema.annotations.projectId, projectId),
     statusPredicate,
     intentPredicate,
     severityPredicate,
+    groupIdPredicate,
     branchFilterId ? eq(schema.annotations.branchId, branchFilterId) : undefined,
     query.url ? eq(schema.annotations.url, query.url) : undefined,
     cursorPredicate
@@ -379,6 +420,14 @@ export async function listAnnotations(
   const hasMore = rows.length > query.limit;
   const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
 
+  // G17: collect distinct groupIds on the page and resolve sizes in one query
+  // before mapping to response shape. Single COUNT(*) GROUP BY with the
+  // annotations_group_id_idx index.
+  const pageGroupIds = Array.from(
+    new Set(pageRows.map((row) => row.groupId).filter((id): id is string => id !== null))
+  );
+  const groupSizes = await getGroupSizes(db, pageGroupIds);
+
   const items = await Promise.all(
     pageRows.map(async (row) => {
       const resolvedAssets: ResolvedAsset[] = await Promise.all(
@@ -396,6 +445,7 @@ export async function listAnnotations(
         projectSlug: row.project?.slug ?? null,
         author: row.author,
         assets: resolvedAssets,
+        groupSize: row.groupId ? (groupSizes.get(row.groupId) ?? null) : null,
       });
     })
   );
@@ -418,6 +468,10 @@ export interface ListAnnotationsForUserArgs {
     statuses?: AnnotationStatus[] | undefined;
     intents?: AnnotationIntent[] | undefined;
     severities?: AnnotationSeverity[] | undefined;
+    // G17: filter to a multi-select group, scoped to whatever the caller can
+    // already see. Personal-scope siblings stay personal; project-scope
+    // siblings stay project-scoped.
+    groupIds?: string[] | undefined;
     cursor?: string | undefined;
     limit: number;
     // Scope selector:
@@ -525,6 +579,10 @@ export async function listAnnotationsForUser(
     query.severities && query.severities.length > 0
       ? inArray(schema.annotations.severity, query.severities)
       : undefined;
+  const groupIdPredicate =
+    query.groupIds && query.groupIds.length > 0
+      ? inArray(schema.annotations.groupId, query.groupIds)
+      : undefined;
 
   const where = and(
     visibilityPredicate,
@@ -532,6 +590,7 @@ export async function listAnnotationsForUser(
     statusPredicate,
     intentPredicate,
     severityPredicate,
+    groupIdPredicate,
     cursorPredicate
   );
 
@@ -550,6 +609,12 @@ export async function listAnnotationsForUser(
   const hasMore = rows.length > query.limit;
   const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
 
+  // G17: same approach as listAnnotations — one COUNT(*) GROUP BY for the page.
+  const pageGroupIds = Array.from(
+    new Set(pageRows.map((row) => row.groupId).filter((id): id is string => id !== null))
+  );
+  const groupSizes = await getGroupSizes(db, pageGroupIds);
+
   const items = await Promise.all(
     pageRows.map(async (row) => {
       const resolvedAssets: ResolvedAsset[] = await Promise.all(
@@ -567,6 +632,7 @@ export async function listAnnotationsForUser(
         projectSlug: row.project?.slug ?? null,
         author: row.author,
         assets: resolvedAssets,
+        groupSize: row.groupId ? (groupSizes.get(row.groupId) ?? null) : null,
       });
     })
   );
@@ -635,12 +701,18 @@ export async function getAnnotationById(
     }))
   );
 
+  // G17: when this row is part of a group, return the up-to-date sibling count.
+  const groupSizes = row.groupId
+    ? await getGroupSizes(db, [row.groupId])
+    : new Map<string, number>();
+
   return toAnnotationResponse({
     annotationRow: row,
     branchName: row.branch?.name ?? null,
     projectSlug: row.project?.slug ?? null,
     author: row.author,
     assets: resolvedAssets,
+    groupSize: row.groupId ? (groupSizes.get(row.groupId) ?? null) : null,
   });
 }
 
@@ -945,8 +1017,11 @@ function toAnnotationResponse(args: {
   projectSlug: string | null;
   author: AnnotationResponse["author"];
   assets: ResolvedAsset[];
+  // G17: null when the row isn't grouped or when a caller deliberately skips
+  // the size lookup (none today; every read path resolves it).
+  groupSize: number | null;
 }): AnnotationResponse {
-  const { annotationRow: row, branchName, projectSlug, author, assets } = args;
+  const { annotationRow: row, branchName, projectSlug, author, assets, groupSize } = args;
   return {
     id: row.id,
     projectId: row.projectId,
@@ -971,6 +1046,8 @@ function toAnnotationResponse(args: {
       url: a.url,
       contentType: a.row.contentType,
     })),
+    groupId: row.groupId,
+    groupSize,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

@@ -74,6 +74,7 @@ describe("sidebar-prefs", () => {
       height: 240,
       theme: "auto",
       showHoverStyles: false,
+      seenMultiSelectHint: false,
     });
     saveSidebarPrefs({
       visible: true,
@@ -82,6 +83,7 @@ describe("sidebar-prefs", () => {
       height: 240,
       theme: "auto",
       showHoverStyles: true,
+      seenMultiSelectHint: false,
     });
 
     // Before debounce elapses, nothing is written.
@@ -111,6 +113,7 @@ describe("sidebar-prefs", () => {
       height: 280,
       theme: "dark",
       showHoverStyles: false,
+      seenMultiSelectHint: false,
     });
     await vi.advanceTimersByTimeAsync(SIDEBAR_PREFS_DEBOUNCE_MS + 5);
 

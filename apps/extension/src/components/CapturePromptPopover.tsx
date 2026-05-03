@@ -34,7 +34,10 @@ export interface DraftClassifiers {
 }
 
 interface Props {
-  onSubmit: (text: string, capture: Capture, classifiers: DraftClassifiers) => void;
+  // G17: always receives an array. Single-pick is a one-element array; multi
+  // is the full pendingSelections list. Caller (SidebarShell) generates the
+  // shared groupId when the array has more than one element.
+  onSubmit: (text: string, captures: Capture[], classifiers: DraftClassifiers) => void;
 }
 
 function targetDocRectFor(capture: Capture): DocRect {
@@ -46,6 +49,7 @@ function targetDocRectFor(capture: Capture): DocRect {
 
 export function CapturePromptPopover({ onSubmit }: Props) {
   const capture = usePicker((s) => s.capture);
+  const pendingSelections = usePicker((s) => s.pendingSelections);
   const dismissed = usePicker((s) => s.popoverDismissed);
   const draft = useSidebar((s) => s.draftComment);
   const draftIntent = useSidebar((s) => s.draftIntent);
@@ -127,15 +131,40 @@ export function CapturePromptPopover({ onSubmit }: Props) {
 
   if (!visible || !capture) return null;
 
-  const canSubmit = draft.trim().length > 0;
-  const ariaLabel =
-    capture.kind === "element"
+  // G17: when the user finished a multi-select batch, pendingSelections holds
+  // every captured element (including the popover's anchor). Otherwise this
+  // is the single-pick path: one effective capture, the existing UX.
+  const isGroup = pendingSelections.length > 1;
+  const effectiveCaptures = isGroup ? pendingSelections : [capture];
+  const canSubmit = draft.trim().length > 0 && effectiveCaptures.length > 0;
+  const ariaLabel = isGroup
+    ? `Annotate ${effectiveCaptures.length} elements`
+    : capture.kind === "element"
       ? `Annotate ${capture.domContext.tagName ?? "element"}`
       : "Annotate region";
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(draft.trim(), capture, { intent: draftIntent, severity: draftSeverity });
+    onSubmit(draft.trim(), effectiveCaptures, { intent: draftIntent, severity: draftSeverity });
+  };
+
+  const handleRemove = (index: number) => {
+    const next = pendingSelections.length - 1;
+    if (next <= 0) {
+      // Removing the last element collapses the popover to discard semantics
+      // — there's nothing left to annotate.
+      handleDiscard();
+      return;
+    }
+    pickerStore.getState().removeSelection(index);
+    // If the user removed the popover's anchor (the last entry, by convention),
+    // re-anchor to whatever's now last so the floating UI stays attached to a
+    // real element.
+    const survivors = pickerStore.getState().pendingSelections;
+    const newAnchor = survivors[survivors.length - 1];
+    if (newAnchor && newAnchor.kind === "element") {
+      pickerStore.setState({ capture: newAnchor });
+    }
   };
 
   function handleDiscard() {
@@ -161,7 +190,33 @@ export function CapturePromptPopover({ onSubmit }: Props) {
         zIndex: 2147483647,
       }}
     >
-      {capture.kind === "element" ? (
+      {isGroup ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium text-foreground">
+            {effectiveCaptures.length} elements selected
+          </p>
+          <ul className="flex max-h-32 flex-col gap-1 overflow-y-auto pr-0.5">
+            {effectiveCaptures.map((c, idx) => (
+              <li
+                key={`${c.kind === "element" ? c.selector : "rect"}-${idx}`}
+                className="flex items-center gap-1.5"
+              >
+                <code className="flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+                  {c.kind === "element" ? c.selector : "region"}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(idx)}
+                  aria-label={`Remove element ${idx + 1}`}
+                  className="rounded px-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : capture.kind === "element" ? (
         <DomContextHeader selector={capture.selector} domContext={capture.domContext} />
       ) : (
         <p className="text-xs font-medium text-muted-foreground">Annotate this region</p>
