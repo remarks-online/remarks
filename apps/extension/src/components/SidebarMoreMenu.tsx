@@ -37,6 +37,7 @@ export function SidebarMoreMenu() {
   const theme = useSidebar((s) => s.theme);
   const dock = useSidebar((s) => s.dock);
   const showHoverStyles = useSidebar((s) => s.showHoverStyles);
+  const freezeAnimations = useSidebar((s) => s.freezeAnimations);
   const container = useShadowRootPortalContainer();
 
   return (
@@ -75,6 +76,12 @@ export function SidebarMoreMenu() {
           onCheckedChange={(v) => sidebarStore.getState().setShowHoverStyles(Boolean(v))}
         >
           Show computed styles on hover
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={freezeAnimations}
+          onCheckedChange={(v) => sidebarStore.getState().setFreezeAnimations(Boolean(v))}
+        >
+          Pause animations
         </DropdownMenuCheckboxItem>
 
         <DropdownMenuSeparator />

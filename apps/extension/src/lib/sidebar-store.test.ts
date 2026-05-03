@@ -7,6 +7,7 @@ import {
   WIDTH_MIN,
   clampHeight,
   clampWidth,
+  getPersistablePrefs,
   sidebarStore,
 } from "./sidebar-store";
 
@@ -170,5 +171,19 @@ describe("sidebarStore actions", () => {
     expect(sidebarStore.getState().showHoverStyles).toBe(true);
     sidebarStore.getState().setShowHoverStyles(false);
     expect(sidebarStore.getState().showHoverStyles).toBe(false);
+  });
+
+  it("setFreezeAnimations toggles the pref and reset clears it", () => {
+    expect(sidebarStore.getState().freezeAnimations).toBe(false);
+    sidebarStore.getState().setFreezeAnimations(true);
+    expect(sidebarStore.getState().freezeAnimations).toBe(true);
+    sidebarStore.getState().reset();
+    expect(sidebarStore.getState().freezeAnimations).toBe(false);
+  });
+
+  it("getPersistablePrefs omits freezeAnimations (in-memory only, per G15)", () => {
+    sidebarStore.getState().setFreezeAnimations(true);
+    const persisted = getPersistablePrefs(sidebarStore.getState());
+    expect(persisted).not.toHaveProperty("freezeAnimations");
   });
 });
