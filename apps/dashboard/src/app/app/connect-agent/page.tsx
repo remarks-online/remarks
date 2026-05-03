@@ -21,6 +21,11 @@ export default function ConnectAgentPage() {
           no tokens to copy — the agent will open a browser window the first time it calls a Remarks
           tool, you sign in, and you're connected.
         </p>
+        <p className="mt-2 text-sm">
+          <Link href="/app/docs/schema" className="underline">
+            See annotation schema reference →
+          </Link>
+        </p>
       </div>
 
       <Card>
