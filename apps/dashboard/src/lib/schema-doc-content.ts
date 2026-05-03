@@ -13,13 +13,6 @@ import type {
 // guardrail: drop a value from `AnnotationIntent` (or any other canonical
 // union) and this file fails to type-check, forcing the doc to be updated.
 
-const GITHUB_REPO = "https://github.com/remarks-online/remarks";
-const SHARED_SCHEMA_PATH = `${GITHUB_REPO}/blob/main/packages/shared/src/schemas/annotation.ts`;
-
-export const SCHEMA_DOC_LINKS = {
-  zodSource: SHARED_SCHEMA_PATH,
-} as const;
-
 export const INTENT_DESCRIPTIONS: Record<AnnotationIntent, string> = {
   fix: "Something is broken or wrong — please correct it.",
   change: "Works as designed, but a different behavior or design is desired.",

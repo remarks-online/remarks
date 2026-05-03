@@ -1,4 +1,3 @@
-import { SCHEMA_DOC_LINKS } from "@/lib/schema-doc-content";
 import { SchemaAnnotationObject } from "./_components/schema-annotation-object";
 import { SchemaDomContext } from "./_components/schema-dom-context";
 import { SchemaEnums } from "./_components/schema-enums";
@@ -28,16 +27,6 @@ export default function SchemaReferencePage() {
       <SchemaEvents />
       <SchemaStream />
       <SchemaWebhooks />
-
-      <p className="px-1 text-xs text-muted-foreground">
-        The canonical schema definitions live in{" "}
-        <a href={SCHEMA_DOC_LINKS.zodSource} target="_blank" rel="noreferrer" className="underline">
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono">
-            packages/shared/src/schemas/annotation.ts
-          </code>
-        </a>
-        .
-      </p>
     </section>
   );
 }
