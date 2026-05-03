@@ -44,6 +44,10 @@ export interface SidebarState extends PersistedSidebarPrefs {
   draftComment: string;
   draftIntent: AnnotationIntent | null;
   draftSeverity: AnnotationSeverity | null;
+  // Per-session capture aid (G15). Pauses host-page CSS animations + transitions
+  // while the sidebar is visible so screenshots aren't taken mid-animation. Not
+  // persisted: every page load starts unfrozen.
+  freezeAnimations: boolean;
   setVisible: (visible: boolean) => void;
   toggleVisible: () => void;
   setDock: (dock: Dock) => void;
@@ -51,6 +55,7 @@ export interface SidebarState extends PersistedSidebarPrefs {
   setHeight: (height: number) => void;
   setTheme: (theme: Theme) => void;
   setShowHoverStyles: (show: boolean) => void;
+  setFreezeAnimations: (freeze: boolean) => void;
   setStatusFilter: (filter: StatusFilter) => void;
   setIntentFilter: (filter: IntentFilter) => void;
   setSeverityFilter: (filter: SeverityFilter) => void;
@@ -78,6 +83,7 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
   draftComment: "",
   draftIntent: null,
   draftSeverity: null,
+  freezeAnimations: false,
   setVisible: (visible) => set({ visible }),
   toggleVisible: () => set({ visible: !get().visible }),
   setDock: (dock) => set({ dock }),
@@ -85,6 +91,7 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
   setHeight: (height) => set({ height: clampHeight(height) }),
   setTheme: (theme) => set({ theme }),
   setShowHoverStyles: (showHoverStyles) => set({ showHoverStyles }),
+  setFreezeAnimations: (freezeAnimations) => set({ freezeAnimations }),
   setStatusFilter: (statusFilter) => set({ statusFilter }),
   setIntentFilter: (intentFilter) => set({ intentFilter }),
   setSeverityFilter: (severityFilter) => set({ severityFilter }),
@@ -109,6 +116,7 @@ export const sidebarStore = createStore<SidebarState>((set, get) => ({
       draftComment: "",
       draftIntent: null,
       draftSeverity: null,
+      freezeAnimations: false,
     }),
 }));
 

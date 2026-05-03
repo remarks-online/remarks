@@ -1,5 +1,6 @@
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SidebarShell } from "@/components/SidebarShell";
+import { initAnimationFreezeController } from "@/lib/animation-freeze";
 import { fetchAuthStatus } from "@/lib/auth-status";
 import { isExtensionContextValid } from "@/lib/extension-context";
 import { initPickerController } from "@/lib/picker-controller";
@@ -28,6 +29,11 @@ export default defineContentScript({
     // height/theme state land from sync storage and don't flash the defaults.
     const persisted = await loadSidebarPrefs();
     if (persisted) sidebarStore.getState().hydrate(persisted);
+
+    // Page-level effect — independent of sidebar shadow root mount lifecycle.
+    // Subscribes to sidebarStore and applies/releases animation-freeze CSS +
+    // Web Animations pause whenever (visible && freezeAnimations) flips.
+    const teardownAnimationFreeze = initAnimationFreezeController();
 
     // Mirror the React-side useAuthStatus channel into a plain boolean the
     // picker controller can consult synchronously. Tracks `auth-status-changed`
@@ -81,6 +87,7 @@ export default defineContentScript({
         }
         mounted?.picker.teardown();
         mounted?.root.unmount();
+        teardownAnimationFreeze();
       },
     });
 
