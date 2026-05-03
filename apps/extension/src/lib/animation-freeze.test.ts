@@ -64,20 +64,22 @@ describe("applyFreeze / releaseFreeze", () => {
       { playState: "running", pause, play } as unknown as Animation,
       { playState: "finished", pause, play } as unknown as Animation,
     ];
-    // jsdom doesn't ship Document.getAnimations; define it for the duration of
-    // this test only and clear it after so the "guards" test above keeps
-    // exercising the undefined branch.
-    const docWithGetAnimations = document as Document & {
-      getAnimations?: () => Animation[];
-    };
-    docWithGetAnimations.getAnimations = () => fakeAnimations;
+    // jsdom doesn't ship Document.getAnimations, but lib.dom types it as a
+    // non-optional method — direct property assignment of `undefined` trips
+    // TS2322 in CI. defineProperty + Reflect.deleteProperty puts the method on
+    // the instance for this test only and removes it cleanly so the "guards"
+    // test above keeps exercising the undefined branch.
+    Object.defineProperty(document, "getAnimations", {
+      configurable: true,
+      value: () => fakeAnimations,
+    });
     try {
       applyFreeze();
       expect(pause).toHaveBeenCalledTimes(1);
       releaseFreeze();
       expect(play).toHaveBeenCalledTimes(1);
     } finally {
-      docWithGetAnimations.getAnimations = undefined;
+      Reflect.deleteProperty(document, "getAnimations");
     }
   });
 });
