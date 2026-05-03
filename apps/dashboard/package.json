@@ -12,7 +12,8 @@
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src e2e playwright.config.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "docs:diagrams": "mmdc -i src/app/app/docs/schema/_components/schema-lifecycle.mmd -o public/docs/schema-lifecycle.svg -b transparent"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.0",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@mermaid-js/mermaid-cli": "^11.14.0",
     "@playwright/test": "^1.59.1",
     "@remarks/api": "workspace:*",
     "@remarks/db": "workspace:*",

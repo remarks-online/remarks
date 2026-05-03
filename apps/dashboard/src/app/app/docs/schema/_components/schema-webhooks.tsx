@@ -1,10 +1,8 @@
 import { CopySnippet } from "@/components/copy-snippet";
 import {
-  SCHEMA_DOC_LINKS,
   WEBHOOK_BODY_EXAMPLE,
   WEBHOOK_EVENT_DESCRIPTIONS,
   WEBHOOK_HEADERS_EXAMPLE,
-  WEBHOOK_VERIFY_SNIPPET,
 } from "@/lib/schema-doc-content";
 import { WEBHOOK_EVENT_TYPES } from "@remarks/shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@remarks/ui";
@@ -34,10 +32,6 @@ export function SchemaWebhooks() {
               </div>
             ))}
           </dl>
-          <p className="text-xs">
-            Internal-only annotation events (intent_changed, severity_changed, agent_acknowledged,
-            comment_edited) are deliberately excluded from v1.
-          </p>
         </div>
 
         <div className="space-y-1.5">
@@ -72,32 +66,12 @@ export function SchemaWebhooks() {
         </div>
 
         <div className="space-y-1.5">
-          <h3 className="text-sm font-medium text-foreground">Verifying signatures (Node)</h3>
-          <CopySnippet value={WEBHOOK_VERIFY_SNIPPET} label="Copy" />
-        </div>
-
-        <div className="space-y-1.5">
           <h3 className="text-sm font-medium text-foreground">Retries</h3>
           <p>
-            Deliveries are made through a background job runner with an automatic retry policy (up
-            to 4 retries, exponential backoff). Each attempt writes a delivery row visible in the
-            project's webhook detail view. A non-2xx response triggers the next retry; the final
-            attempt's row is the implicit dead-letter record.
+            Failed deliveries (any non-2xx response) are retried up to four times with exponential
+            backoff. Each attempt is recorded on the project's webhooks page.
           </p>
         </div>
-
-        <p className="text-xs">
-          See also:{" "}
-          <a
-            href={SCHEMA_DOC_LINKS.adr0020Webhooks}
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            ADR-0020 (Outbound webhooks)
-          </a>
-          .
-        </p>
       </CardContent>
     </Card>
   );

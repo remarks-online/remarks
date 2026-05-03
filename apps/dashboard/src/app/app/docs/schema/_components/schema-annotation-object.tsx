@@ -7,8 +7,8 @@ export function SchemaAnnotationObject() {
       <CardHeader>
         <CardTitle className="text-base">Annotation object</CardTitle>
         <CardDescription>
-          The shape every read returns — REST list, MCP <code>get_task</code>, SSE replay, and
-          dashboard detail sheet all share these fields.
+          Every annotation Remarks gives you has this shape — whether you read it from the API,
+          receive it on the SSE stream, or pick it up from a webhook.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">

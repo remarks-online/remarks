@@ -1,38 +1,25 @@
-import { SCHEMA_DOC_LINKS } from "@/lib/schema-doc-content";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@remarks/ui";
+import { SchemaLifecycleDiagram } from "./schema-lifecycle-diagram";
 
 export function SchemaOverview() {
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Overview</CardTitle>
-        <CardDescription>What every Remarks integration sees on the wire.</CardDescription>
+        <CardDescription>How an annotation gets from a browser to your tools.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-muted-foreground">
         <p>
-          The Remarks Annotation Schema is the wire format every annotation flows through — the
-          extension that captures it, the dashboard that renders it, MCP clients reading or writing
-          it, the SSE stream that broadcasts changes, and outbound webhooks delivering them to your
-          tools. One shape, one source of truth.
+          Someone — a teammate, a stakeholder, an agent — clicks a button in the Remarks extension
+          and pins a comment to a page. The pin is captured as an annotation: a JSON object with a
+          stable id, an author, a target on the page, and a triage state.
         </p>
+        <SchemaLifecycleDiagram />
         <p>
-          The canonical Zod schema lives in{" "}
-          <a
-            href={SCHEMA_DOC_LINKS.zodSource}
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">
-              packages/shared/src/schemas/annotation.ts
-            </code>
-          </a>
-          ; the architectural rationale for v1 is in{" "}
-          <a href={SCHEMA_DOC_LINKS.adr0016} target="_blank" rel="noreferrer" className="underline">
-            ADR-0016
-          </a>
-          . The schema is versioned (v1) and additive: new fields land as nullable, and new event
-          types are append-only.
+          From there, every change to the annotation — a status flip, a new comment, an agent
+          picking it up — appends to its event log. The same events fan out to a real-time SSE
+          stream and to outbound webhooks, so the dashboard, your bug tracker, and your AI coding
+          tools all see the same picture at the same time.
         </p>
       </CardContent>
     </Card>

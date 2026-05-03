@@ -14,6 +14,7 @@ test("connect-agent links to the schema reference and the page renders all secti
   await expect(
     signedInPage.getByRole("heading", { name: "Annotation schema reference" })
   ).toBeVisible();
+  await expect(signedInPage.getByRole("img", { name: "Annotation lifecycle" })).toBeVisible();
 
   for (const heading of [
     "Overview",
@@ -23,7 +24,6 @@ test("connect-agent links to the schema reference and the page renders all secti
     "Annotation events",
     "Real-time stream (SSE)",
     "Outbound webhooks",
-    "Versioning",
   ]) {
     await expect(signedInPage.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
