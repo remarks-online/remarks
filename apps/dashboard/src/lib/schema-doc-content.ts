@@ -14,17 +14,10 @@ import type {
 // union) and this file fails to type-check, forcing the doc to be updated.
 
 const GITHUB_REPO = "https://github.com/remarks-online/remarks";
-const ADR_BASE = `${GITHUB_REPO}/blob/main/docs/adr`;
 const SHARED_SCHEMA_PATH = `${GITHUB_REPO}/blob/main/packages/shared/src/schemas/annotation.ts`;
 
 export const SCHEMA_DOC_LINKS = {
   zodSource: SHARED_SCHEMA_PATH,
-  adr0016: `${ADR_BASE}/0016-annotation-schema-v1.md`,
-  adr0018IntentSeverity: `${ADR_BASE}/0018-allow-editing-intent-severity.md`,
-  adr0018AgentLoop: `${ADR_BASE}/0018-agent-loop-mcp-tools.md`,
-  adr0019ReactTree: `${ADR_BASE}/0019-react-component-tree-capture.md`,
-  adr0019Sse: `${ADR_BASE}/0019-sse-event-stream.md`,
-  adr0020Webhooks: `${ADR_BASE}/0020-outbound-webhooks.md`,
 } as const;
 
 export const INTENT_DESCRIPTIONS: Record<AnnotationIntent, string> = {
@@ -337,7 +330,7 @@ export const ANNOTATION_EVENT_GROUPS: EventGroup[] = [
   },
   {
     title: "Reclassification",
-    description: "Triage axes can be changed after capture (ADR-0018).",
+    description: "Triage axes can be changed after capture.",
     events: [
       {
         type: "intent_changed",
@@ -404,10 +397,6 @@ data: {
 }
 `;
 
-export const SSE_REPLAY_TRUNCATED_EXAMPLE = `event: replay_truncated
-data: {}
-`;
-
 export const WEBHOOK_BODY_EXAMPLE = `{
   "version": "1",
   "type": "annotation.created",
@@ -422,59 +411,3 @@ User-Agent: Remarks-Webhooks/1.0
 Remarks-Event: annotation.created
 Remarks-Delivery-Id: 0f9c2b8e-1ab3-4d6e-9b1c-22a48f1c3d12
 Remarks-Signature: t=1746210872,v1=8e3d1c9a8b...`;
-
-export const WEBHOOK_VERIFY_SNIPPET = `import { createHmac, timingSafeEqual } from "node:crypto";
-
-// rawBody must be the exact bytes received — do not re-stringify after parsing.
-export function verifyRemarksSignature(
-  secret: string,
-  header: string,
-  rawBody: string,
-): boolean {
-  const parts = Object.fromEntries(
-    header.split(",").map((kv) => kv.split("=") as [string, string])
-  );
-  const t = parts.t;
-  const v1 = parts.v1;
-  if (!t || !v1) return false;
-
-  const expected = createHmac("sha256", secret)
-    .update(\`\${t}.\${rawBody}\`)
-    .digest("hex");
-  if (expected.length !== v1.length) return false;
-  return timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(v1, "hex"));
-}`;
-
-export interface AdrLink {
-  href: string;
-  number: string;
-  title: string;
-}
-
-export const SCHEMA_ADRS: AdrLink[] = [
-  {
-    href: SCHEMA_DOC_LINKS.adr0016,
-    number: "0016",
-    title: "Annotation schema v1 — intent, severity, and the acknowledged status",
-  },
-  {
-    href: SCHEMA_DOC_LINKS.adr0018IntentSeverity,
-    number: "0018",
-    title: "Allow editing intent and severity after creation",
-  },
-  {
-    href: SCHEMA_DOC_LINKS.adr0019ReactTree,
-    number: "0019",
-    title: "React component-tree capture in element annotations",
-  },
-  {
-    href: SCHEMA_DOC_LINKS.adr0019Sse,
-    number: "0019",
-    title: "SSE event stream for annotations",
-  },
-  {
-    href: SCHEMA_DOC_LINKS.adr0020Webhooks,
-    number: "0020",
-    title: "Outbound webhooks",
-  },
-];

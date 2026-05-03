@@ -1,0 +1,15 @@
+flowchart LR
+  subgraph CAPTURE["Capture"]
+    EXT["Browser extension<br/>(element / rect / route)"]
+  end
+  subgraph STORE["Store &amp; triage"]
+    ANN["Annotation<br/>(status, intent, severity)"]
+    LOG["Append-only event log<br/>created · status_changed<br/>comment_added · agent_acknowledged"]
+    ANN --> LOG
+  end
+  subgraph DELIVER["Deliver"]
+    OUT["Dashboard · MCP clients<br/>Custom subscribers"]
+  end
+  EXT --> ANN
+  LOG -- "SSE" --> OUT
+  LOG -- "Webhooks" --> OUT

@@ -1,8 +1,4 @@
-import {
-  DOM_CONTEXT_FIELDS,
-  REACT_COMPONENT_KIND_DESCRIPTIONS,
-  SCHEMA_DOC_LINKS,
-} from "@/lib/schema-doc-content";
+import { DOM_CONTEXT_FIELDS, REACT_COMPONENT_KIND_DESCRIPTIONS } from "@/lib/schema-doc-content";
 import { REACT_COMPONENT_KINDS } from "@remarks/shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@remarks/ui";
 
@@ -43,22 +39,13 @@ export function SchemaDomContext() {
               ReactComponentNode
             </h3>
             <p className="text-sm text-muted-foreground">
-              One node per fiber in the leaf-to-root chain. Captured by a MAIN-world bridge that
-              walks the picked element's React fiber. Each node is{" "}
+              One node per fiber in the leaf-to-root chain. Each node is{" "}
               <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">
                 {"{ name, kind, source? }"}
               </code>
               ; <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">source</code>{" "}
-              is dev-only and best-effort (production-minified bundles strip it). See{" "}
-              <a
-                href={SCHEMA_DOC_LINKS.adr0019ReactTree}
-                target="_blank"
-                rel="noreferrer"
-                className="underline"
-              >
-                ADR-0019 (React component tree)
-              </a>{" "}
-              for the full design.
+              (file/line) is captured in development builds and is best-effort — production-minified
+              bundles strip it.
             </p>
           </div>
           <ul className="space-y-1.5">
