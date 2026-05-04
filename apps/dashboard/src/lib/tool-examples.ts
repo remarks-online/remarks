@@ -13,6 +13,7 @@ import type { RemarksToolName } from "@remarks/mcp-schema";
 export type ExamplePromptPhase =
   | "Getting oriented"
   | "Finding work"
+  | "Watching for new work"
   | "Picking up a task"
   | "Doing the work"
   | "Wrapping up";
@@ -66,6 +67,24 @@ export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = [
     tools: ["remarks_list_tasks"],
     outcome:
       "Pass no project_id and no org_id and `list_tasks` runs in personal mode, returning the annotations you captured with the browser extension.",
+  },
+  {
+    id: "watch-loop",
+    phase: "Watching for new work",
+    prompt:
+      "Watch the web-app project — pick up new tasks as they come in, mark each one acknowledged, implement it, and stop when no new tasks have arrived for 5 minutes.",
+    tools: ["remarks_watch_annotations", "remarks_update_task_status"],
+    outcome:
+      "Hands-free agent loop. The tool holds open until a task arrives (or up to 30s), returns it with the annotation snapshot inline (no follow-up `get_task` needed), and the agent loops with the returned `next_cursor` so events between calls aren't missed. `auto_acknowledge: true` saves a round-trip; `idle: true` lets the agent decide when to stop.",
+  },
+  {
+    id: "watch-blocking",
+    phase: "Watching for new work",
+    prompt:
+      "Stay subscribed to all my projects and surface only blocking-severity fixes — drop everything else.",
+    tools: ["remarks_watch_annotations"],
+    outcome:
+      "Server-side filters narrow the stream before it hits the agent: `severity: ['blocking']` and `intent: ['fix']` mean the loop only fires on the work that actually warrants pausing for. Cross-project scope; no project_id needed.",
   },
   {
     id: "get-task",
@@ -147,4 +166,6 @@ export const TOOL_BLURBS: Record<RemarksToolName, string> = {
     "Explicit rejection with a required reason (10–500 chars). Equivalent to `update_task_status(rejected)` but enforces the reason in the schema.",
   remarks_open_pr:
     "Signal that a set of tasks has been shipped on a branch. Returns `pending_github_integration` until the GitHub App is installed.",
+  remarks_watch_annotations:
+    "Hands-free agent loop. Long-polls the live annotation stream and returns events one batch at a time with each annotation snapshot inline — no follow-up `get_task` needed. Filter by intent, severity, status, branch, or event type; pass `auto_acknowledge: true` to mark new tasks as `acknowledged` on the way out. Loop with the returned `next_cursor`; stop when `idle: true` if you want.",
 };

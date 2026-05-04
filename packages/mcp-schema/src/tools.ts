@@ -1,4 +1,11 @@
-import { MAX_COMMENT_LENGTH, rejectionReasonSchema } from "@remarks/shared";
+import {
+  MAX_COMMENT_LENGTH,
+  annotationEventTypeSchema,
+  annotationIntentSchema,
+  annotationSeveritySchema,
+  eventActorTypeSchema,
+  rejectionReasonSchema,
+} from "@remarks/shared";
 import { z } from "zod";
 import {
   agentUpdateStatusSchema,
@@ -461,6 +468,128 @@ const whoamiTool = {
   output: whoamiOutputSchema,
 } as const;
 
+// --- remarks_watch_annotations (G10: hands-free agent loop) ---
+
+// Snapshot of a task included alongside each watch event so the agent can act
+// without a follow-up `remarks_get_task` call. Mirrors `getTaskOutputSchema`
+// minus `related_tasks` (cheap to assemble; the related-tasks fan-out adds a
+// per-row query and is more useful at pickup time via `remarks_get_task`).
+export const mcpAnnotationSnapshotSchema = getTaskOutputSchema.omit({ related_tasks: true });
+
+export type McpAnnotationSnapshot = z.infer<typeof mcpAnnotationSnapshotSchema>;
+
+const watchEventSchema = z.object({
+  // Resume cursor for THIS event. Pass the response's `next_cursor` (the
+  // newest of these) back as `since` on the next call.
+  id: z.string().min(1),
+  type: annotationEventTypeSchema,
+  annotation_id: z.string().uuid(),
+  // Null for personal-annotation events.
+  project_id: z.string().uuid().nullable(),
+  actor_type: eventActorTypeSchema,
+  actor_oauth_client_id: z.string().nullable(),
+  payload: z.record(z.string(), z.unknown()),
+  created_at: z.string().datetime(),
+  // Inline annotation snapshot. Null when the underlying annotation no longer
+  // exists (e.g. on a deletion event).
+  annotation: mcpAnnotationSnapshotSchema.nullable(),
+  // True iff `auto_acknowledge` was set and this event's annotation was
+  // flipped to `acknowledged` as a side-effect of delivery.
+  auto_acknowledged: z.boolean(),
+});
+
+export type WatchEvent = z.infer<typeof watchEventSchema>;
+
+export const watchAnnotationsInputSchema = z
+  .object({
+    // Scope selector — exactly one of {project_id, org_id, scope}. `scope`
+    // accepts "personal" (caller's own annotations) or "all" (personal +
+    // every project the caller is a member of, regardless of org).
+    project_id: z.string().uuid().optional(),
+    org_id: z.string().uuid().optional(),
+    scope: z.enum(["personal", "all"]).optional(),
+
+    // Last-Event-ID cursor returned by the previous call. Omit on first call
+    // to start at "events from now"; pass `next_cursor` on subsequent calls
+    // so events between calls aren't missed. Format matches the SSE event id
+    // (`<iso>:<uuid>`).
+    since: z.string().min(1).optional(),
+
+    // Server-side filters applied before delivery. All optional; omit for
+    // "no filter on this axis."
+    intent: z.array(annotationIntentSchema).optional(),
+    severity: z.array(annotationSeveritySchema).optional(),
+    status: z.array(taskStatusSchema).optional(),
+    event_types: z.array(annotationEventTypeSchema).optional(),
+    branch: z.string().min(1).optional(),
+
+    // Long-poll knobs.
+    // - wait_seconds = 0 → return immediately with whatever's already in
+    //   the replay buffer + DB; useful for an explicit "drain" call.
+    // - batch_window_ms → after the first event arrives, hold this long to
+    //   coalesce a clustered burst into one response. Default 250ms.
+    // - limit caps the per-call batch size; if hit, `more_available` is true.
+    wait_seconds: z.number().int().min(0).max(55).default(30),
+    batch_window_ms: z.number().int().min(0).max(2000).default(250),
+    limit: z.number().int().min(1).max(100).default(25),
+
+    // When true, any `to_do` annotation the agent is about to receive is
+    // flipped to `acknowledged` as a side-effect (idempotent — already-non-
+    // to_do rows are left alone). Saves a follow-up tool call. Requires the
+    // `tasks:write` scope; falls through to `tasks:read` only when false.
+    auto_acknowledge: z.boolean().default(false),
+  })
+  .superRefine((value, ctx) => {
+    const scopeKeysSet = [
+      value.project_id !== undefined,
+      value.org_id !== undefined,
+      value.scope !== undefined,
+    ].filter(Boolean).length;
+    if (scopeKeysSet > 1) {
+      ctx.addIssue({
+        code: "custom",
+        message: "project_id, org_id, and scope are mutually exclusive",
+        path: ["scope"],
+      });
+    }
+    if (value.branch !== undefined && value.project_id === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "branch filter requires project_id",
+        path: ["branch"],
+      });
+    }
+  });
+
+export type WatchAnnotationsInput = z.infer<typeof watchAnnotationsInputSchema>;
+
+export const watchAnnotationsOutputSchema = z.object({
+  events: z.array(watchEventSchema),
+  // Newest event id from `events` if non-empty; otherwise the prior cursor
+  // (or null on first call with no events). Always pass back as `since`.
+  next_cursor: z.string().nullable(),
+  // True when `events` is empty AND the wait deadline fired. Lets the agent
+  // decide when to stop the loop — vibe-annotations forces a 5min server cap;
+  // we let the caller control idle behavior.
+  idle: z.boolean(),
+  // True when `since` predated the in-memory ring buffer + DB replay window.
+  // The agent should reconcile via `remarks_get_pending` rather than trust
+  // the partial replay.
+  replay_truncated: z.boolean(),
+  // True when `limit` was hit — call again immediately with `next_cursor`.
+  more_available: z.boolean(),
+});
+
+export type WatchAnnotationsOutput = z.infer<typeof watchAnnotationsOutputSchema>;
+
+const watchAnnotationsTool = {
+  name: "remarks_watch_annotations",
+  description:
+    'Hands-free agent loop. Long-polls the live annotation event stream for up to `wait_seconds` (default 30) and returns a batch of events with each annotation snapshot inline (no follow-up `remarks_get_task` needed). Pass exactly one scope: `project_id` for one project, `org_id` for every project in an org you belong to, `scope: "personal"` for your personal annotations, or `scope: "all"` for personal + every project you can see. Filter by `intent`, `severity`, `status`, `event_types`, or `branch`. Always pass the previous response\'s `next_cursor` back as `since` so events between calls aren\'t missed; on the first call omit `since` to start fresh. Pass `auto_acknowledge: true` to flip any newly-delivered `to_do` annotations to `acknowledged` on the way out (saves a round-trip; requires `tasks:write`). Standard loop: `cursor=null; while True: r = remarks_watch_annotations(since=cursor, project_id=...); for e in r.events: handle(e); cursor = r.next_cursor; if r.idle: break  # or keep going`. The tool returns `idle: true` when no events arrived during the wait — agent decides when to stop. `replay_truncated: true` means `since` was older than the replay window — call `remarks_get_pending` to reconcile.',
+  input: watchAnnotationsInputSchema,
+  output: watchAnnotationsOutputSchema,
+} as const;
+
 // --- Registry (single source of truth for the MCP server) ---
 
 export const REMARKS_TOOLS = [
@@ -476,6 +605,7 @@ export const REMARKS_TOOLS = [
   getProjectContextTool,
   openPrTool,
   whoamiTool,
+  watchAnnotationsTool,
 ] as const;
 
 export type RemarksTool = (typeof REMARKS_TOOLS)[number];

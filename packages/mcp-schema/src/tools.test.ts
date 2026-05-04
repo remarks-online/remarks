@@ -10,13 +10,15 @@ import {
   listTasksInputSchema,
   openPrInputSchema,
   updateTaskStatusInputSchema,
+  watchAnnotationsInputSchema,
   whoamiInputSchema,
 } from "./tools.js";
 
 const uuid = "00000000-0000-4000-8000-000000000001";
 const otherUuid = "00000000-0000-4000-8000-000000000002";
 
-// Tool list grew from 8 to 12 in ADR-0018 (G6/G7/G8a/G8b agent-loop tools).
+// Tool list grew from 8 to 12 in ADR-0018 (G6/G7/G8a/G8b agent-loop tools);
+// G10 (watch_annotations) appended at the end brings the total to 13.
 // New tools slot between the existing mutators and the batching helper so
 // related verbs cluster together in the tools/list manifest.
 const SPEC_TOOL_NAMES: readonly RemarksToolName[] = [
@@ -32,12 +34,13 @@ const SPEC_TOOL_NAMES: readonly RemarksToolName[] = [
   "remarks_get_project_context",
   "remarks_open_pr",
   "remarks_whoami",
+  "remarks_watch_annotations",
 ];
 
 describe("REMARKS_TOOLS registry", () => {
-  test("exposes exactly 12 tools (ADR-0018)", () => {
-    expect(REMARKS_TOOLS).toHaveLength(12);
-    expect(REMARKS_TOOL_NAMES).toHaveLength(12);
+  test("exposes exactly 13 tools (G10 watch_annotations)", () => {
+    expect(REMARKS_TOOLS).toHaveLength(13);
+    expect(REMARKS_TOOL_NAMES).toHaveLength(13);
   });
 
   test("tool names match the spec list, in spec order", () => {
@@ -316,5 +319,80 @@ describe("openPrInputSchema", () => {
 describe("whoamiInputSchema", () => {
   test("accepts an empty object (no inputs required)", () => {
     expect(whoamiInputSchema.safeParse({}).success).toBe(true);
+  });
+});
+
+describe("watchAnnotationsInputSchema", () => {
+  test("accepts an empty object — defaults to scope=all (per the description)", () => {
+    const r = watchAnnotationsInputSchema.safeParse({});
+    expect(r.success).toBe(true);
+    if (r.success) {
+      // No scope marker is allowed; defaults populate.
+      expect(r.data.wait_seconds).toBe(30);
+      expect(r.data.batch_window_ms).toBe(250);
+      expect(r.data.limit).toBe(25);
+      expect(r.data.auto_acknowledge).toBe(false);
+    }
+  });
+
+  test("accepts a single scope marker", () => {
+    expect(watchAnnotationsInputSchema.safeParse({ project_id: uuid }).success).toBe(true);
+    expect(watchAnnotationsInputSchema.safeParse({ org_id: uuid }).success).toBe(true);
+    expect(watchAnnotationsInputSchema.safeParse({ scope: "personal" }).success).toBe(true);
+    expect(watchAnnotationsInputSchema.safeParse({ scope: "all" }).success).toBe(true);
+  });
+
+  test("rejects two scope markers (mutex)", () => {
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, org_id: otherUuid }).success
+    ).toBe(false);
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, scope: "personal" }).success
+    ).toBe(false);
+    expect(watchAnnotationsInputSchema.safeParse({ org_id: uuid, scope: "all" }).success).toBe(
+      false
+    );
+  });
+
+  test("branch filter requires project_id", () => {
+    expect(watchAnnotationsInputSchema.safeParse({ branch: "main", scope: "all" }).success).toBe(
+      false
+    );
+    expect(
+      watchAnnotationsInputSchema.safeParse({ branch: "main", project_id: uuid }).success
+    ).toBe(true);
+  });
+
+  test("filter arrays validate enum members", () => {
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, intent: ["fix"] }).success
+    ).toBe(true);
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, intent: ["bogus"] }).success
+    ).toBe(false);
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, severity: ["blocking"] }).success
+    ).toBe(true);
+    expect(
+      watchAnnotationsInputSchema.safeParse({
+        project_id: uuid,
+        event_types: ["created", "comment_added"],
+      }).success
+    ).toBe(true);
+  });
+
+  test("wait_seconds bounds: 0..55", () => {
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, wait_seconds: 0 }).success
+    ).toBe(true);
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, wait_seconds: 55 }).success
+    ).toBe(true);
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, wait_seconds: 56 }).success
+    ).toBe(false);
+    expect(
+      watchAnnotationsInputSchema.safeParse({ project_id: uuid, wait_seconds: -1 }).success
+    ).toBe(false);
   });
 });

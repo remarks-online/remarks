@@ -20,6 +20,7 @@ export interface ApiClient {
   fetchAnnotation: typeof apiClient.fetchAnnotation;
   updateAnnotationStatus: typeof apiClient.updateAnnotationStatus;
   addAnnotationComment: typeof apiClient.addAnnotationComment;
+  fetchWatchAnnotations: typeof apiClient.fetchWatchAnnotations;
 }
 
 // Per-request context threaded into every tool handler. Built once in
