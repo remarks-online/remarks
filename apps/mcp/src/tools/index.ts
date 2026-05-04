@@ -19,6 +19,7 @@ import { listTasksHandler } from "./list-tasks.js";
 import { openPrHandler } from "./open-pr.js";
 import type { ToolHandler, ToolHandlerContext } from "./types.js";
 import { updateTaskStatusHandler } from "./update-task-status.js";
+import { watchAnnotationsHandler } from "./watch-annotations.js";
 import { whoamiHandler } from "./whoami.js";
 
 // All eight tools wired. The mutators + open_pr stub shipped in tasks
@@ -39,6 +40,7 @@ const HANDLERS: Partial<Record<RemarksToolName, ToolHandler>> = {
   remarks_get_all_pending: getAllPendingHandler,
   remarks_batch_update_status: batchUpdateStatusHandler,
   remarks_open_pr: openPrHandler,
+  remarks_watch_annotations: watchAnnotationsHandler,
 };
 
 function toToolManifest(tool: RemarksTool): Tool {

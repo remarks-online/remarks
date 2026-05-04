@@ -1,8 +1,13 @@
 import type { AgentUpdateStatus, McpCommentKind } from "@remarks/mcp-schema";
 import {
+  type AnnotationEventType,
+  type AnnotationIntent,
   type AnnotationListResponse,
   type AnnotationResponse,
+  type AnnotationSeverity,
   type AnnotationStatus,
+  type AnnotationStreamEvent,
+  type EventActorType,
   InternalError,
 } from "@remarks/shared";
 import { env } from "../env.js";
@@ -324,6 +329,122 @@ export async function updateAnnotationStatus(
 export interface AddAnnotationCommentPayload {
   eventId: string;
   createdAt: string;
+}
+
+// G10: long-poll watch payload. Mirrors the API's WatchResponseBody (see
+// apps/api/src/routes/internal/watch.ts). The MCP tool projects this into
+// the snake_case wire shape; this stays camelCase to match every other
+// internal-API helper in this file.
+export interface WatchEventPayload {
+  streamEvent: AnnotationStreamEvent;
+  // Null when the underlying annotation no longer exists (e.g. on a
+  // deletion event). MCP wire shape carries the same nullability.
+  annotation: (AnnotationResponse & { frameworkHint: string | null }) | null;
+  autoAcknowledged: boolean;
+}
+
+export interface WatchAnnotationsPayload {
+  events: WatchEventPayload[];
+  nextCursor: string | null;
+  idle: boolean;
+  replayTruncated: boolean;
+  moreAvailable: boolean;
+}
+
+// Filters / knobs that the watch endpoint accepts. All optional — omit for
+// "no filter on this axis." `eventTypes` and `statuses` accept arrays;
+// they're CSV-encoded into the query string here so the API's Zod query
+// schema can re-parse them with its `csvList` helper.
+export interface WatchAnnotationsScope {
+  // Exactly one of these.
+  projectId?: string;
+  userMode?: { mode: "personal" | "all" | "org"; orgId?: string };
+}
+
+export interface WatchAnnotationsParams extends WatchAnnotationsScope {
+  clerkUserId: string;
+  oauthClientName: string;
+  since?: string;
+  intents?: AnnotationIntent[];
+  severities?: AnnotationSeverity[];
+  statuses?: AnnotationStatus[];
+  eventTypes?: AnnotationEventType[];
+  branch?: string;
+  waitSeconds?: number;
+  batchWindowMs?: number;
+  limit?: number;
+  autoAcknowledge?: boolean;
+}
+
+function buildWatchQuery(params: WatchAnnotationsParams): URLSearchParams {
+  const search = new URLSearchParams();
+  if (params.since !== undefined) search.set("since", params.since);
+  if (params.intents && params.intents.length > 0) search.set("intent", params.intents.join(","));
+  if (params.severities && params.severities.length > 0) {
+    search.set("severity", params.severities.join(","));
+  }
+  if (params.statuses && params.statuses.length > 0) {
+    search.set("status", params.statuses.join(","));
+  }
+  if (params.eventTypes && params.eventTypes.length > 0) {
+    search.set("event_types", params.eventTypes.join(","));
+  }
+  if (params.branch !== undefined) search.set("branch", params.branch);
+  if (params.waitSeconds !== undefined) search.set("wait_seconds", String(params.waitSeconds));
+  if (params.batchWindowMs !== undefined) {
+    search.set("batch_window_ms", String(params.batchWindowMs));
+  }
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.autoAcknowledge !== undefined) {
+    search.set("auto_acknowledge", String(params.autoAcknowledge));
+  }
+  // oauthClientName is required when auto_acknowledge is on; the API enforces
+  // the pairing, but always send it for consistency with the other mutation
+  // helpers (no harm when unused).
+  search.set("oauthClientName", params.oauthClientName);
+  return search;
+}
+
+export async function fetchWatchAnnotations(
+  params: WatchAnnotationsParams
+): Promise<WatchAnnotationsPayload | null> {
+  const search = buildWatchQuery(params);
+  let url: string;
+  if (params.projectId !== undefined) {
+    search.set("clerkUserId", params.clerkUserId);
+    url = `${env.API_INTERNAL_URL}/internal/mcp/projects/${encodeURIComponent(params.projectId)}/watch?${search.toString()}`;
+  } else if (params.userMode !== undefined) {
+    search.set("mode", params.userMode.mode);
+    if (params.userMode.orgId !== undefined) search.set("orgId", params.userMode.orgId);
+    url = `${env.API_INTERNAL_URL}/internal/mcp/users/${encodeURIComponent(params.clerkUserId)}/watch?${search.toString()}`;
+  } else {
+    throw new InternalError("watch params must set projectId or userMode");
+  }
+
+  // Per-call AbortController with a margin past the request's wait deadline.
+  // Without it, a network blip on the API side would leave the MCP request
+  // hanging until the proxy times it out.
+  const margin = 10;
+  const waitSeconds = params.waitSeconds ?? 30;
+  const ac = new AbortController();
+  const timeoutHandle = setTimeout(() => ac.abort(), (waitSeconds + margin) * 1000);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { "x-internal-auth": env.INTERNAL_API_TOKEN },
+      signal: ac.signal,
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new InternalError(`watch annotations failed with status ${response.status}`);
+    }
+    return (await response.json()) as WatchAnnotationsPayload;
+  } catch (cause) {
+    if (cause instanceof InternalError) throw cause;
+    throw new InternalError("Failed to reach Remarks API for watch annotations", cause);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 export async function addAnnotationComment(

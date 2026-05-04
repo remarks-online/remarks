@@ -208,9 +208,10 @@ describe("POST /mcp", () => {
         "remarks_get_all_pending",
         "remarks_batch_update_status",
         "remarks_open_pr",
+        "remarks_watch_annotations",
       ])
     );
-    expect(names).toHaveLength(12);
+    expect(names).toHaveLength(13);
   });
 
   it("tools/call remarks_whoami routes through the handler", async () => {

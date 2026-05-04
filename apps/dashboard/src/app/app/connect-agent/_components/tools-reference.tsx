@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@remarks/ui";
 const PHASE_ORDER: readonly ExamplePromptPhase[] = [
   "Getting oriented",
   "Finding work",
+  "Watching for new work",
   "Picking up a task",
   "Doing the work",
   "Wrapping up",

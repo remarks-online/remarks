@@ -5,6 +5,7 @@ import { eventsInternalRoutes } from "./events.js";
 import { projectInternalRoutes } from "./projects.js";
 import { userOrgsRoutes } from "./user-orgs.js";
 import { userProjectsRoutes } from "./user-projects.js";
+import { watchInternalRoutes } from "./watch.js";
 import { whoamiRoutes } from "./whoami.js";
 
 // /internal/* — service-to-service endpoints reachable only from the MCP
@@ -21,4 +22,5 @@ export async function internalRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(projectInternalRoutes);
   await fastify.register(annotationInternalRoutes);
   await fastify.register(eventsInternalRoutes);
+  await fastify.register(watchInternalRoutes);
 }
